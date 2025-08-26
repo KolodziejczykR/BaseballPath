@@ -43,13 +43,23 @@ class SeleniumDriverManager:
         if self.headless:
             chrome_options.add_argument("--headless")
         
-        # College website compatibility
+        # College website compatibility + stealth mode
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--allow-running-insecure-content")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins-discovery")
+        chrome_options.add_argument("--disable-default-apps")
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        # Add more realistic prefs
+        chrome_options.add_experimental_option("prefs", {
+            "profile.default_content_setting_values.notifications": 2
+        })
         
         # Window and user agent settings
         chrome_options.add_argument("--window-size=1920,1080")
