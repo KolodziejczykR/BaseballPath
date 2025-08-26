@@ -27,32 +27,9 @@ from backend.scraper.niche_xpaths import (
     ENROLLMENT_XPATH
 )
 
-load_dotenv()
+from backend.utils.scraping_types import NicheRatings
 
-@dataclass
-class NicheRatings:
-    """Data class for Niche.com college ratings and information"""
-    school_name: str
-    overall_grade: str = None
-    academics_grade: str = None
-    campus_life_grade: str = None
-    athletics_grade: str = None
-    value_grade: str = None
-    student_life_grade: str = None
-    party_scene_grade: str = None
-    diversity_grade: str = None
-    location_grade: str = None
-    safety_grade: str = None
-    professors_grade: str = None
-    dorms_grade: str = None
-    campus_food_grade: str = None
-    enrollment: str = None
-    niche_url: str = None
-    error: str = None
-    
-    def to_dict(self) -> Dict:
-        """Convert to dictionary for JSON serialization"""
-        return asdict(self)
+load_dotenv()
 
 class NicheBSScraper:
     """Niche.com scraper using requests and lxml"""
