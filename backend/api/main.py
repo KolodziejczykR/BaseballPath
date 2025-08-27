@@ -4,9 +4,11 @@ from backend.ml.ml_router import router as ml_router
 from backend.ml.router.infielder_router import router as infielder_router
 from backend.ml.router.outfielder_router import router as outfielder_router
 from backend.ml.router.catcher_router import router as catcher_router
-from backend.scraper.team_scraper import router as scraper_router
+from backend.api.preferences_router import router as preferences_router
+from backend.api.college_selection_router import router as college_selection_router
+from backend.api.waitlist_router import router as waitlist_router
 
-app = FastAPI(title="AI/ML Baseball Recruitment Backend")
+app = FastAPI(title="BaseballPATH Backend")
 
 # CORS middleware for local frontend
 app.add_middleware(
@@ -22,17 +24,16 @@ app.include_router(ml_router, prefix="/predict")
 app.include_router(infielder_router, prefix="/infielder")
 app.include_router(outfielder_router, prefix="/outfielder")
 app.include_router(catcher_router, prefix="/catcher")
-app.include_router(scraper_router)
+app.include_router(preferences_router, prefix="/preferences")
+app.include_router(college_selection_router, prefix="/college-selection")
+app.include_router(waitlist_router, prefix="/waitlist")
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the AI/ML Baseball Recruitment API!"}
+    return {"message": "Welcome to the BaseballPATH!"}
 
 @app.get("/ping")
 def health_check():
     return {"status": "ok"}
-
-# from backend.api.llm import router as llm_router
-# app.include_router(llm_router, prefix="/llm") 
 
 # Placeholder for future router imports

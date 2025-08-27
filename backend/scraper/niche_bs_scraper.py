@@ -22,7 +22,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from backend.scraper.selenium_driver import normalize_text, is_valid_grade
-from backend.scraper.niche_xpaths import (
+from backend.utils.niche_xpaths import (
     CATEGORY_GRADE_MAPPING,
     ENROLLMENT_XPATH
 )
@@ -165,6 +165,59 @@ class NicheBSScraper:
         finally:
             # Rate limiting with randomization
             time.sleep(self.delay + random.uniform(1, 3))
+    
+    def scrape_multiple_schools(self, school_names: List[str]) -> Dict[str, NicheRatings]:
+        """
+        Scrape Niche ratings for multiple schools with enhanced bot detection avoidance
+        
+        Args:
+            school_names: List of school names to scrape
+            
+        Returns:
+            Dictionary mapping school_name -> NicheRatings
+        """
+        results = {}
+        
+        print(f"  Starting Niche scraping for {len(school_names)} schools with {self.delay}s base delay...")
+        
+        # Warm up session once for all requests
+        if not getattr(self, '_session_warmed', False):
+            self._warm_up_session()
+        
+        for i, school_name in enumerate(school_names):
+            print(f"  Scraping Niche data for {school_name} ({i+1}/{len(school_names)})")
+            
+            # Progressive delay increase to avoid bot detection
+            current_delay = self.delay
+            if i > 20:  # After 20 schools, increase delay significantly
+                current_delay = self.delay * 2
+            if i > 35:  # After 35 schools, increase even more
+                current_delay = self.delay * 3
+            
+            # Random delay before each request
+            random_delay = random.uniform(current_delay, current_delay + 2)
+            if i > 0:  # No delay for first school
+                print(f"    Waiting {random_delay:.1f}s to avoid bot detection...")
+                time.sleep(random_delay)
+            
+            # Scrape this school
+            ratings = self.scrape_school_ratings(school_name)
+            results[school_name] = ratings
+            
+            # Check if we got blocked
+            if ratings.error and ("bot detection" in ratings.error.lower() or "access denied" in ratings.error.lower()):
+                print(f"    ⚠️ Bot detection encountered at school {i+1}. Increasing delays...")
+                # Increase base delay for remaining schools
+                self.delay = min(self.delay * 1.5, 15.0)  # Cap at 15 seconds
+            elif ratings.overall_grade:
+                print(f"    ✅ Successfully scraped {school_name}")
+            else:
+                print(f"    ⚠️ Incomplete data for {school_name}")
+        
+        successful_scrapes = sum(1 for r in results.values() if r.overall_grade and not r.error)
+        print(f"  📊 Completed Niche scraping: {successful_scrapes}/{len(school_names)} successful")
+        
+        return results
     
     
     def _build_niche_url(self, school_name: str) -> str:

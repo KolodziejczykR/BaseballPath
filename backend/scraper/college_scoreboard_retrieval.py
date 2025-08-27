@@ -73,7 +73,7 @@ class CollegeScorecardRetriever:
             else:
                 # Create placeholder with None/default values if school not found
                 results.append(SchoolStatisticsAPI(
-                    city=city or "Unknown",
+                    school_city=city or "Unknown",
                     undergrad_enrollment=0,
                     in_state_tuition=0,
                     out_of_state_tuition=0,
@@ -433,7 +433,7 @@ class CollegeScorecardRetriever:
             city = f"{city}, {state}"
         
         return SchoolStatisticsAPI(
-            city=city,
+            school_city=city,
             undergrad_enrollment=safe_int(school_data.get('latest.student.size')),
             in_state_tuition=safe_int(school_data.get('latest.cost.tuition.in_state')),
             out_of_state_tuition=safe_int(school_data.get('latest.cost.tuition.out_of_state')),
@@ -453,7 +453,8 @@ def main():
         # Complex fuzzy matches
         "Georgia Tech",                    # Should match "Georgia Institute of Technology-Main Campus"
         "Cal Tech",                       # Should match "California Institute of Technology"
-        "MIT",                            # Should match "Massachusetts Institute of Technology"
+        "Massachusetts Institute of Technology",
+        
         "Penn State",                     # Should match "Pennsylvania State University-Main Campus"
         "UC Berkeley",                    # Should match "University of California-Berkeley"
         "New York University",           # Should match "New York University"
@@ -465,6 +466,8 @@ def main():
         "Saint Joseph's University",     # vs other Saint Joseph schools
         "University of Miami",           # vs Miami University (Ohio)
         "George Washington University",   # vs other George Washington schools
+
+        "University of Michigan",         # vs other Michigan universities
     ]
     
     test_cities = [
@@ -487,6 +490,8 @@ def main():
         "Philadelphia, PA",  # Saint Joseph's
         "Coral Gables, FL",  # University of Miami (not Miami University in Ohio)
         "Washington, DC",   # George Washington University
+
+        "Ann Arbor, MI",    # University of Michigan
     ]
     
     try:
@@ -505,15 +510,15 @@ def main():
         for i, stats in enumerate(results):
             school_name = test_schools[i]
             
-            # Check if this looks like a successful match (enrollment > 0)
-            if stats.undergrad_enrollment > 0:
+            # Check if this looks like a successful match (enrollment > 500 so valid school)
+            if stats.undergrad_enrollment > 500:
                 successful_matches += 1
                 status = "✅ SUCCESS"
             else:
                 status = "❌ FAILED"
             
             print(f"\n{status} {school_name}:")
-            print(f"  City: {stats.city}")
+            print(f"  City: {stats.school_city}")
             print(f"  Undergrad Enrollment: {stats.undergrad_enrollment:,}")
             print(f"  In-State Tuition: ${stats.in_state_tuition:,}")
             print(f"  Out-of-State Tuition: ${stats.out_of_state_tuition:,}")

@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 
 @dataclass
@@ -29,7 +29,7 @@ class NicheRatings:
 @dataclass
 class SchoolStatisticsAPI:
     """Data class for school statistics, from CollegeScorecard API"""
-    city: str
+    school_city: str
     undergrad_enrollment: int
     in_state_tuition: int
     out_of_state_tuition: int
@@ -37,9 +37,22 @@ class SchoolStatisticsAPI:
     avg_sat: int
     avg_act: int
 
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for JSON serialization"""
+        return asdict(self)
+
+
 @dataclass
 class SchoolInformation:
-    """Data class for the school, to be sent to LLM"""
+    """Data class for the school, to be sent to LLM as extra context"""
     school_name: str
-    schoolstats: SchoolStatisticsAPI
+    school_stats: SchoolStatisticsAPI
     niche_ratings: NicheRatings
+
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "school_name": self.school_name,
+            "school_stats": self.school_stats.to_dict(),
+            "niche_ratings": self.niche_ratings.to_dict()
+        }

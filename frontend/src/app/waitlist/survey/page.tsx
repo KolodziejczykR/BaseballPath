@@ -5,7 +5,7 @@ import { useState, useEffect } from "react"
 // Force dynamic rendering to avoid build-time environment variable issues
 export const dynamic = 'force-dynamic'
 import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase"
+import { submitWaitlistEntry } from "@/lib/api"
 
 export default function WaitlistSurvey() {
   const [email, setEmail] = useState("")
@@ -55,41 +55,34 @@ export default function WaitlistSurvey() {
 
     try {
       // Create complete waitlist entry with all survey data
-      const { data, error } = await supabase
-        .from('waitlist')
-        .insert([{
-          email,
-          budget,
-          travel_team: travelTeam,
-          recruiting_agency: recruitingAgency,
-          graduation_year: graduationYear,
-          recruiting_challenge: recruitingChallenge,
-          desired_features: desiredFeatures,
-          additional_info: additionalInfo,
-        }])
-        .select()
+      const result = await submitWaitlistEntry({
+        email,
+        budget,
+        travel_team: travelTeam,
+        recruiting_agency: recruitingAgency,
+        graduation_year: graduationYear,
+        recruiting_challenge: recruitingChallenge,
+        desired_features: desiredFeatures,
+        additional_info: additionalInfo,
+      })
 
-      if (error) {
-        console.error('Supabase error:', error)
-        // Handle duplicate email error specifically
-        if (error.code === '23505') { // PostgreSQL unique violation
-          alert("This email has already been submitted. You cannot submit the survey twice.")
-          // Clear session and redirect
-          sessionStorage.removeItem("waitlist_email")
-          window.location.href = "/waitlist/success"
-          return
-        }
-        throw new Error(error.message)
-      }
-
-      console.log('[SUPABASE] Survey data saved:', data)
+      console.log('[API] Survey data saved:', result)
       setSubmitted(true)
       
       // Clear sessionStorage
       sessionStorage.removeItem("waitlist_email")
     } catch (err) {
       console.error("Survey submission error:", err)
-      alert("There was an error saving your survey. Please try again.")
+      
+      // Handle specific error cases
+      if (err instanceof Error && err.message.includes("already on our waitlist")) {
+        alert("This email has already been submitted. You cannot submit the survey twice.")
+        sessionStorage.removeItem("waitlist_email")
+        window.location.href = "/waitlist/success"
+        return
+      }
+      
+      alert(err instanceof Error ? err.message : "There was an error saving your survey. Please try again.")
     } finally {
       setLoading(false)
     }

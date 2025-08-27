@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { validateEmail, isEmailAlreadyRegistered } from "@/lib/utils"
+import { validateEmail, checkEmailExists } from "@/lib/api"
 
 export default function WaitlistPage() {
   const [email, setEmail] = useState("")
@@ -24,7 +24,8 @@ export default function WaitlistPage() {
       return
     }
 
-    if (!validateEmail(email)) {
+    const isValidEmail = await validateEmail(email)
+    if (!isValidEmail) {
       setError("Please enter a valid email address")
       return
     }
@@ -33,7 +34,7 @@ export default function WaitlistPage() {
 
     try {
       // Check if email already exists
-      const emailExists = await isEmailAlreadyRegistered(email)
+      const emailExists = await checkEmailExists(email)
       if (emailExists) {
         setError("This email is already on our waitlist!")
         return
