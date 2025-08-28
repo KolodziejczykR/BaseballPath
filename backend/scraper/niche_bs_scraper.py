@@ -126,8 +126,8 @@ class NicheBSScraper:
             self._update_headers()
             self.session.headers['Referer'] = 'https://www.niche.com/colleges/search/best-colleges/'
             
-            # Random delay before actual request
-            time.sleep(random.uniform(3, 7))
+            # Random delay before actual request (increased range)
+            time.sleep(random.uniform(4, 9))
             
             # Make request with session
             response = self.session.get(niche_url, timeout=30)
@@ -189,30 +189,61 @@ class NicheBSScraper:
             
             # Progressive delay increase to avoid bot detection
             current_delay = self.delay
+            if i > 10:  # Start increasing delays earlier
+                current_delay = self.delay * 1.5
             if i > 20:  # After 20 schools, increase delay significantly
-                current_delay = self.delay * 2
+                current_delay = self.delay * 2.5
             if i > 35:  # After 35 schools, increase even more
-                current_delay = self.delay * 3
+                current_delay = self.delay * 4
+            
+            # Add extra delay every 10 requests to cool down
+            if i > 0 and i % 10 == 0:
+                cooldown_delay = random.uniform(15, 25)  # 15-25 second cooldown
+                print(f"    🧊 Cooldown break: waiting {cooldown_delay:.1f}s...")
+                time.sleep(cooldown_delay)
             
             # Random delay before each request
-            random_delay = random.uniform(current_delay, current_delay + 2)
+            random_delay = random.uniform(current_delay, current_delay + 3)
             if i > 0:  # No delay for first school
                 print(f"    Waiting {random_delay:.1f}s to avoid bot detection...")
                 time.sleep(random_delay)
+            
+            # Refresh headers periodically to simulate new browser sessions
+            if i > 0 and i % 15 == 0:
+                print(f"    🔄 Refreshing session headers...")
+                self._update_headers()
             
             # Scrape this school
             ratings = self.scrape_school_ratings(school_name)
             results[school_name] = ratings
             
-            # Check if we got blocked
-            if ratings.error and ("bot detection" in ratings.error.lower() or "access denied" in ratings.error.lower()):
-                print(f"    ⚠️ Bot detection encountered at school {i+1}. Increasing delays...")
-                # Increase base delay for remaining schools
-                self.delay = min(self.delay * 1.5, 15.0)  # Cap at 15 seconds
+            # Check if we got blocked and respond appropriately
+            if ratings.error:
+                error_msg = ratings.error.lower()
+                if "bot detection" in error_msg or "access denied" in error_msg or "captcha" in error_msg:
+                    print(f"    🚫 Bot detection encountered at school {i+1}. Implementing countermeasures...")
+                    
+                    # Increase base delay more aggressively
+                    self.delay = min(self.delay * 2.0, 20.0)  # Cap at 20 seconds
+                    
+                    # Take a longer break immediately
+                    emergency_delay = random.uniform(30, 60)
+                    print(f"    ⏸️ Emergency cooldown: waiting {emergency_delay:.1f}s...")
+                    time.sleep(emergency_delay)
+                    
+                    # Refresh headers to simulate new browser
+                    self._update_headers()
+                    
+                else:
+                    print(f"    ❌ Error for {school_name}: {ratings.error}")
             elif ratings.overall_grade:
                 print(f"    ✅ Successfully scraped {school_name}")
             else:
-                print(f"    ⚠️ Incomplete data for {school_name}")
+                print(f"    ⚠️ Incomplete data for {school_name} (possible soft blocking)")
+                
+                # Soft blocking - increase delays slightly
+                if not ratings.overall_grade and not ratings.error:
+                    self.delay = min(self.delay * 1.2, 15.0)
         
         successful_scrapes = sum(1 for r in results.values() if r.overall_grade and not r.error)
         print(f"  📊 Completed Niche scraping: {successful_scrapes}/{len(school_names)} successful")

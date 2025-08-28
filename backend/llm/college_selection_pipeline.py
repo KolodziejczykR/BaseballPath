@@ -264,33 +264,60 @@ class CollegeSelectionPipeline:
             if '```' in content:
                 start = content.find('[')
                 end = content.rfind(']') + 1
-                content = content[start:end]
+                if start >= 0 and end > start:
+                    content = content[start:end]
             
-            # Parse as Python list
-            import ast
-            school_list = ast.literal_eval(content)
+            # Find the JSON array in the content
+            if not content.startswith('['):
+                # Look for array start
+                start = content.find('[')
+                if start >= 0:
+                    end = content.rfind(']') + 1
+                    if end > start:
+                        content = content[start:end]
+            
+            print(f"Parsing content: {content[:200]}...")
+            
+            # Parse as JSON/Python list
+            import json
+            try:
+                school_list = json.loads(content)
+            except json.JSONDecodeError:
+                # Fallback to ast.literal_eval
+                import ast
+                school_list = ast.literal_eval(content)
             
             # Convert to (name, city) tuples
             parsed_schools = []
             for entry in school_list:
-                if isinstance(entry, str) and ', ' in entry:
-                    parts = entry.split(', ')
-                    if len(parts) >= 3:  # "School Name, City, State"
-                        school_name = parts[0]
+                if isinstance(entry, str):
+                    # Handle format: "School Name, City, State"
+                    parts = [p.strip() for p in entry.split(', ')]
+                    if len(parts) >= 3:
+                        # Assume last two parts are city, state
+                        school_name = ', '.join(parts[:-2])  # Everything except last two
                         city_state = f"{parts[-2]}, {parts[-1]}"  # Last two parts
-                    elif len(parts) == 2:  # "School Name, Location"
+                        parsed_schools.append((school_name, city_state))
+                    elif len(parts) == 2:
+                        # Assume format is "School Name, Location"
                         school_name = parts[0]
                         city_state = parts[1]
+                        parsed_schools.append((school_name, city_state))
                     else:
-                        continue
-                    
-                    parsed_schools.append((school_name, city_state))
+                        # Single name, no location info
+                        parsed_schools.append((entry, "Unknown"))
             
-            print(f"Parsed {len(parsed_schools)} schools from LLM response")
+            print(f"✅ Successfully parsed {len(parsed_schools)} schools from LLM response")
+            for i, (name, location) in enumerate(parsed_schools[:5]):  # Show first 5
+                print(f"  {i+1}. {name} - {location}")
+            if len(parsed_schools) > 5:
+                print(f"  ... and {len(parsed_schools) - 5} more")
+            
             return parsed_schools
             
         except Exception as e:
-            print(f"Error parsing school list: {e}")
+            print(f"❌ Error parsing school list: {e}")
+            print(f"Content sample: {content[:500]}")
             return None
     
     def _scrape_school_data(self, school_list: List[Tuple[str, str]]) -> Optional[List[SchoolInformation]]:
@@ -561,85 +588,6 @@ class CollegeSelectionPipeline:
         """
         
         return prompt
-    
-    def _parse_school_list(self, content: str) -> Optional[List[Tuple[str, str]]]:
-        """
-        Parse LLM response to extract list of (school_name, city_state) tuples
-        
-        Args:
-            content: Raw LLM response content
-            
-        Returns:
-            List of (school_name, city_state) tuples or None if parsing fails
-        """
-        try:
-            school_list = []
-            lines = content.strip().split('\n')
-            
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Handle numbered list format: "1. University Name - City, State"
-                if '. ' in line and ' - ' in line:
-                    # Remove the number prefix
-                    if line[0].isdigit():
-                        line = line.split('. ', 1)[1]
-                    
-                    # Split by " - " to separate school and city
-                    if ' - ' in line:
-                        parts = line.split(' - ', 1)
-                        if len(parts) == 2:
-                            school_name = parts[0].strip()
-                            city_state = parts[1].strip()
-                            school_list.append((school_name, city_state))
-                            continue
-                
-                # Handle format: "University Name, City, State" 
-                if ',' in line and not line.startswith('#'):
-                    parts = [p.strip() for p in line.split(',')]
-                    if len(parts) >= 3:
-                        # Last two parts are likely city, state
-                        school_name = ', '.join(parts[:-2])
-                        city_state = f"{parts[-2]}, {parts[-1]}"
-                        school_list.append((school_name, city_state))
-                        continue
-                    elif len(parts) == 2:
-                        # Could be "School Name, City State" format
-                        school_name = parts[0].strip()
-                        city_state = parts[1].strip()
-                        school_list.append((school_name, city_state))
-                        continue
-                
-                # Handle JSON-like format if LLM returns structured data
-                if line.startswith('{') or line.startswith('['):
-                    try:
-                        # Attempt to parse as JSON
-                        import json
-                        data = json.loads(content)
-                        if isinstance(data, list):
-                            for item in data:
-                                if isinstance(item, dict) and 'name' in item and 'location' in item:
-                                    school_list.append((item['name'], item['location']))
-                        elif isinstance(data, dict) and 'schools' in data:
-                            for school in data['schools']:
-                                if isinstance(school, dict) and 'name' in school and 'location' in school:
-                                    school_list.append((school['name'], school['location']))
-                        break
-                    except json.JSONDecodeError:
-                        continue
-            
-            if school_list:
-                print(f"  ✅ Parsed {len(school_list)} schools from LLM response")
-                return school_list
-            else:
-                print(f"  ❌ Failed to parse schools from response. Sample content:\n{content[:200]}...")
-                return None
-                
-        except Exception as e:
-            print(f"  ❌ Error parsing school list: {e}")
-            return None
 
 
 # Example usage
