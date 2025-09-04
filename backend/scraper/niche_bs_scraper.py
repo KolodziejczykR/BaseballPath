@@ -11,7 +11,6 @@ import re
 import random
 import requests
 from typing import Dict, List
-from dataclasses import dataclass, asdict
 from bs4 import BeautifulSoup
 from lxml import html
 from dotenv import load_dotenv
@@ -131,9 +130,22 @@ class NicheBSScraper:
             
             # Make request with session
             response = self.session.get(niche_url, timeout=30)
+            
+            # If initial request fails, try fallback URL with simplified name
             if response.status_code != 200:
-                return NicheRatings(school_name=school_name, niche_url=niche_url,
-                                  error=f"HTTP {response.status_code}")
+                fallback_url = self._get_fallback_general_url(niche_url)
+                if fallback_url and fallback_url != niche_url:
+                    print(f"    🔄 Initial URL failed, trying fallback: {fallback_url}")
+                    time.sleep(random.uniform(2, 4))  # Brief delay before retry
+                    response = self.session.get(fallback_url, timeout=30)
+                    if response.status_code == 200:
+                        niche_url = fallback_url  # Update URL for success logging
+                    else:
+                        return NicheRatings(school_name=school_name, niche_url=niche_url,
+                                          error=f"HTTP {response.status_code} (tried fallback)")
+                else:
+                    return NicheRatings(school_name=school_name, niche_url=niche_url,
+                                      error=f"HTTP {response.status_code}")
             
             # Check for bot detection
             if "access to this page has been denied" in response.text.lower():
@@ -184,20 +196,32 @@ class NicheBSScraper:
         if not getattr(self, '_session_warmed', False):
             self._warm_up_session()
         
+        total_schools = len(school_names)
         for i, school_name in enumerate(school_names):
-            print(f"  Scraping Niche data for {school_name} ({i+1}/{len(school_names)})")
+            print(f"  Scraping Niche data for {school_name} ({i+1}/{total_schools})")
             
-            # Progressive delay increase to avoid bot detection
+            # Progressive delay based on percentage of schools scraped (not total count)
+            progress_percent = i / total_schools if total_schools > 0 else 0
             current_delay = self.delay
-            if i > 10:  # Start increasing delays earlier
-                current_delay = self.delay * 1.5
-            if i > 20:  # After 20 schools, increase delay significantly
-                current_delay = self.delay * 2.5
-            if i > 35:  # After 35 schools, increase even more
-                current_delay = self.delay * 4
             
-            # Add extra delay every 10 requests to cool down
-            if i > 0 and i % 10 == 0:
+            if progress_percent >= 0.33:  # 33% through - increase delay
+                current_delay = self.delay * 1.5
+                if i == int(total_schools * 0.33):  # First time hitting 33%
+                    print(f"    📈 33% complete - increasing delays (1.5x)")
+            
+            if progress_percent >= 0.50:  # 50% through - increase delay more
+                current_delay = self.delay * 2
+                if i == int(total_schools * 0.50):  # First time hitting 50%
+                    print(f"    📈 50% complete - increasing delays (2.5x)")
+            
+            if progress_percent >= 0.75:  # 75% through - max delay
+                current_delay = self.delay * 3
+                if i == int(total_schools * 0.75):  # First time hitting 75%
+                    print(f"    📈 75% complete - maximum delays (4x)")
+            
+            # Add extra cooldown every 33% or every 10 requests, whichever is smaller
+            cooldown_interval = min(10, max(3, total_schools // 3))
+            if i > 0 and i % cooldown_interval == 0:
                 cooldown_delay = random.uniform(15, 25)  # 15-25 second cooldown
                 print(f"    🧊 Cooldown break: waiting {cooldown_delay:.1f}s...")
                 time.sleep(cooldown_delay)
@@ -208,8 +232,9 @@ class NicheBSScraper:
                 print(f"    Waiting {random_delay:.1f}s to avoid bot detection...")
                 time.sleep(random_delay)
             
-            # Refresh headers periodically to simulate new browser sessions
-            if i > 0 and i % 15 == 0:
+            # Refresh headers periodically
+            header_refresh_interval = min(5, max(4, total_schools // 4))
+            if i > 0 and i % header_refresh_interval == 0:
                 print(f"    🔄 Refreshing session headers...")
                 self._update_headers()
             
@@ -268,7 +293,7 @@ class NicheBSScraper:
             (' university', '-university'),
             (' college', '-college'),
             (' - ', '-'),
-            (' ', '-')
+            (' ', '-'),
         ]
         
         for old, new in replacements:
@@ -280,6 +305,44 @@ class NicheBSScraper:
         
         return f"{self.base_url}/{url_name}/"
     
+    def _get_fallback_general_url(self, original_url: str) -> str:
+        """
+        Create a fallback URL by keeping only the first 2 parts (up to 3rd dash)
+        This won't work for all schools but helps in many cases
+        
+        Examples:
+        - louisiana-state-university-and-agricultural-mechanical-college -> louisiana-state-university
+        - university-of-pittsburgh-pittsburgh-campus -> university-of-pittsburgh
+        
+        Args:
+            original_url: The original Niche URL that failed
+            
+        Returns:
+            Simplified fallback URL or None if no simplification possible
+        """
+        # Extract the school name portion from URL
+        # URL format: https://www.niche.com/colleges/{school-name}/
+        if '/colleges/' not in original_url:
+            return None
+        
+        # Get the school name part
+        school_part = original_url.split('/colleges/')[1].rstrip('/')
+        
+        # Split by dashes
+        parts = school_part.split('-')
+        
+        # Need at least 3 parts to simplify (keep first 2, remove rest)
+        if len(parts) < 3:
+            return None  # Can't simplify further
+        
+        # Take only the first 2 parts (everything before the 3rd dash)
+        simplified_name = '-'.join(parts[:2])
+        
+        # Don't oversimplify - need meaningful content
+        if not simplified_name or len(simplified_name) < 5:
+            return None
+        
+        return f"{self.base_url}/{simplified_name}/"
     
     def _extract_category_grades(self, tree, ratings: NicheRatings):
         """Extract category grades using class-based approach"""

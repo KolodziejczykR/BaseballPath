@@ -232,8 +232,28 @@ class CollegeScorecardRetriever:
         """
         if ',' in city:
             city_part, state_part = [x.strip() for x in city.split(',', 1)]
-            if len(state_part) == 2:
+            
+            # Convert full state names to abbreviations
+            state_abbreviations = {
+                'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
+                'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
+                'Hawaii': 'HI', 'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA',
+                'Kansas': 'KS', 'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+                'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS', 'Missouri': 'MO',
+                'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+                'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH',
+                'Oklahoma': 'OK', 'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+                'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT', 'Vermont': 'VT',
+                'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY'
+            }
+            
+            # Convert full state name to abbreviation if needed
+            if state_part in state_abbreviations:
+                state_part = state_abbreviations[state_part]
+                print(f"  🔄 Converted full state name to abbreviation: {state_part}")
+            elif len(state_part) == 2:
                 state_part = state_part.upper()
+            
             return city_part, state_part
         else:
             return city, None
@@ -441,6 +461,73 @@ class CollegeScorecardRetriever:
             avg_sat=safe_int(school_data.get('latest.admissions.sat_scores.average.overall')),
             avg_act=safe_int(school_data.get('latest.admissions.act_scores.midpoint.cumulative'))
         )
+
+    def get_matched_school_name(self, school_name: str, city: str = None) -> Optional[str]:
+        """
+        Get the actual matched school name from the API (for cache builder)
+        
+        Args:
+            school_name: Name of the school to look up
+            city: Optional city/state to help narrow the search
+            
+        Returns:
+            The actual matched school name from the API, or None if not found
+        """
+        try:
+            # If city provided, try city-based fuzzy search first
+            if city:
+                # Parse city/state
+                city_part, state_part = self._parse_city_state(city)
+                
+                # Search all schools in this city/state
+                search_params = {
+                    'api_key': self.api_key,
+                    'fields': 'id,school.name,latest.student.size',
+                    'per_page': 50
+                }
+                
+                # Add location filters
+                if city_part:
+                    search_params['school.city'] = city_part
+                if state_part:
+                    search_params['school.state'] = state_part
+                
+                response = self.session.get(self.base_url, params=search_params, timeout=10)
+                response.raise_for_status()
+                
+                data = response.json()
+                schools = data.get('results', [])
+                
+                if schools:
+                    # Find best fuzzy match
+                    best_match = self._find_best_fuzzy_match(school_name, schools)
+                    if best_match:
+                        return best_match.get('school.name', '')
+            
+            # Fallback to name-based search
+            search_params = {
+                'api_key': self.api_key,
+                'school.name': school_name,
+                'fields': 'id,school.name,latest.student.size',
+                'per_page': 20
+            }
+            
+            response = self.session.get(self.base_url, params=search_params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            schools = data.get('results', [])
+            
+            if schools:
+                best_match = self._find_best_fuzzy_match(school_name, schools)
+                if best_match:
+                    return best_match.get('school.name', '')
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error getting matched school name: {e}")
+            return None
 
 
 def main():
