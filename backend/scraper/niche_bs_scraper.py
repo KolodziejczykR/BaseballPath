@@ -278,6 +278,39 @@ class NicheBSScraper:
     
     def _build_niche_url(self, school_name: str) -> str:
         """Build Niche URL from school name"""
+        
+        # Check if school name is in the predefined mapping first
+        school_map_d1 = {
+            'Texas Tech University': 'texas-tech-university',
+            'Texas A & M University-College Station': 'texas-a-and-m-university',
+            'University at Albany': 'university-at-albany-suny',
+            'The University of Texas at Austin': 'university-of-texas-austin',
+            'Louisiana State University and Agricultural & Mechanical College': 'louisiana-state-university',
+            'University of Pittsburgh-Pittsburgh Campus': 'university-of-pittsburgh',
+            'University of Missouri-Columbia': 'university-of-missouri',
+            'The University of Tennessee-Knoxville': 'university-of-tennessee',
+            'University of North Carolina at Chapel Hill': 'university-of-north-carolina-at-chapel-hill',
+            'Virginia Polytechnic Institute and State University': 'virginia-tech',
+            'University of Oklahoma-Norman Campus': 'university-of-oklahoma',
+            'The University of Texas at El Paso': 'university-of-texas-el-paso',
+            "Missouri State University-Springfield": 'missouri-state-university',
+            "University of Hawaii at Manoa": 'university-of-hawaii-at-manoa',
+            'University of Nebraska at Omaha': 'university-of-nebraska-at-omaha',
+            "The University of Texas at San Antonio": 'the-university-of-texas-at-san-antonio',
+            "Pennsylvania State University-Main Campus": 'penn-state',
+            "University of North Carolina at Charlotte": 'university-of-north-carolina-at-charlotte',
+            "Mount St. Mary's University": 'mount-st-marys-university',
+            "California Polytechnic State University-San Luis Obispo": "cal-poly-san-luis-obispo",
+            "University of South Carolina-Columbia": "university-of-south-carolina",
+            "The University of Texas at Arlington": "university-of-texas-arlington",
+            "The University of Tennessee-Martin": "university-of-tennessee-at-martin",
+        }
+        
+        # If school name is in the mapping, use the predefined simplified name
+        if school_name in school_map_d1:
+            return f"{self.base_url}/{school_map_d1[school_name]}/"
+        
+        # Otherwise, use the standard URL generation logic
         url_name = school_name.lower().strip()
         
         # Common replacements (order matters)
@@ -303,6 +336,10 @@ class NicheBSScraper:
         url_name = re.sub(r'[^a-z0-9-]', '', url_name)
         url_name = re.sub(r'-+', '-', url_name).strip('-')
         
+        # Remove '-main-campus' if present (keep everything before it)
+        if '-main-campus' in url_name:
+            url_name = url_name.split('-main-campus')[0]
+        
         return f"{self.base_url}/{url_name}/"
     
     def _get_fallback_general_url(self, original_url: str) -> str:
@@ -327,7 +364,7 @@ class NicheBSScraper:
         
         # Get the school name part
         school_part = original_url.split('/colleges/')[1].rstrip('/')
-        
+
         # Split by dashes
         parts = school_part.split('-')
         
@@ -335,8 +372,8 @@ class NicheBSScraper:
         if len(parts) < 3:
             return None  # Can't simplify further
         
-        # Take only the first 2 parts (everything before the 3rd dash)
-        simplified_name = '-'.join(parts[:2])
+        # Take only the first 2 parts (everything before the 4rd dash)
+        simplified_name = '-'.join(parts[:3])
         
         # Don't oversimplify - need meaningful content
         if not simplified_name or len(simplified_name) < 5:

@@ -11,7 +11,7 @@ from typing import List, Tuple, Optional
 from datetime import datetime
 
 # Add project root to Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -24,11 +24,17 @@ class BackgroundCacheBuilder:
     """Builds cache by scraping popular schools with human-like timing patterns"""
     
     def __init__(self):
+        self.process_id = "D2_BUILDER"
         self.cache = SchoolDataCache()
         self.scorecard_api = CollegeScorecardRetriever()
-        self.niche_scraper = NicheBSScraper(delay=0)  # We'll handle timing manually
+        # D2 Builder - Firefox macOS configuration
+        self.niche_scraper = NicheBSScraper(
+            delay=0.5,
+        )
         self.session_counter = 0
         self.total_processed = 0
+        self.session_rotation_limit = 6  # Rotate every 6 schools
+        self.delay_range = (90, 160)  # 90-160 seconds
         
     def get_popular_schools_list(self) -> List[str]:
         """
@@ -44,24 +50,26 @@ class BackgroundCacheBuilder:
             "Eckerd College, St. Petersburg, FL",
             "Lynn University, Boca Raton, FL",
             "Embry-Riddle Aeronautical University, Daytona Beach, FL",
-            "Flagler College, St. Augustine, FL",
+            "Saint Leo University, Saint Leo, FL",
+            "Florida Institute of Technology, Melbourne, FL",
             "Valdosta State University, Valdosta, GA",
             "Columbus State University, Columbus, GA",
-            "University of West Georgia, Carrollton, GA",
             "Georgia College and State University, Milledgeville, GA",
             "Augusta University, Augusta, GA",
             "University of North Georgia, Dahlonega, GA",
-            "Young Harris College, Young Harris, GA",
+            "Georgia Southwestern State University, Americus, GA",
+            "Flagler College, St. Augustine, FL",
             "University of West Florida, Pensacola, FL",
             "Delta State University, Cleveland, MS",
             "University of Montevallo, Montevallo, AL",
             "University of West Alabama, Livingston, AL",
-            "Spring Hill College, Mobile, AL",
+            "Auburn University at Montgomery, Montgomery, AL",
             "Shorter University, Rome, GA",
             "Lee University, Cleveland, TN",
-            "Carson-Newman University, Jefferson City, TN",
-            "Lincoln Memorial University, Harrogate, TN",
-            "Tusculum University, Greeneville, TN",
+            "Union University, Jackson, TN",
+            "Christian Brothers University, Memphis, TN",
+            "Mississippi College, Clinton, MS",
+            "University of Alabama in Huntsville, Huntsville, AL",
             "Trevecca Nazarene University, Nashville, TN",
             "Kentucky Wesleyan College, Owensboro, KY",
             "Ashland University, Ashland, OH",
@@ -69,100 +77,168 @@ class BackgroundCacheBuilder:
             "Cedarville University, Cedarville, OH",
             "Tiffin University, Tiffin, OH",
             "Walsh University, North Canton, OH",
-            "Malone University, Canton, OH",
-            "Lake Erie College, Painesville, OH",
             "Ohio Dominican University, Columbus, OH",
-            "Wayne State University, Detroit, MI",
+            "Lake Erie College, Painesville, OH",
             "Grand Valley State University, Allendale, MI",
+            "Wayne State University, Detroit, MI",
             "Saginaw Valley State University, University Center, MI",
-            "Ferris State University, Big Rapids, MI",
-            "Northwood University, Midland, MI",
             "Davenport University, Grand Rapids, MI",
-            "Northern Michigan University, Marquette, MI",
-            "Michigan Tech University, Houghton, MI",
+            "Purdue University Northwest, Hammond, IN",
+            "Roosevelt University, Chicago, IL",
             "University of Indianapolis, Indianapolis, IN",
-            "University of Southern Indiana, Evansville, IN",
-            "Bellarmine University, Louisville, KY",
-            "Southern Nazarene University, Bethany, OK",
-            "Southwestern Oklahoma State University, Weatherford, OK",
-            "Northeastern State University, Tahlequah, OK",
-            "East Central University, Ada, OK",
-            "University of Central Oklahoma, Edmond, OK",
-            "University of Central Missouri, Warrensburg, MO",
-            "Northwest Missouri State University, Maryville, MO",
-            "Missouri Southern State University, Joplin, MO",
-            "Missouri Western State University, St. Joseph, MO",
-            "Lincoln University of Missouri, Jefferson City, MO",
-            "Truman State University, Kirksville, MO",
-            "Emporia State University, Emporia, KS",
-            "Pittsburg State University, Pittsburg, KS",
-            "Fort Hays State University, Hays, KS",
-            "Washburn University, Topeka, KS",
-            "Newman University, Wichita, KS",
-            "University of Nebraska at Kearney, Kearney, NE",
-            "Wayne State College, Wayne, NE",
-            "Northern State University, Aberdeen, SD",
-            "University of Sioux Falls, Sioux Falls, SD",
-            "Augustana University, Sioux Falls, SD",
-            "Minot State University, Minot, ND",
-            "University of Mary, Bismarck, ND",
-            "Concordia University St. Paul, St. Paul, MN",
-            "Winona State University, Winona, MN",
-            "Bemidji State University, Bemidji, MN",
-            "Southwest Minnesota State University, Marshall, MN",
-            "St. Cloud State University, St. Cloud, MN",
-            "Upper Iowa University, Fayette, IA",
-            "Wayne State University, Wayne, MI",
+            "University of Illinois Springfield, Springfield, IL",
+            "Lewis University, Romeoville, IL",
+            "McKendree University, Lebanon, IL",
+            "Quincy University, Quincy, IL",
+            "University of Missouri–St. Louis, St. Louis, MO",
+            "Maryville University, St. Louis, MO",
+            "Missouri University of Science and Technology, Rolla, MO",
             "Rockhurst University, Kansas City, MO",
             "Drury University, Springfield, MO",
-            "Maryville University, St. Louis, MO",
-            "Missouri S&T, Rolla, MO",
-            "Southern Arkansas University, Magnolia, AR",
+            "Truman State University, Kirksville, MO",
+            "William Jewell College, Liberty, MO",
+            "Southwest Baptist University, Bolivar, MO",
+            "University of Central Missouri, Warrensburg, MO",
+            "Missouri Southern State University, Joplin, MO",
+            "Missouri Western State University, St. Joseph, MO",
+            "Pittsburg State University, Pittsburg, KS",
+            "Emporia State University, Emporia, KS",
+            "Washburn University, Topeka, KS",
+            "Rogers State University, Claremore, OK",
+            "Northeastern State University, Tahlequah, OK",
+            "University of Central Oklahoma, Edmond, OK",
+            "Fort Hays State University, Hays, KS",
+            "Central Washington University, Ellensburg, WA",
+            "Montana State University Billings, Billings, MT",
+            "Saint Martin’s University, Lacey, WA",
+            "Western Oregon University, Monmouth, OR",
+            "Northwest Nazarene University, Nampa, ID",
+            "Adams State University, Alamosa, CO",
+            "Colorado Christian University, Lakewood, CO",
+            "Colorado Mesa University, Grand Junction, CO",
+            "Colorado School of Mines, Golden, CO",
+            "Colorado State University Pueblo, Pueblo, CO",
+            "Metropolitan State University of Denver, Denver, CO",
+            "Regis University, Denver, CO",
+            "University of Colorado Colorado Springs, Colorado Springs, CO",
+            "New Mexico Highlands University, Las Vegas, NM",
+            "Academy of Art University, San Francisco, CA",
+            "Azusa Pacific University, Azusa, CA",
+            "Biola University, La Mirada, CA",
+            "Concordia University Irvine, Irvine, CA",
+            "Fresno Pacific University, Fresno, CA",
+            "Point Loma Nazarene University, San Diego, CA",
+            "University of Hawai‘i at Hilo, Hilo, HI",
+            "California State University, Dominguez Hills, Carson, CA",
+            "California State University, East Bay, Hayward, CA",
+            "California State University, Los Angeles, Los Angeles, CA",
+            "California State University, Monterey Bay, Seaside, CA",
+            "California State University, San Bernardino, San Bernardino, CA",
+            "California State University, San Marcos, San Marcos, CA",
+            "California State University, Stanislaus, Turlock, CA",
+            "California State University, Chico, Chico, CA",
+            "Sonoma State University, Rohnert Park, CA",
+            "California State Polytechnic University, Pomona, Pomona, CA",
+            "Angelo State University, San Angelo, TX",
+            "West Texas A&M University, Canyon, TX",
+            "Texas A&M University–Kingsville, Kingsville, TX",
+            "Texas A&M International University, Laredo, TX",
+            "University of Texas Permian Basin, Odessa, TX",
+            "University of Texas at Tyler, Tyler, TX",
+            "Lubbock Christian University, Lubbock, TX",
+            "Oklahoma Christian University, Edmond, OK",
+            "St. Edward’s University, Austin, TX",
+            "St. Mary’s University, San Antonio, TX",
             "Henderson State University, Arkadelphia, AR",
             "Ouachita Baptist University, Arkadelphia, AR",
             "Arkansas Tech University, Russellville, AR",
+            "Southern Arkansas University, Magnolia, AR",
+            "Oklahoma Baptist University, Shawnee, OK",
             "Southeastern Oklahoma State University, Durant, OK",
-            "Texas A&M University-Commerce, Commerce, TX",
-            "Angelo State University, San Angelo, TX",
-            "West Texas A&M University, Canyon, TX",
-            "Lubbock Christian University, Lubbock, TX",
-            "St. Edward's University, Austin, TX",
-            "St. Mary's University, San Antonio, TX",
-            "Texas A&M International University, Laredo, TX",
-            "Oklahoma Christian University, Edmond, OK",
-            "Rogers State University, Claremore, OK",
+            "Southwestern Oklahoma State University, Weatherford, OK",
+            "Northwestern Oklahoma State University, Alva, OK",
             "Harding University, Searcy, AR",
-            "Henderson State University, Arkadelphia, AR",
-            "Christian Brothers University, Memphis, TN",
-            "Union University, Jackson, TN",
-            "Houston Christian University, Houston, TX",
-            "Palm Beach Atlantic University, West Palm Beach, FL",
-            "Barry University, Miami Shores, FL",
-            "Lenoir-Rhyne University, Hickory, NC",
-            "Catawba College, Salisbury, NC",
-            "Wingate University, Wingate, NC",
-            "Belmont Abbey College, Belmont, NC",
-            "Queens University of Charlotte, Charlotte, NC",
-            "Mount Olive University, Mount Olive, NC",
-            "Barton College, Wilson, NC",
-            "North Greenville University, Tigerville, SC",
-            "Erskine College, Due West, SC",
-            "Newberry College, Newberry, SC",
-            "Lander University, Greenwood, SC",
-            "Francis Marion University, Florence, SC",
-            "Anderson University, Anderson, SC",
-            "Chowan University, Murfreesboro, NC",
-            "Shepherd University, Shepherdstown, WV",
-            "West Liberty University, West Liberty, WV",
-            "Wheeling University, Wheeling, WV",
-            "Charleston University, Charleston, WV",
-            "Fairmont State University, Fairmont, WV",
-            "Glenville State University, Glenville, WV",
-            "Concord University, Athens, WV",
+            "Albany State University, Albany, GA",
+            "Edward Waters University, Jacksonville, FL",
+            "Kentucky State University, Frankfort, KY",
+            "Lane College, Jackson, TN",
+            "Miles College, Fairfield, AL",
+            "Savannah State University, Savannah, GA",
+            "Spring Hill College, Mobile, AL",
+            "Tuskegee University, Tuskegee, AL",
             "Bluefield State University, Bluefield, WV",
-            "Davis & Elkins College, Elkins, WV",
+            "Virginia State University, Petersburg, VA",
+            "Claflin University, Orangeburg, SC",
+            "Chowan University, Murfreesboro, NC",
+            "Francis Marion University, Florence, SC",
+            "Erskine College, Due West, SC",
+            "North Greenville University, Tigerville, SC",
+            "University of Mount Olive, Mount Olive, NC",
+            "Belmont Abbey College, Belmont, NC",
+            "Barton College, Wilson, NC",
+            "Lees-McRae College, Banner Elk, NC",
+            "King University, Bristol, TN",
+            "Southern Wesleyan University, Central, SC",
+            "University of North Carolina at Pembroke, Pembroke, NC",
+            "Anderson University, Anderson, SC",
+            "Carson-Newman University, Jefferson City, TN",
+            "Catawba College, Salisbury, NC",
+            "Lenoir-Rhyne University, Hickory, NC",
+            "Lincoln Memorial University, Harrogate, TN",
+            "Mars Hill University, Mars Hill, NC",
+            "Newberry College, Newberry, SC",
+            "Tusculum University, Greeneville, TN",
+            "Wingate University, Wingate, NC",
+            "Limestone University, Gaffney, SC",
+            "Emory and Henry College, Emory, VA",
+            "University of New Haven, West Haven, CT",
+            "Pace University, Pleasantville, NY",
+            "Adelphi University, Garden City, NY",
+            "American International College, Springfield, MA",
+            "Assumption University, Worcester, MA",
+            "Bentley University, Waltham, MA",
+            "Franklin Pierce University, Rindge, NH",
+            "Saint Anselm College, Manchester, NH",
+            "Saint Michael’s College, Colchester, VT",
+            "Southern New Hampshire University, Manchester, NH",
+            "Bloomfield College of Montclair State University, Bloomfield, NJ",
+            "Caldwell University, Caldwell, NJ",
+            "Chestnut Hill College, Philadelphia, PA",
+            "Dominican University New York, Orangeburg, NY",
+            "Felician University, Rutherford, NJ",
+            "Georgian Court University, Lakewood, NJ",
+            "Goldey-Beacom College, Wilmington, DE",
+            "Thomas Jefferson University, Philadelphia, PA",
+            "Post University, Waterbury, CT",
+            "Wilmington University, New Castle, DE",
+            "D’Youville University, Buffalo, NY",
+            "Mercy University, Dobbs Ferry, NY",
+            "Molloy University, Rockville Centre, NY",
+            "Queens College, Queens, NY",
+            "St. Thomas Aquinas College, Sparkill, NY",
+            "Fairmont State University, Fairmont, WV",
+            "Frostburg State University, Frostburg, MD",
+            "University of Charleston, Charleston, WV",
+            "Concord University, Athens, WV",
+            "Davis and Elkins College, Elkins, WV",
+            "Glenville State University, Glenville, WV",
+            "West Liberty University, West Liberty, WV",
             "West Virginia State University, Institute, WV",
-            "Salem University, Salem, WV"
+            "Wheeling University, Wheeling, WV",
+            "Seton Hill University, Greensburg, PA",
+            "Shippensburg University, Shippensburg, PA",
+            "Slippery Rock University, Slippery Rock, PA",
+            "Indiana University of Pennsylvania, Indiana, PA",
+            "Kutztown University of Pennsylvania, Kutztown, PA",
+            "Millersville University, Millersville, PA",
+            "West Chester University, West Chester, PA",
+            "Gannon University, Erie, PA",
+            "Mercyhurst University, Erie, PA",
+            "Bloomsburg University, Bloomsburg, PA",
+            "Pennsylvania Western University California, California, PA",
+            "East Stroudsburg University, East Stroudsburg, PA",
+            "Lock Haven University, Lock Haven, PA",
+            "University of Pittsburgh at Johnstown, Johnstown, PA"
         ]
         
         return schools
@@ -292,9 +368,9 @@ class BackgroundCacheBuilder:
                 print(f"  ❌ College Scorecard: No data found")
                 scorecard_data = None
             
-            # Fetch Niche data with random delay
-            delay = random.randint(60, 150)  # 1-2.5 minutes
-            print(f"  ⏱️ Waiting {delay} seconds before Niche scraping...")
+            # Fetch Niche data with random delay (D2 specific timing)
+            delay = random.randint(*self.delay_range)
+            print(f"  ⏱️ [{self.process_id}] Waiting {delay} seconds before Niche scraping...")
             time.sleep(delay)
             
             print(f"  🎓 Fetching Niche data...")
@@ -333,16 +409,21 @@ class BackgroundCacheBuilder:
     
     def rotate_session(self):
         """Rotate the scraping session to avoid detection"""
-        print(f"\n🔄 Rotating session (processed {self.session_counter} schools this session)")
+        print(f"\n🔄 [{self.process_id}] Rotating session (processed {self.session_counter} schools this session)")
         try:
             # Close session (requests session doesn't need explicit close but we can clear it)
             if hasattr(self.niche_scraper, 'session'):
                 self.niche_scraper.session.close()
-            time.sleep(random.randint(30, 60))  # Brief pause between sessions
-            self.niche_scraper = NicheBSScraper(delay=0)
+            time.sleep(random.randint(45, 90))  # Brief pause between sessions (D2 timing)
+            # Reinitialize with D2 configuration
+            self.niche_scraper = NicheBSScraper(
+                delay=0,
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+                accept_language="en-US,en;q=0.8,de;q=0.6"
+            )
             self.session_counter = 0
         except Exception as e:
-            print(f"  ⚠️ Session rotation warning: {e}")
+            print(f"  ⚠️ [{self.process_id}] Session rotation warning: {e}")
     
     def take_break(self, minutes: int = 15):
         """Take a longer break to simulate human behavior"""
@@ -353,7 +434,7 @@ class BackgroundCacheBuilder:
         """
         Main method to run the background caching process
         """
-        print("🚀 Starting Background School Cache Builder")
+        print(f"🚀 Starting Background School Cache Builder [{self.process_id}]")
         print("=" * 60)
         
         # Get schools list
@@ -377,11 +458,12 @@ class BackgroundCacheBuilder:
         # Randomize the order
         random.shuffle(uncached_schools)
         
-        print(f"\n🎯 Starting to process {len(uncached_schools)} uncached schools...")
+        print(f"\n🎯 [{self.process_id}] Starting to process {len(uncached_schools)} uncached schools...")
         print(f"📋 Strategy:")
-        print(f"   • Random delays: 120-240 seconds between Niche requests")
-        print(f"   • Session rotation: Every 5 schools (increased stealth)")
-        print(f"   • Break time: 15 minutes every 30 schools")
+        print(f"   • Random delays: {self.delay_range[0]}-{self.delay_range[1]} seconds between Niche requests")
+        print(f"   • Session rotation: Every {self.session_rotation_limit} schools")
+        print(f"   • Break time: 12-18 minutes every 30-35 schools")
+        print(f"   • User Agent: Firefox macOS")
         print(f"   • Immediate caching: Each school cached before moving to next")
         
         successful_schools = 0
@@ -406,13 +488,13 @@ class BackgroundCacheBuilder:
                 self.session_counter += 1
                 self.total_processed += 1
                 
-                # Session rotation every 5 schools
-                if self.session_counter >= 5:
+                # Session rotation (D2 specific frequency)
+                if self.session_counter >= self.session_rotation_limit:
                     self.rotate_session()
                 
-                # Take break every 30 schools
-                if i % 30 == 0 and i < len(uncached_schools):
-                    self.take_break(10)  # 10-minute break
+                # Take break every 18 schools (D2 pattern)
+                if i % 18 == 0 and i < len(uncached_schools):
+                    self.take_break(random.randint(12, 18))  # 12-18 minute break
                 
                 # Progress summary every 10 schools
                 if i % 10 == 0:

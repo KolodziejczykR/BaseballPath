@@ -11,7 +11,7 @@ from typing import List, Tuple, Optional
 from datetime import datetime
 
 # Add project root to Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -24,11 +24,17 @@ class BackgroundCacheBuilder:
     """Builds cache by scraping popular schools with human-like timing patterns"""
     
     def __init__(self):
+        self.process_id = "D1_BUILDER"
         self.cache = SchoolDataCache()
         self.scorecard_api = CollegeScorecardRetriever()
-        self.niche_scraper = NicheBSScraper(delay=0)  # We'll handle timing manually
+        # D1 Builder - Chrome Windows configuration
+        self.niche_scraper = NicheBSScraper(
+            delay=0.5,
+        )
         self.session_counter = 0
         self.total_processed = 0
+        self.session_rotation_limit = 4  # Rotate every 4 schools
+        self.delay_range = (45, 80)  # 70-120 seconds
         
     def get_popular_schools_list(self) -> List[str]:
         """
@@ -54,7 +60,6 @@ class BackgroundCacheBuilder:
             
             # Power 4 - ACC
             "Boston University, Boston, MA",
-            "Carnegie Mellon University, Pittsburgh, PA",
             "Boston College, Chestnut Hill, MA",
             "Clemson University, Clemson, SC",
             "Duke University, Durham, NC",
@@ -132,10 +137,8 @@ class BackgroundCacheBuilder:
             "University of Rhode Island, Kingston, RI",
             "University of Vermont, Burlington, VT",
             "University of Maine, Orono, ME",
-            "University of New Haven, West Haven, CT",
             "Merrimack College, North Andover, MA",
             "Quinnipiac University, Hamden, CT",
-            "Rhode Island College, Providence, RI",
             "St. John's University, Queens, NY",
             "Fordham University, Bronx, NY",
             "Iona College, New Rochelle, NY",
@@ -147,22 +150,12 @@ class BackgroundCacheBuilder:
             "Stony Brook University, Stony Brook, NY",
             "Binghamton University, Binghamton, NY",
             "Hofstra University, Hempstead, NY",
-            "Yeshiva University, New York, NY",
             "Fairleigh Dickinson University, Madison, NJ",
             "Rutgers University Newark, Newark, NJ",
             "Seton Hall University, South Orange, NJ",
-            "Montclair State University, Montclair, NJ",
-            "Rowan University, Glassboro, NJ",
-            "The College of New Jersey, Ewing, NJ",
-            "Stevens Institute of Technology, Hoboken, NJ",
             "New Jersey Institute of Technology, Newark, NJ",
             "St. Peter's University, Jersey City, NJ",
             "Monmouth University, West Long Branch, NJ",
-            "Rensselaer Polytechnic Institute, Troy, NY",
-            "Catholic University of America, Washington, DC",
-            "Skidmore College, Saratoga Springs, NY",
-            "Union College, Schenectady, NY",
-            "Ithaca College, Ithaca, NY",
             "University of New Hampshire, Durham, NH",
             "Fairfield University, Fairfield, CT",
             "Sacred Heart University, Fairfield, CT",
@@ -186,8 +179,6 @@ class BackgroundCacheBuilder:
             "Stephen F. Austin State University, Nacogdoches, TX",
             "Texas A&M University Corpus Christi, Corpus Christi, TX",
             "University of Texas at Arlington, Arlington, TX",
-            "Trinity University, San Antonio, TX",
-            "University of Mary Hardin-Baylor, Belton, TX",
             
             # Popular Florida Schools
             "Florida International University, Miami, FL",
@@ -196,8 +187,6 @@ class BackgroundCacheBuilder:
             "University of South Florida, Tampa, FL",
             "University of North Florida, Jacksonville, FL",
             "Florida Gulf Coast University, Fort Myers, FL",
-            "University of Central Florida, Orlando, FL",
-            "Florida Institute of Technology, Melbourne, FL",
             "Stetson University, DeLand, FL",
             
             # Popular Mid-Atlantic Schools
@@ -243,7 +232,6 @@ class BackgroundCacheBuilder:
             "Murray State University, Murray, KY",
             "Southern Illinois University, Carbondale, IL",
             "Illinois State University, Normal, IL",
-            "Bradley University, Peoria, IL",  # you had it under Midwest, keep
             "Ball State University, Muncie, IN",
             "Miami University, Oxford, OH",
             "Kent State University, Kent, OH",
@@ -255,18 +243,154 @@ class BackgroundCacheBuilder:
             "Northern Illinois University, DeKalb, IL",
             "University of Akron, Akron, OH",
             "University of Buffalo, Buffalo, NY",
-            "University of Maine, Orono, ME",  # already included
             "University of Hartford, Hartford, CT",
             "Manhattan College, Riverdale, NY",
-            "Fairfield University, Fairfield, CT",  # already in your list
-            "Sacred Heart University, Fairfield, CT",  # already in your list
             "Bryant University, Smithfield, RI",
             "Long Island University, Brooklyn, NY",
             "Central Connecticut State University, New Britain, CT",
             "Mount St. Mary’s University, Emmitsburg, MD",
+            
+            "Abilene Christian University, Abilene, TX",
+            "Alabama A&M University, Normal, AL",
+            "Alabama State University, Montgomery, AL",
+            "Alcorn State University, Lorman, MS",
+            "Appalachian State University, Boone, NC",
+            "Arizona State University, Tempe, AZ",
+            "Army West Point, West Point, NY",
+            "Austin Peay State University, Clarksville, TN",
+            "Bellarmine University, Louisville, KY",
+            "Bethune-Cookman University, Daytona Beach, FL",
+            "University of Maryland Baltimore County, Baltimore, MD",
+            "UMass Lowell, Lowell, MA",
+            "University of Memphis, Memphis, TN",
+            "University of Alabama at Birmingham, Birmingham, AL",
+            "Tulane University, New Orleans, LA",
+            "Central Connecticut State University, New Britain, CT",
+            "Wagner College, Staten Island, NY",
+            "Stonehill College, Easton, MA",
+            "Le Moyne College, Syracuse, NY",
+            "Canisius University, Buffalo, NY",
+            "Rider University, Lawrenceville, NJ",
+            "William & Mary, Williamsburg, VA",
+            "Elon University, Elon, NC",
+            "Towson University, Towson, MD",
+            "Davidson College, Davidson, NC",
+            "University of Richmond, Richmond, VA",
+            "Saint Joseph’s University, Philadelphia, PA",
+            "Saint Louis University, St. Louis, MO",
+            "Wright State University, Dayton, OH",
+            "Youngstown State University, Youngstown, OH",
+            "Northern Kentucky University, Highland Heights, KY",
+            "Oakland University, Rochester, MI",
+            "University of Wisconsin - Milwaukee, Milwaukee, WI",
+            "Purdue Fort Wayne, Fort Wayne, IN",
+            "Navy (U.S. Naval Academy), Annapolis, MD",
+            "College of Holy Cross, Worcester, MA",
+            "Lafayette College, Easton, PA",
+            "Lehigh University, Bethlehem, PA",
+            "Bucknell University, Lewisburg, PA",
+            "Indiana State University, Terre Haute, IN",
+            "Missouri State University, Springfield, MO",
+            "Valparaiso University, Valparaiso, IN",
+            "Ohio University, Athens, OH",
+            "Morehead State University, Morehead, KY",
+            "University of Tennessee at Martin, Martin, TN",
+            "Southeast Missouri State University, Cape Girardeau, MO",
+            "Southern Illinois University Edwardsville, Edwardsville, IL",
+            "Western Illinois University, Macomb, IL",
+            "University of North Dakota State, Fargo, ND",
+            "South Dakota State University, Brookings, SD",
+            "Oral Roberts University, Tulsa, OK",
+            "University of Nebraska Omaha, Omaha, NE",
+            "University of St. Thomas, Saint Paul, MN",
+            "Air Force Academy, USAF Academy, CO",
+            "Fresno State University, Fresno, CA",
+            "University of Nevada, Reno, NV",
+            "University of New Mexico, Albuquerque, NM",
+            "San José State University, San Jose, CA",
+            "University of Hawai‘i at Mānoa, Honolulu, HI",
+            "California State University Northridge, Northridge, CA",
+            "California State University Bakersfield, Bakersfield, CA",
+            "Sacramento State University, Sacramento, CA",
+            "California Baptist University, Riverside, CA",
+            "Grand Canyon University, Phoenix, AZ",
+            "Seattle University, Seattle, WA",
+            "Tarleton State University, Stephenville, TX",
+            "University of Texas at Rio Grande Valley, Edinburg, TX",
+            "Utah Valley University, Orem, UT",
+            "Saint Mary’s College of California, Moraga, CA",
+            "University of the Pacific, Stockton, CA",
+            "San Francisco, San Francisco, CA",
+            "Gonzaga University, Spokane, WA",
+            "McNeese State University, Lake Charles, LA",
+            "Nicholls State University, Thibodaux, LA",
+            "University of New Orleans, New Orleans, LA",
+            "Southeastern Louisiana University, Hammond, LA",
+            "Northwestern State University, Natchitoches, LA",
+            "University of the Incarnate Word, San Antonio, TX",
+            "Lamar University, Beaumont, TX",
+            "Houston Christian University, Houston, TX",
+            "Southern Miss, Hattiesburg, MS",
+            "University of Louisiana at Lafayette, Lafayette, LA",
+            "University of Louisiana at Monroe, Monroe, LA",
+            "University of North Carolina Greensboro, Greensboro, NC",
+            "Western Carolina University, Cullowhee, NC",
+            "Samford University, Birmingham, AL",
+            "Mercer University, Macon, GA",
+            "Wofford College, Spartanburg, SC",
+            "Virginia Military Institute, Lexington, VA",
+            "Coppin State University, Baltimore, MD",
+            "Delaware State University, Dover, DE",
+            "Norfolk State University, Norfolk, VA",
+        ]
+
+        schools_specific = [
+            'Louisiana State University, Baton Rouge, LA',
+            'University of Missouri-Columbia, Columbia, MO',
+            'University of South Carolina-Columbia, Columbia, SC',
+            'The University of Tennessee-Knoxville, Knoxville, TN',
+            'Texas A & M University-College Station, College Station, TX',
+            'Georgia Institute of Technology-Main Campus, Atlanta, GA',
+            "University of North Carolina at Chapel Hill, Chapel Hill, NC",
+            "University of Pittsburgh, Pittsburgh, PA",
+            "Virginia Tech, Blacksburg, VA",
+            "Ohio State University-Main Campus, Columbus, OH",
+            "Pennsylvania State University, University Park, PA",
+            "University of Cincinnati, Cincinnati, OH",
+            "Oklahoma State University, Stillwater, OK",
+            "Oklahoma of University, Norman, OK", 
+            "Texas Tech University, Lubbock, TX",
+            "University of Texas at Austin, Austin, TX",
+            "The University of Texas at San Antonio, San Antonio, TX",
+            "University of North Texas, Denton, TX",
+            "University of Texas at El Paso, El Paso, TX",
+            "University of Texas at Arlington, Arlington, TX",
+            "Arizona State University, Tempe, AZ",
+            "University of Washington-Seattle Campus, Seattle, WA",
+            "University of North Carolina at Charlotte, Charlotte, NC",
+            "University at Albany, Albany, NY",
+            "St. John's University-New York, Gueens, NY",
+            "University of New Hampshire-Main Campus, Durham, NH",
+            'California Polytechnic State University-San Luis Obispo, San Luis Obispo, CA',
+            'The University of Texas at San Antonio, San Antonio, TX',
+            "Colorado State University-Fort Collins, Fort Collins, CO",
+            "Kent State University at Kent, Kent, OH",
+            "Bowling Green State University-Main Campus, Bowling Green, OH",
+            "University of Akron Main Campus, Akron, OH",
+            "St. Joseph's University, Philadelphia, PA",
+            "Mount St. Mary's University, Emmitsburg, MD",
+            "Elon University, Elon, NC",
+            "Wright State University-Main Campus, Dayton, OH",
+            "Missouri State University-Springfield, Springfield, MO",
+            "The University of Tennessee-Martin, Martin, TN",
+            "North Dakota State University-Main Campus, Fargo, ND",
+            "University of Nebraska at Omaha, Omaha, NE",
+            "University of Hawaii at Manoa, Honolulu, HI",
+            "California State University-Sacramento, Sacramento, CA",
+            "Bowling Green State University, Bowling Green, OH",
         ]
         
-        return schools
+        return schools_specific
     
     def fuzzy_match_cities(self, schools_list: List[str]) -> List[Tuple[str, str]]:
         """
@@ -393,12 +517,15 @@ class BackgroundCacheBuilder:
                 print(f"  ❌ College Scorecard: No data found")
                 scorecard_data = None
             
-            # Fetch Niche data with random delay
-            delay = random.randint(60, 150)  # 1-2.5 minutes
-            print(f"  ⏱️ Waiting {delay} seconds before Niche scraping...")
+            # Fetch Niche data with random delay (D1 specific timing)
+            delay = random.randint(*self.delay_range)
+            print(f"  ⏱️ [{self.process_id}] Waiting {delay} seconds before Niche scraping...")
             time.sleep(delay)
             
             print(f"  🎓 Fetching Niche data...")
+            # Build and display the Niche URL that will be visited
+            niche_url = self.niche_scraper._build_niche_url(school_name)
+            print(f"  🌐 Niche URL: {niche_url}")
             niche_data = self.niche_scraper.scrape_school_ratings(school_name)
             
             if niche_data and not niche_data.error:
@@ -434,16 +561,21 @@ class BackgroundCacheBuilder:
     
     def rotate_session(self):
         """Rotate the scraping session to avoid detection"""
-        print(f"\n🔄 Rotating session (processed {self.session_counter} schools this session)")
+        print(f"\n🔄 [{self.process_id}] Rotating session (processed {self.session_counter} schools this session)")
         try:
             # Close session (requests session doesn't need explicit close but we can clear it)
             if hasattr(self.niche_scraper, 'session'):
                 self.niche_scraper.session.close()
-            time.sleep(random.randint(30, 60))  # Brief pause between sessions
-            self.niche_scraper = NicheBSScraper(delay=0)
+            time.sleep(random.randint(30, 60))  # Brief pause between sessions (D1 timing)
+            # Reinitialize with D1 configuration
+            self.niche_scraper = NicheBSScraper(
+                delay=0,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                accept_language="en-US,en;q=0.9"
+            )
             self.session_counter = 0
         except Exception as e:
-            print(f"  ⚠️ Session rotation warning: {e}")
+            print(f"  ⚠️ [{self.process_id}] Session rotation warning: {e}")
     
     def take_break(self, minutes: int = 15):
         """Take a longer break to simulate human behavior"""
@@ -454,7 +586,7 @@ class BackgroundCacheBuilder:
         """
         Main method to run the background caching process
         """
-        print("🚀 Starting Background School Cache Builder")
+        print(f"🚀 Starting Background School Cache Builder [{self.process_id}]")
         print("=" * 60)
         
         # Get schools list
@@ -478,11 +610,12 @@ class BackgroundCacheBuilder:
         # Randomize the order
         random.shuffle(uncached_schools)
         
-        print(f"\n🎯 Starting to process {len(uncached_schools)} uncached schools...")
+        print(f"\n🎯 [{self.process_id}] Starting to process {len(uncached_schools)} uncached schools...")
         print(f"📋 Strategy:")
-        print(f"   • Random delays: 120-240 seconds between Niche requests")
-        print(f"   • Session rotation: Every 5 schools (increased stealth)")
-        print(f"   • Break time: 15 minutes every 30 schools")
+        print(f"   • Random delays: {self.delay_range[0]}-{self.delay_range[1]} seconds between Niche requests")
+        print(f"   • Session rotation: Every {self.session_rotation_limit} schools")
+        print(f"   • Break time: 10-15 minutes every 25-28 schools")
+        print(f"   • User Agent: Chrome Windows")
         print(f"   • Immediate caching: Each school cached before moving to next")
         
         successful_schools = 0
@@ -507,13 +640,9 @@ class BackgroundCacheBuilder:
                 self.session_counter += 1
                 self.total_processed += 1
                 
-                # Session rotation every 5 schools
-                if self.session_counter >= 5:
-                    self.rotate_session()
-                
-                # Take break every 30 schools
-                if i % 30 == 0 and i < len(uncached_schools):
-                    self.take_break(10)  # 10-minute break
+                # Take break every 22 schools (D1 pattern)
+                if i % 22 == 0 and i < len(uncached_schools):
+                    self.take_break(random.randint(5, 10))  # 10-15 minute break
                 
                 # Progress summary every 10 schools
                 if i % 10 == 0:

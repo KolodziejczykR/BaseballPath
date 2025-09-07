@@ -11,7 +11,7 @@ from typing import List, Tuple, Optional
 from datetime import datetime
 
 # Add project root to Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -24,16 +24,22 @@ class BackgroundCacheBuilder:
     """Builds cache by scraping popular schools with human-like timing patterns"""
     
     def __init__(self):
+        self.process_id = "D3_BUILDER"
         self.cache = SchoolDataCache()
         self.scorecard_api = CollegeScorecardRetriever()
-        self.niche_scraper = NicheBSScraper(delay=0)  # We'll handle timing manually
+        # D3 Builder - Safari macOS configuration
+        self.niche_scraper = NicheBSScraper(
+            delay=0.5,
+        )
         self.session_counter = 0
         self.total_processed = 0
+        self.session_rotation_limit = 5  # Rotate every 5 schools
+        self.delay_range = (110, 180)  # 110-180 seconds
         
     def get_popular_schools_list(self) -> List[str]:
         """
         Returns a comprehensive list of popular schools to cache
-        Based on Power 4, major conferences, and popular recruiting targets
+        Building the database for d3 schools
         """
         schools = [
             "Amherst College, Amherst, MA",
@@ -48,124 +54,211 @@ class BackgroundCacheBuilder:
             "Wesleyan University, Middletown, CT",
             "Williams College, Williamstown, MA",
             "Brandeis University, Waltham, MA",
-            "MIT, Cambridge, MA",
+            "Massachusetts Institute of Technology, Cambridge, MA",
             "Worcester Polytechnic Institute, Worcester, MA",
             "Clark University, Worcester, MA",
-            "Springfield College, Springfield, MA",
-            "University of Massachusetts Dartmouth, Dartmouth, MA",
-            "Keene State College, Keene, NH",
-            "Plymouth State University, Plymouth, NH",
-            "Rhode Island College, Providence, RI",
-            "Roger Williams University, Bristol, RI",
-            "Salve Regina University, Newport, RI",
-            "Johnson & Wales University, Providence, RI",
-            "Western New England University, Springfield, MA",
             "Endicott College, Beverly, MA",
             "Gordon College, Wenham, MA",
             "Curry College, Milton, MA",
-            "Emerson College, Boston, MA",
             "Suffolk University, Boston, MA",
             "Lasell University, Newton, MA",
-            "Norwich University, Northfield, VT",
-            "St. Joseph's College of Maine, Standish, ME",
-            "University of Southern Maine, Gorham, ME",
-            "Castleton University, Castleton, VT",
+            "University of Massachusetts Dartmouth, Dartmouth, MA",
+            "Bridgewater State University, Bridgewater, MA",
+            "Westfield State University, Westfield, MA",
             "Fitchburg State University, Fitchburg, MA",
             "Framingham State University, Framingham, MA",
-            "Bridgewater State University, Bridgewater, MA",
             "Salem State University, Salem, MA",
-            "Massachusetts Maritime Academy, Buzzards Bay, MA",
-            "Westfield State University, Westfield, MA",
-            "Albertus Magnus College, New Haven, CT",
+            "Rhode Island College, Providence, RI",
+            "Roger Williams University, Bristol, RI",
+            "Salve Regina University, Newport, RI",
+            "Johnson and Wales University, Providence, RI",
             "Eastern Connecticut State University, Willimantic, CT",
             "Western Connecticut State University, Danbury, CT",
-            "Southern Vermont College, Bennington, VT",
-            "Baruch College, New York, NY",
-            "Brooklyn College, Brooklyn, NY",
-            "Hunter College, New York, NY",
-            "Lehman College, Bronx, NY",
-            "College of Staten Island, Staten Island, NY",
-            "York College, Queens, NY",
-            "John Jay College, New York, NY",
-            "City College of New York, New York, NY",
-            "New York University, New York, NY",
-            "Vassar College, Poughkeepsie, NY",
+            "Albertus Magnus College, New Haven, CT",
+            "Keene State College, Keene, NH",
+            "Plymouth State University, Plymouth, NH",
+            "Norwich University, Northfield, VT",
+            "Castleton University, Castleton, VT",
+            "University of Southern Maine, Gorham, ME",
+            "Saint Joseph’s College of Maine, Standish, ME",
             "Skidmore College, Saratoga Springs, NY",
-            "Union College, Schenectady, NY",  # already in your list, remove if duplicate
+            "Vassar College, Poughkeepsie, NY",
             "Rochester Institute of Technology, Rochester, NY",
             "University of Rochester, Rochester, NY",
             "St. Lawrence University, Canton, NY",
             "Clarkson University, Potsdam, NY",
-            "SUNY Oswego, Oswego, NY",
-            "SUNY Cortland, Cortland, NY",
-            "SUNY Brockport, Brockport, NY",
-            "SUNY Plattsburgh, Plattsburgh, NY",
-            "SUNY Fredonia, Fredonia, NY",
-            "SUNY Geneseo, Geneseo, NY",
-            "SUNY New Paltz, New Paltz, NY",
-            "SUNY Oneonta, Oneonta, NY",
-            "SUNY Potsdam, Potsdam, NY",
-            "Utica University, Utica, NY",
             "Hartwick College, Oneonta, NY",
-            "Ithaca College, Ithaca, NY",  # already in your list
-            "Hamilton College, Clinton, NY",
+            "Utica University, Utica, NY",
             "Elmira College, Elmira, NY",
-            "Wells College, Aurora, NY",
-            "Keuka College, Keuka Park, NY",
+            "Ithaca College, Ithaca, NY",
+            "Hobart College, Geneva, NY",
+            "Union College, Schenectady, NY",
+            "Rensselaer Polytechnic Institute, Troy, NY",
+            "SUNY Cortland, Cortland, NY",
+            "SUNY Oswego, Oswego, NY",
+            "SUNY Brockport, Brockport, NY",
+            "SUNY Oneonta, Oneonta, NY",
+            "SUNY Fredonia, Fredonia, NY",
+            "SUNY Plattsburgh, Plattsburgh, NY",
+            "SUNY New Paltz, New Paltz, NY",
+            "SUNY Potsdam, Potsdam, NY",
             "Manhattanville College, Purchase, NY",
-            "Sarah Lawrence College, Bronxville, NY",
-            "Purchase College, Purchase, NY",
-            "Marymount Manhattan College, New York, NY",
-            "Drew University, Madison, NJ",
+            "SUNY Purchase College, Purchase, NY",
+            "SUNY Maritime College, Throggs Neck, NY",
+            "Yeshiva University, New York, NY",
+            "New Jersey City University, Jersey City, NJ",
+            "Kean University, Union, NJ",
             "Ramapo College of New Jersey, Mahwah, NJ",
-            "Montclair State University, Montclair, NJ",  # already in your list
-            "Rowan University, Glassboro, NJ",  # already in your list
             "William Paterson University, Wayne, NJ",
             "Stockton University, Galloway, NJ",
-            "Kean University, Union, NJ",
-            "New Jersey City University, Jersey City, NJ",
-            "Stevens Institute of Technology, Hoboken, NJ",  # already in your list
-            "Rutgers University Newark, Newark, NJ",  # already in your list
-            "Seton Hall University, South Orange, NJ",  # already in your list
-            "College of New Jersey, Ewing, NJ",  # already in your list
+            "Drew University, Madison, NJ",
+            "Stevens Institute of Technology, Hoboken, NJ",
+            "Rutgers University–Camden, Camden, NJ",
+            "University of Mary Hardin-Baylor, Belton, TX",
             "Arcadia University, Glenside, PA",
-            "Moravian University, Bethlehem, PA",
-            "Muhlenberg College, Allentown, PA",
-            "DeSales University, Center Valley, PA",
-            "Albright College, Reading, PA",
-            "Alvernia University, Reading, PA",
-            "Lebanon Valley College, Annville, PA",
-            "Susquehanna University, Selinsgrove, PA",
-            "Lycoming College, Williamsport, PA",
-            "Juniata College, Huntingdon, PA",
+            "Ursinus College, Collegeville, PA",
+            "Swarthmore College, Swarthmore, PA",
+            "Haverford College, Haverford, PA",
+            "Franklin and Marshall College, Lancaster, PA",
             "Gettysburg College, Gettysburg, PA",
             "Dickinson College, Carlisle, PA",
-            "Franklin & Marshall College, Lancaster, PA",
-            "Haverford College, Haverford, PA",
-            "Bryn Mawr College, Bryn Mawr, PA",
-            "Swarthmore College, Swarthmore, PA",
-            "Ursinus College, Collegeville, PA",
-            "Cabrini University, Radnor, PA",
-            "Immaculata University, Immaculata, PA",
-            "Neumann University, Aston, PA",
-            "Gwynedd Mercy University, Gwynedd Valley, PA",
-            "Rosemont College, Bryn Mawr, PA",
+            "Juniata College, Huntingdon, PA",
+            "Susquehanna University, Selinsgrove, PA",
+            "Lycoming College, Williamsport, PA",
+            "Lancaster Bible College, Lancaster, PA",
+            "Alvernia University, Reading, PA",
+            "Albright College, Reading, PA",
+            "Lebanon Valley College, Annville, PA",
+            "DeSales University, Center Valley, PA",
+            "Muhlenberg College, Allentown, PA",
+            "Moravian University, Bethlehem, PA",
             "Delaware Valley University, Doylestown, PA",
             "King’s College, Wilkes-Barre, PA",
             "Misericordia University, Dallas, PA",
             "Wilkes University, Wilkes-Barre, PA",
             "University of Scranton, Scranton, PA",
             "Marywood University, Scranton, PA",
-            "Carnegie Mellon University, Pittsburgh, PA",
-            "Grove City College, Grove City, PA",
             "Allegheny College, Meadville, PA",
-            "Chatham University, Pittsburgh, PA",
+            "Grove City College, Grove City, PA",
+            "Westminster College, New Wilmington, PA",
             "Geneva College, Beaver Falls, PA",
             "Thiel College, Greenville, PA",
-            "Westminster College, New Wilmington, PA",
+            "Chatham University, Pittsburgh, PA",
+            "Washington and Jefferson College, Washington, PA",
+            "Carnegie Mellon University, Pittsburgh, PA",
+            "Case Western Reserve University, Cleveland, OH",
+            "John Carroll University, University Heights, OH",
+            "Baldwin Wallace University, Berea, OH",
+            "Heidelberg University, Tiffin, OH",
+            "Marietta College, Marietta, OH",
+            "Muskingum University, New Concord, OH",
+            "Ohio Northern University, Ada, OH",
+            "Otterbein University, Westerville, OH",
+            "Capital University, Columbus, OH",
+            "Kenyon College, Gambier, OH",
+            "Denison University, Granville, OH",
+            "Ohio Wesleyan University, Delaware, OH",
+            "Wittenberg University, Springfield, OH",
+            "College of Wooster, Wooster, OH",
+            "DePauw University, Greencastle, IN",
+            "Wabash College, Crawfordsville, IN",
+            "Hanover College, Hanover, IN",
+            "Trine University, Angola, IN",
+            "Manchester University, North Manchester, IN",
+            "Franklin College, Franklin, IN",
+            "Earlham College, Richmond, IN",
+            "Illinois Wesleyan University, Bloomington, IL",
+            "Augustana College, Rock Island, IL",
+            "North Central College, Naperville, IL",
+            "Wheaton College, Wheaton, IL",
+            "Elmhurst University, Elmhurst, IL",
+            "Carthage College, Kenosha, WI",
+            "Lake Forest College, Lake Forest, IL",
+            "Lawrence University, Appleton, WI",
+            "Ripon College, Ripon, WI",
+            "University of Chicago, Chicago, IL",
+            "Millikin University, Decatur, IL",
+            "Monmouth College, Monmouth, IL",
+            "Knox College, Galesburg, IL",
+            "Grinnell College, Grinnell, IA",
+            "Buena Vista University, Storm Lake, IA",
+            "Central College, Pella, IA",
+            "Coe College, Cedar Rapids, IA",
+            "Luther College, Decorah, IA",
+            "Wartburg College, Waverly, IA",
+            "St. Olaf College, Northfield, MN",
+            "Carleton College, Northfield, MN",
+            "Bethel University, Saint Paul, MN",
+            "Hamline University, Saint Paul, MN",
+            "Concordia College, Moorhead, MN",
+            "Gustavus Adolphus College, Saint Peter, MN",
+            "Saint John’s University, Collegeville, MN",
+            "Saint Mary’s University of Minnesota, Winona, MN",
+            "Macalester College, Saint Paul, MN",
+            "University of Wisconsin–Whitewater, Whitewater, WI",
+            "University of Wisconsin–La Crosse, La Crosse, WI",
+            "University of Wisconsin–Stevens Point, Stevens Point, WI",
+            "University of Wisconsin–Stout, Menomonie, WI",
+            "University of Wisconsin–Oshkosh, Oshkosh, WI",
+            "University of Wisconsin–Platteville, Platteville, WI",
+            "University of Wisconsin–Eau Claire, Eau Claire, WI",
+            "Hope College, Holland, MI",
+            "Calvin University, Grand Rapids, MI",
+            "Adrian College, Adrian, MI",
+            "Albion College, Albion, MI",
+            "Alma College, Alma, MI",
+            "Kalamazoo College, Kalamazoo, MI",
+            "Olivet College, Olivet, MI",
+            "Montclair State University, Montclair, NJ",
+            "Rowan University, Glassboro, NJ",
+            "The College of New Jersey, Ewing, NJ",
+            "Catholic University of America, Washington, DC",
+            "University of Mary Washington, Fredericksburg, VA",
+            "Christopher Newport University, Newport News, VA",
+            "Hampden-Sydney College, Hampden-Sydney, VA",
+            "Randolph-Macon College, Ashland, VA",
+            "Washington and Lee University, Lexington, VA",
+            "Bridgewater College, Bridgewater, VA",
+            "Eastern Mennonite University, Harrisonburg, VA",
+            "Shenandoah University, Winchester, VA",
+            "Roanoke College, Salem, VA",
+            "Virginia Wesleyan University, Virginia Beach, VA",
+            "Emory University, Atlanta, GA",
+            "Berry College, Mount Berry, GA",
+            "Oglethorpe University, Atlanta, GA",
+            "Piedmont University, Demorest, GA",
+            "Maryville College, Maryville, TN",
+            "Centre College, Danville, KY",
+            "Transylvania University, Lexington, KY",
+            "Rhodes College, Memphis, TN",
+            "Hendrix College, Conway, AR",
+            "Trinity University, San Antonio, TX",
+            "Southwestern University, Georgetown, TX",
+            "University of Dallas, Irving, TX",
+            "Austin College, Sherman, TX",
+            "Chapman University, Orange, CA",
+            "Claremont-Mudd-Scripps Colleges, Claremont, CA",
+            "Pomona-Pitzer Colleges, Claremont, CA",
+            "Whittier College, Whittier, CA",
+            "California Lutheran University, Thousand Oaks, CA",
+            "Occidental College, Los Angeles, CA",
+            "University of La Verne, La Verne, CA",
+            "University of Redlands, Redlands, CA",
+            "Pacific Lutheran University, Tacoma, WA",
+            "Linfield University, McMinnville, OR",
+            "George Fox University, Newberg, OR",
+            "Whitworth University, Spokane, WA",
+            "Lewis and Clark College, Portland, OR",
+            "Willamette University, Salem, OR",
+            "California Institute of Technology, Pasadena, CA",
+            "University of Puget Sound, Tacoma, WA",
         ]
         
-        return schools
+        schools_new = [
+            "University of Hartford, West Hartford, CT",
+        ]
+
+        return schools_new
     
     def fuzzy_match_cities(self, schools_list: List[str]) -> List[Tuple[str, str]]:
         """
@@ -292,9 +385,9 @@ class BackgroundCacheBuilder:
                 print(f"  ❌ College Scorecard: No data found")
                 scorecard_data = None
             
-            # Fetch Niche data with random delay
-            delay = random.randint(60, 150)  # 1-2.5 minutes
-            print(f"  ⏱️ Waiting {delay} seconds before Niche scraping...")
+            # Fetch Niche data with random delay (D3 specific timing)
+            delay = random.randint(*self.delay_range)
+            print(f"  ⏱️ [{self.process_id}] Waiting {delay} seconds before Niche scraping...")
             time.sleep(delay)
             
             print(f"  🎓 Fetching Niche data...")
@@ -333,16 +426,21 @@ class BackgroundCacheBuilder:
     
     def rotate_session(self):
         """Rotate the scraping session to avoid detection"""
-        print(f"\n🔄 Rotating session (processed {self.session_counter} schools this session)")
+        print(f"\n🔄 [{self.process_id}] Rotating session (processed {self.session_counter} schools this session)")
         try:
             # Close session (requests session doesn't need explicit close but we can clear it)
             if hasattr(self.niche_scraper, 'session'):
                 self.niche_scraper.session.close()
-            time.sleep(random.randint(30, 60))  # Brief pause between sessions
-            self.niche_scraper = NicheBSScraper(delay=0)
+            time.sleep(random.randint(80, 125))  # Brief pause between sessions (D3 timing)
+            # Reinitialize with D3 configuration
+            self.niche_scraper = NicheBSScraper(
+                delay=0,
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+                accept_language="en-US,en;q=0.9,es;q=0.7"
+            )
             self.session_counter = 0
         except Exception as e:
-            print(f"  ⚠️ Session rotation warning: {e}")
+            print(f"  ⚠️ [{self.process_id}] Session rotation warning: {e}")
     
     def take_break(self, minutes: int = 15):
         """Take a longer break to simulate human behavior"""
@@ -353,7 +451,7 @@ class BackgroundCacheBuilder:
         """
         Main method to run the background caching process
         """
-        print("🚀 Starting Background School Cache Builder")
+        print(f"🚀 Starting Background School Cache Builder [{self.process_id}]")
         print("=" * 60)
         
         # Get schools list
@@ -377,11 +475,12 @@ class BackgroundCacheBuilder:
         # Randomize the order
         random.shuffle(uncached_schools)
         
-        print(f"\n🎯 Starting to process {len(uncached_schools)} uncached schools...")
+        print(f"\n🎯 [{self.process_id}] Starting to process {len(uncached_schools)} uncached schools...")
         print(f"📋 Strategy:")
-        print(f"   • Random delays: 120-240 seconds between Niche requests")
-        print(f"   • Session rotation: Every 5 schools (increased stealth)")
-        print(f"   • Break time: 15 minutes every 30 schools")
+        print(f"   • Random delays: {self.delay_range[0]}-{self.delay_range[1]} seconds between Niche requests")
+        print(f"   • Session rotation: Every {self.session_rotation_limit} schools")
+        print(f"   • Break time: 15-20 minutes every 35-40 schools")
+        print(f"   • User Agent: Safari macOS")
         print(f"   • Immediate caching: Each school cached before moving to next")
         
         successful_schools = 0
@@ -406,13 +505,13 @@ class BackgroundCacheBuilder:
                 self.session_counter += 1
                 self.total_processed += 1
                 
-                # Session rotation every 5 schools
-                if self.session_counter >= 5:
+                # Session rotation (D3 specific frequency)
+                if self.session_counter >= self.session_rotation_limit:
                     self.rotate_session()
                 
-                # Take break every 30 schools
-                if i % 30 == 0 and i < len(uncached_schools):
-                    self.take_break(10)  # 10-minute break
+                # Take break every 27 schools (D3 pattern)
+                if i % 27 == 0 and i < len(uncached_schools):
+                    self.take_break(random.randint(15, 20))  # 15-20 minute break
                 
                 # Progress summary every 10 schools
                 if i % 10 == 0:

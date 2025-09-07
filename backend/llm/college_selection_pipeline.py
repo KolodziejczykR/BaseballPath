@@ -196,7 +196,11 @@ class CollegeSelectionPipeline:
         pref_lines = []
         for k, v in preferences_dict.items():
             if v is not None:  # Only include non-None preferences
-                pref_lines.append(f"- {k}: {v}")
+                # Format budget clearly as per-year amount
+                if k == 'max_tuition_budget':
+                    pref_lines.append(f"- {k}: ${v:,} per year")
+                else:
+                    pref_lines.append(f"- {k}: {v}")
         preferences_block = "\n".join(pref_lines) if pref_lines else "- (none provided)"
         
         # The Stage 1 prompt (adapted from your structure)
@@ -245,9 +249,12 @@ class CollegeSelectionPipeline:
         
         Think through your reasoning for each school, considering how it matches the player's athletic ability, ML predictions, and personal preferences. Consider playing time opportunities, academic fit, geographic preferences, and program trajectory.
         
-        However, ONLY return the list of 50 schools in this exact format:
+        However, ONLY return the list of 50 schools in this exact format using ABBREVIATED state names:
         
-        ["School Name, City, State", "School Name, City, State", ...]
+        ["School Name, City, ST", "School Name, City, ST", ...]
+        
+        IMPORTANT: Use 2-letter state abbreviations (NC, FL, GA, etc.) NOT full state names.
+        Examples: "East Carolina University, Greenville, NC" or "University of South Florida, Tampa, FL"
         
         Return ONLY the Python list, nothing else. The list should contain exactly 50 schools.
         """
@@ -333,15 +340,29 @@ class CollegeSelectionPipeline:
         if not school_list:
             return None
         
-        school_names = [school[0] for school in school_list]
+        # Step 0: First do fuzzy matching to get actual matched school names (like background cache builder)
+        print("  🔍 Performing fuzzy matching to get actual school names...")
+        matched_schools = []
+        for school_name, city_state in school_list:
+            matched_name = self.scorecard_retriever.get_matched_school_name(school_name, city_state)
+            if matched_name:
+                matched_schools.append((school_name, matched_name, city_state))
+                print(f"    ✅ {school_name} -> {matched_name}")
+            else:
+                # Use original name if no match found
+                matched_schools.append((school_name, school_name, city_state))
+                print(f"    ⚠️ {school_name} -> {school_name} (no fuzzy match)")
+        
+        # Use the actual matched names for all cache operations
+        school_names = [matched[1] for matched in matched_schools]  # Use MATCHED names, not original
         
         try:
-            # Step 1: Check cache for existing data
+            # Step 1: Check cache for existing data using MATCHED names
             cached_data = {}
             schools_to_scrape = school_names
             
             if self.cache:
-                print("  🔍 Checking cache for existing school data...")
+                print("  💾 Checking cache for existing school data using matched names...")
                 cached_data, schools_to_scrape = self.cache.get_cached_school_data(school_names)
             
             # Step 2: Scrape only missing schools
@@ -351,16 +372,18 @@ class CollegeSelectionPipeline:
             if schools_to_scrape:
                 print(f"  📊 Scraping College Scorecard data for {len(schools_to_scrape)} schools...")
                 
-                # Get cities for schools that need scraping
+                # Get cities for schools that need scraping (map matched names back to cities)
                 scrape_cities = []
                 for school_name in schools_to_scrape:
-                    # Find the city for this school
-                    for i, (name, city) in enumerate(school_list):
-                        if name == school_name:
-                            scrape_cities.append(city)
+                    # Find the city for this matched school name
+                    city_found = None
+                    for _, matched, city in matched_schools:
+                        if matched == school_name:
+                            city_found = city
                             break
+                    scrape_cities.append(city_found)
                 
-                # Scrape College Scorecard data
+                # Scrape College Scorecard data using matched names
                 college_stats_list = self.scorecard_retriever.get_school_statistics(schools_to_scrape, scrape_cities)
                 for i, school_name in enumerate(schools_to_scrape):
                     new_college_stats[school_name] = college_stats_list[i] if i < len(college_stats_list) else None
@@ -377,7 +400,8 @@ class CollegeSelectionPipeline:
                     for school_name in schools_to_scrape:
                         scorecard_data = new_college_stats.get(school_name)
                         niche_data = new_niche_ratings.get(school_name)
-                        if scorecard_data or niche_data:
+                        # Only cache if we have BOTH sources of data
+                        if scorecard_data and niche_data:
                             cache_pairs.append((school_name, scorecard_data, niche_data))
                     
                     if cache_pairs:
@@ -385,17 +409,25 @@ class CollegeSelectionPipeline:
             
             # Step 4: Combine cached + newly scraped data
             combined_data = []
-            for i, school_name in enumerate(school_names):
-                # Check if we have cached data
-                if school_name in cached_data:
-                    scorecard_data, niche_data = self.cache.reconstruct_school_data(cached_data[school_name])
-                else:
-                    # Use newly scraped data
-                    scorecard_data = new_college_stats.get(school_name)
-                    niche_data = new_niche_ratings.get(school_name)
+            for i, matched_name in enumerate(school_names):
+                # Get the original GPT name for display purposes
+                original_name = matched_name  # Default fallback
+                for original, matched, _ in matched_schools:
+                    if matched == matched_name:
+                        original_name = original
+                        break
                 
+                # Check if we have cached data (using matched name)
+                if matched_name in cached_data:
+                    scorecard_data, niche_data = self.cache.reconstruct_school_data(cached_data[matched_name])
+                else:
+                    # Use newly scraped data (using matched name)
+                    scorecard_data = new_college_stats.get(matched_name)
+                    niche_data = new_niche_ratings.get(matched_name)
+                
+                # Create SchoolInformation with original name for display, but data keyed by matched name
                 school_info = SchoolInformation(
-                    school_name=school_name,
+                    school_name=original_name,  # Use original GPT name for LLM consistency
                     school_stats=scorecard_data,
                     niche_ratings=niche_data
                 )
@@ -539,6 +571,12 @@ class CollegeSelectionPipeline:
         2. Academic Fit (20%): Does the school match academic preferences and admission requirements?
         3. Geographic/Financial Fit (20%): Alignment with location and cost preferences
         4. Program Quality (20%): Baseball program strength and development opportunity
+        
+        IMPORTANT FINANCIAL ANALYSIS:
+        - All tuition amounts in the data are ANNUAL costs
+        - Compare annual tuition against the player's annual budget (max_tuition_budget)
+        - A school is "withinBudget" if annual tuition ≤ annual budget
+        - For out-of-state students, use out_of_state_tuition for comparison
         
         Calculate a fitScore (0-100) for each selected school using these weightings.
         

@@ -60,7 +60,9 @@ class SchoolDataCache:
                 .execute()
             
             if response.data:
-                cutoff_date = datetime.now() - timedelta(days=self.cache_expiry_days)
+                # Use timezone-aware datetime for comparison
+                from datetime import timezone
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.cache_expiry_days)
                 
                 for record in response.data:
                     school_name = record["school_name"]
@@ -68,22 +70,41 @@ class SchoolDataCache:
                     
                     # Check if data is still fresh
                     if updated_at > cutoff_date:
+                        scorecard_data = record["scorecard_data"]
+                        niche_data = record["niche_data"]
+                        
                         cached_data[school_name] = {
-                            "scorecard_data": record["scorecard_data"],
-                            "niche_data": record["niche_data"]
+                            "scorecard_data": scorecard_data,
+                            "niche_data": niche_data
                         }
-                        print(f"  📋 Using cached data for: {school_name}")
+                        
+                        # Show what data we have cached
+                        data_status = []
+                        if scorecard_data:
+                            data_status.append("📊 Scorecard")
+                        if niche_data and niche_data.get("overall_grade"):
+                            data_status.append("🎓 Niche")
+                        elif niche_data:
+                            data_status.append("🎓 Niche (partial)")
+                        
+                        status_text = " + ".join(data_status) if data_status else "⚠️ No valid data"
+                        age_days = (cutoff_date - updated_at).days + self.cache_expiry_days
+                        print(f"  📋 Using cached data for {school_name} ({status_text}, {age_days}d old)")
                     else:
                         missing_schools.append(school_name)
-                        print(f"  🕒 Cache expired for: {school_name}")
+                        age_days = (cutoff_date - updated_at).days + self.cache_expiry_days
+                        print(f"  🕒 Cache expired for {school_name} ({age_days}d old)")
             
             # Add schools that weren't found in cache
             cached_school_names = set(cached_data.keys())
             for school_name in school_names:
                 if school_name not in cached_school_names:
                     missing_schools.append(school_name)
+                    print(f"  🆕 Not in cache: {school_name}")
             
             print(f"  ✅ Found {len(cached_data)} cached, need to scrape {len(missing_schools)}")
+            if cached_data:
+                print(f"  📋 Schools with cached data: {list(cached_data.keys())}")
             return cached_data, missing_schools
             
         except Exception as e:
