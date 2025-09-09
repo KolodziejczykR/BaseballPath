@@ -52,31 +52,20 @@ export default function WaitlistPage() {
     setLoading(true)
 
     try {
-      // Send verification email
-      const response = await fetch(`${API_BASE_URL}/waitlist/send-verification`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: email
-        }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        // Store email in sessionStorage for verification page
-        sessionStorage.setItem("waitlist_email", email)
-        
-        // Redirect to verification page
-        router.push("/waitlist/verify")
-      } else {
-        setError(data.detail || "Failed to send verification email. Please try again.")
+      // Check if email already exists
+      const emailExists = await checkEmailExists(email)
+      if (emailExists) {
+        setError("This email is already on our waitlist, thank you for the support!")
+        return
       }
+
+      // Store email in sessionStorage for survey page
+      sessionStorage.setItem("waitlist_email", email)
+      
+      // Redirect to survey page
+      router.push("/waitlist/direct_post_waitlist_survey")
     } catch (err) {
-      console.error("Email verification error:", err)
-      setError("Network error. Please check your connection and try again.")
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.")
     } finally {
       setLoading(false)
     }
