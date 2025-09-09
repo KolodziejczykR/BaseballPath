@@ -1,10 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/ui/modal"
-import { submitWaitlistEntry } from "@/lib/api"
+import { submitWaitlistEntry } from "../../../lib/api"
 
 // Force dynamic rendering to avoid build-time environment variable issues
 export const dynamic = 'force-dynamic'
@@ -18,7 +17,6 @@ export default function DirectPostWaitlistSurvey() {
   const [submitted, setSubmitted] = useState(false)
   const [showPrivacyModal, setShowPrivacyModal] = useState(false)
   const [privacyContent, setPrivacyContent] = useState("")
-  const router = useRouter()
 
   useEffect(() => {
     // Check if email is verified
@@ -194,7 +192,7 @@ export default function DirectPostWaitlistSurvey() {
                 />
                 <label htmlFor="email-consent" className="text-sm text-white/80 leading-relaxed">
                   I agree to receive emails from BaseballPath about the waitlist, launch updates, and recruiting tips. I can unsubscribe anytime.
-                  By joining, I confirm I'm 13+ and agree to the{' '}
+                  By joining, I confirm I&apos;m 13+ and agree to the{' '}
                   <button 
                     type="button"
                     onClick={(e) => {

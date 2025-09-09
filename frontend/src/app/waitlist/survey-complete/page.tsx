@@ -153,10 +153,10 @@ export default function SurveyCompletePage() {
 
             <div className="bg-gradient-to-r from-purple-900/40 to-blue-900/40 rounded-xl p-6 border border-white/10 backdrop-blur-sm">
               <p className="text-white/80 font-medium mb-4">
-                What's next?
+                What&apos;s next?
               </p>
               <ul className="text-white/70 text-sm space-y-2 text-left">
-                <li>• We'll analyze your responses to tailor our platform</li>
+                <li>• We&apos;ll analyze your responses to tailor our platform</li>
                 <li>• Look out for exclusive updates in your inbox</li>
                 <li>• Raffle drawing happens at launch day</li>
               </ul>
