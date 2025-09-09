@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 
 // Force dynamic rendering to avoid build-time environment variable issues
@@ -16,7 +15,6 @@ export default function VerifyEmailPage() {
   const [resendLoading, setResendLoading] = useState(false)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
-  const router = useRouter()
 
   // Handle individual digit input
   const handleDigitChange = (index: number, value: string) => {
@@ -272,7 +270,7 @@ export default function VerifyEmailPage() {
 
             {/* Resend Code */}
             <div className="text-center pt-4">
-              <p className="text-white/60 text-sm mb-3">Didn't receive the code?</p>
+              <p className="text-white/60 text-sm mb-3">Didn&apos;t receive the code?</p>
               <button
                 type="button"
                 onClick={handleResendCode}

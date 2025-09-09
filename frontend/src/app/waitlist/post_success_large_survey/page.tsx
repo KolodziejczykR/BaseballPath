@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { submitSurveyCompletion } from "@/lib/api"
+import { submitSurveyCompletion } from "../../../lib/api"
 
 // Force dynamic rendering to avoid build-time environment variable issues
 export const dynamic = 'force-dynamic'

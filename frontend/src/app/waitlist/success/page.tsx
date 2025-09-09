@@ -166,7 +166,7 @@ export default function SuccessPage() {
                   border: '1px solid rgba(255, 255, 255, 0.2)'
                 }}
               >
-                I'm all set
+                I&apos;m all set
               </button>
             </div>
           </div>
