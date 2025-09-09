@@ -1,0 +1,138 @@
+BaseballPath Privacy Policy
+
+Effective date: [MM/DD/YYYY]
+Legal entity / “we”, “us”, “our”: BaseballPath ([Your Legal Entity Name], [Street Address], [City, State ZIP], USA)
+Contact: [privacy@baseballpath.com
+] (preferred) | [mailing address above]
+
+This Privacy Policy describes how BaseballPath collects, uses, shares, and safeguards personal information when you visit baseballpath.com (and subdomains), join our waitlist, participate in our Launch Giveaway, complete surveys, use referral links, or use our services (collectively, the “Services”).
+
+By using the Services, you agree to this Privacy Policy and our Terms.
+
+1. Information we collect
+
+Information you provide directly
+
+Waitlist & account data: email address; name (if provided); role (parent/player/coach); graduation year; program level; preferences you choose; survey responses; referral code attribution.
+
+Athlete metrics (if you enter them): position(s), exit velocity, 60-yard dash time, arm/catcher velocity, pop time, height/weight (if entered), academics (GPA, test scores), and college preferences (e.g., region, size, cost, major).
+
+Giveaway entries: email, entry actions (e.g., survey/referrals), eligibility confirmations, and any information required to award prizes.
+
+Communications: messages you send us (support, feedback).
+
+Payment info (future purchases): if you buy a plan, payment details are processed by our payment processor (e.g., Stripe) and are not stored on our servers.
+
+Information collected automatically
+
+Usage & device data: IP address, approximate location (derived from IP), device type, browser, operating system, pages viewed, referring/exit pages, UTM parameters, session duration, and similar diagnostic data.
+
+Cookies & similar tech: we use cookies, pixels, and local storage for core site functions, analytics (e.g., Google Analytics), and marketing/retargeting (e.g., Meta, TikTok, LinkedIn). See “Cookies & tracking” below.
+
+Information from third parties
+
+Referral partners / social platforms: if you arrive via a referral link or ad, we receive attribution data.
+
+Vendors: email platforms, analytics, and fraud-prevention tools may provide de-identified/aggregated insights.
+
+We do not intentionally collect sensitive health, biometric, or precise geolocation data.
+
+2. How we use information
+
+We process personal information to:
+
+Provide and improve the Services (e.g., create ranked program matches from metrics and preferences).
+
+Operate the waitlist and giveaway, verify eligibility, award prizes, and communicate updates.
+
+Send communications, including confirmations, onboarding, and marketing (you can unsubscribe anytime).
+
+Run surveys and referrals, calculate entries/credits, and prevent abuse.
+
+Analyze performance and security, including debugging, fraud prevention, and enforcing Terms.
+
+Comply with law, respond to lawful requests, and protect our rights and users.
+
+Legal bases (GDPR/UK GDPR users): consent (e.g., marketing cookies/emails), contract (to provide requested Services), legitimate interests (product improvement, security, aggregated analytics), and compliance with legal obligations.
+
+3. Cookies & tracking technologies
+
+We use:
+
+Essential cookies for site functionality and security.
+
+Analytics cookies to understand usage and improve the product.
+
+Advertising pixels (e.g., Meta, TikTok, LinkedIn) to measure campaigns and offer relevant content.
+
+You can manage cookies in your browser and via our Cookie Settings link (add a link in your footer).
+Global Privacy Control (GPC): where required by law (e.g., California), we treat GPC signals as an opt-out of “sale”/“sharing” for cross-context behavioral advertising.
+
+4. How we share information
+
+We do not sell personal information. We may share:
+
+Service providers (processors) that help us operate the Services: hosting, email delivery, analytics, customer support, survey/referral software, and payment processing.
+
+Legal & safety: to comply with laws, legal requests, or to protect rights and security.
+
+Business transfers: in a merger, acquisition, or asset sale, information may be transferred with appropriate safeguards.
+
+Aggregated/de-identified insights that cannot reasonably identify you.
+
+For giveaways, we may publish winners’ first name, last initial, and city/state as permitted by the Official Rules.
+
+5. Retention
+
+We keep personal information only as long as necessary to achieve the purposes above, including accounting, legal, or reporting requirements. Typical examples:
+
+Waitlist & marketing records: up to 24 months after last interaction (or until you unsubscribe/delete).
+
+Account data: for the life of the account, then deleted or anonymized within a reasonable period.
+
+Giveaway records: retained as required for audit/compliance.
+
+6. Your choices & rights
+
+Email marketing: click Unsubscribe in any email or contact [privacy@baseballpath.com
+]. Transactional emails (service or legal notices) may still be sent.
+
+Cookies/ads: adjust browser settings, use our Cookie Settings tool, or submit a “Do Not Sell or Share” request (see California rights below).
+
+Access, delete, correct, or appeal: Depending on your location, you may have rights to access, delete, correct, port, or restrict processing of your personal information, and to opt out of targeted advertising. Submit a request at [privacy@baseballpath.com
+]; we may need to verify your identity. If we deny a request, you may appeal by replying to our decision email.
+
+7. California & certain U.S. state privacy rights (CPRA/CPA/CTDPA/VCDPA/UCPA)
+
+Residents of California, Colorado, Connecticut, Virginia, and Utah (and other similar state laws) may have the rights described above plus the right to opt out of “sale”/“sharing” or targeted advertising.
+
+We do not sell personal information for money.
+
+Our use of advertising/analytics cookies may constitute “sharing” under California law. You can opt out via Cookie Settings or by sending a request to [privacy@baseballpath.com
+] and by enabling Global Privacy Control (GPC) in your browser.
+
+You may use an authorized agent to submit requests (we may require proof).
+
+Non-discrimination: we won’t discriminate for exercising your rights.
+
+For a list of the categories of personal information we collect, sources, purposes, and disclosures, see Sections 1–4 of this Policy; these map to the CPRA categories (identifiers, internet activity, inferences, etc.).
+
+8. Children’s privacy
+
+The Services are intended for individuals 13 years and older. We do not knowingly collect personal information from children under 13. If you believe a child under 13 has provided information, contact us and we will delete it. If you are under 18, use the Services only with permission of a parent/guardian.
+
+9. Data security
+
+We use reasonable administrative, technical, and physical safeguards (e.g., encryption in transit, access controls, logging). However, no method of transmission or storage is 100% secure, and we cannot guarantee absolute security.
+
+10. International users
+
+If you access the Services from outside the United States, your information may be processed in the U.S. and other countries with different data-protection laws. Where required, we use appropriate safeguards (e.g., Standard Contractual Clauses) for cross-border transfers.
+
+11. Third-party links & embedded content
+
+Our site may link to third-party websites or embed third-party tools (e.g., survey forms, payment pages, social media). We are not responsible for their privacy practices. Review their policies.
+
+12. Changes to this Policy
+
+We may update this Policy from time to time. The “Effective date” above will show the latest version. Material changes will be posted on this page and, when appropriate, notified by email.

@@ -4,6 +4,11 @@ interface BaseballPathLogoProps {
   className?: string
 }
 
+{/* 
+  TODO: 
+  - fix the logo...
+*/}
+
 export function BaseballPathLogo({ 
   width = 40, 
   height = 40, 

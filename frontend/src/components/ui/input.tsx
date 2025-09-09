@@ -18,6 +18,11 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
               : "border-gray-300 focus:border-blue-500 focus:ring-blue-500",
             className
           )}
+          style={{
+            WebkitBoxShadow: '0 0 0 1000px var(--autofill-bg, rgba(255, 255, 255, 0.1)) inset',
+            WebkitTextFillColor: 'var(--autofill-text, inherit)',
+            ...props.style
+          }}
           ref={ref}
           {...props}
         />
