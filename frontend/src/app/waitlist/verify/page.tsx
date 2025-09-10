@@ -216,7 +216,7 @@ export default function VerifyEmailPage() {
               <label className="block text-lg font-semibold text-white mb-6 text-center">
                 Verification Code
               </label>
-              <div className="flex justify-center space-x-3 mb-4">
+              <div className="flex justify-center space-x-2 sm:space-x-3 mb-4 px-2">
                 {token.map((digit, index) => (
                   <input
                     key={index}
@@ -228,7 +228,7 @@ export default function VerifyEmailPage() {
                     onChange={(e) => handleDigitChange(index, e.target.value)}
                     onKeyDown={(e) => handleKeyDown(index, e)}
                     onPaste={handlePaste}
-                    className="w-14 h-14 rounded-full border-2 border-white/20 bg-white/10 backdrop-blur-sm text-center text-2xl font-bold text-white focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition-all duration-200"
+                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-full border-2 border-white/20 bg-white/10 backdrop-blur-sm text-center text-xl sm:text-2xl font-bold text-white focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition-all duration-200"
                     style={{ 
                       caretColor: 'transparent' // Hide cursor for cleaner look
                     }}

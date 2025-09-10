@@ -38,12 +38,12 @@ export default function SuccessPage() {
           20%, 38% {
             opacity: 0;
             left: -15%;
-            top: 0%;
+            top: 10%;
           }
           24%, 34% {
             opacity: 0.1;
             left: -15%;
-            top: 0%;
+            top: 10%;
           }
           40%, 58% {
             opacity: 0;
