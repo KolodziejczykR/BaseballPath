@@ -147,7 +147,7 @@ export default function SurveyCompletePage() {
                 </div>
               </div>
               <p className="text-emerald-300 text-sm font-medium">
-                ✨ 4x better odds to win BaseballPATH free on launch day!
+                ✨ 4x better odds to win BaseballPath free on launch day!
               </p>
             </div>
 
