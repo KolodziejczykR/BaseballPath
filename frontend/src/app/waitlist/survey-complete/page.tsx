@@ -1,8 +1,29 @@
 "use client"
 
+import { useEffect } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
-export default function SuccessPage() {
+export default function SurveyCompletePage() {
+  useEffect(() => {
+    // Clear session storage to prevent going back to surveys
+    sessionStorage.removeItem("waitlist_user_id");
+    sessionStorage.removeItem("waitlist_user_type"); 
+    sessionStorage.removeItem("waitlist_high_school_year");
+    
+    // Simple approach: just handle the back button event
+    const handlePopState = () => {
+      // Prevent default back behavior and redirect to waitlist
+      window.location.href = '/waitlist';
+    };
+    
+    // Add a state to the history so we can catch the popstate
+    window.history.pushState(null, document.title, window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
   return (
     <div className="min-h-screen relative overflow-hidden font-sans" style={{ backgroundColor: '#03032d', fontFamily: 'var(--font-manrope)' }}>
       {/* Subtle gradient overlay */}
@@ -110,64 +131,35 @@ export default function SuccessPage() {
             </div>
             
             <h1 className="text-4xl font-bold text-white mb-6">
-              Perfect! You&apos;re all set!
+              Survey Complete!
             </h1>
             
-            <p className="text-xl text-white/70 mb-8 leading-relaxed">
-              Thanks for joining the BaseballPath waitlist and sharing your feedback. We&apos;ll be in touch soon with more details!
+            <p className="text-lg text-white/70 mb-8 leading-relaxed">
+              Awesome! You now have <span className="text-emerald-400 font-bold">4 raffle entries</span> for our launch giveaway. Your insights will help us build the perfect recruiting solution!
             </p>
 
-            {/* Bonus Survey CTA */}
-            <div className="bg-gradient-to-r from-emerald-900/40 to-teal-900/40 rounded-xl p-8 border border-white/10 backdrop-blur-sm">
-              <h3 className="text-2xl font-bold text-white mb-4">
-                🎯 Want 3 bonus entries?
-              </h3>
-              <p className="text-white/80 mb-6 leading-relaxed">
-                Take our 2-minute survey to help us tailor your perfect match. Complete it now and we&apos;ll 4x your raffle entries!
+            <div className="bg-gradient-to-r from-emerald-900/40 to-teal-900/40 rounded-xl p-6 border border-emerald-400/20 backdrop-blur-sm mb-8">
+              <div className="flex items-center justify-center mb-4">
+                <div className="text-4xl font-bold text-emerald-400">4</div>
+                <div className="ml-2 text-white/80">
+                  <div className="text-sm">Total Raffle</div>
+                  <div className="text-sm font-semibold">Entries</div>
+                </div>
+              </div>
+              <p className="text-emerald-300 text-sm font-medium">
+                ✨ 4x better odds to win BaseballPATH free on launch day!
               </p>
-              <button
-                onClick={() => {
-                  // Get the user data from sessionStorage
-                  const userId = sessionStorage.getItem("waitlist_user_id") || ""
-                  const userType = sessionStorage.getItem("waitlist_user_type") || ""
-                  const highSchoolYear = sessionStorage.getItem("waitlist_high_school_year") || ""
-                  
-                  if (!userId) {
-                    alert("Session expired. Please start over from the waitlist page.")
-                    window.location.href = "/waitlist"
-                    return
-                  }
-                  
-                  // Navigate with actual user data as URL parameters
-                  window.location.href = `/waitlist/post_success_large_survey?lead_id=${userId}&user_type=${userType}&high_school_year=${highSchoolYear}`
-                }}
-                className="w-full py-4 px-6 rounded-lg font-semibold text-lg transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl mb-4"
-                style={{ 
-                  backgroundColor: '#10b981',
-                  color: 'white',
-                  boxShadow: '0 4px 14px 0 rgba(16, 185, 129, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                }}
-              >
-                Start 2-Minute Survey (+3 entries) →
-              </button>
-              
-              <button
-                onClick={() => {
-                  // Clear session data and return to waitlist
-                  sessionStorage.removeItem("waitlist_user_id")
-                  sessionStorage.removeItem("waitlist_user_type")
-                  sessionStorage.removeItem("waitlist_high_school_year")
-                  window.location.href = "/waitlist"
-                }}
-                className="w-full py-3 px-6 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-white/10"
-                style={{ 
-                  backgroundColor: 'transparent',
-                  color: '#white',
-                  border: '1px solid rgba(255, 255, 255, 0.2)'
-                }}
-              >
-                I&apos;m all set
-              </button>
+            </div>
+
+            <div className="bg-gradient-to-r from-purple-900/40 to-blue-900/40 rounded-xl p-6 border border-white/10 backdrop-blur-sm">
+              <p className="text-white/80 font-medium mb-4">
+                What&apos;s next?
+              </p>
+              <ul className="text-white/70 text-sm space-y-2 text-left">
+                <li>• We&apos;ll analyze your responses to tailor our platform</li>
+                <li>• Look out for exclusive updates in your inbox</li>
+                <li>• Raffle drawing happens at launch day</li>
+              </ul>
             </div>
           </div>
         </div>

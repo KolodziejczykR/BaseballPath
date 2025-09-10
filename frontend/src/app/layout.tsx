@@ -1,20 +1,19 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Manrope } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {
-  title: "BaseballPATH",
-  description: "The recruitment AI of tomorrow, supercharge your baseball recruitment today!",
+  title: "BaseballPath",
+  description: "The AI that gets you recruited! Trusted by coaches. Built by players. Powered by AI.",
+  icons: {
+    icon: '/logo_concepts/Second Logo/Favicon/Favicon-02.jpg',
+  },
 };
 
 export default function RootLayout({
@@ -25,7 +24,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${manrope.variable} font-sans antialiased`}
+        style={{ fontFamily: 'var(--font-manrope)' }}
+        suppressHydrationWarning={true}
       >
         {children}
       </body>

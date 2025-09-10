@@ -93,3 +93,6 @@ ehthumbs.db
 Thumbs.db 
 
 catboost_info/
+
+# dont commit all logo data
+*logo_concepts  
