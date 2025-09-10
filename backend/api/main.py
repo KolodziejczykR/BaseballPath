@@ -10,10 +10,15 @@ from backend.api.waitlist_router import router as waitlist_router
 
 app = FastAPI(title="BaseballPATH Backend")
 
-# CORS middleware for local frontend
+# CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001", 
+        "https://baseballpath.com",
+        "https://www.baseballpath.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
