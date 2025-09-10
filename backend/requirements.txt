@@ -4,6 +4,10 @@ uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
 python-multipart>=0.0.6
 
+# Database dependencies
+supabase>=2.0.0
+python-dotenv>=1.0.0
+
 # ML dependencies
 pandas>=1.5.0
 numpy>=1.21.0
