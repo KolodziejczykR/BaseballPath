@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Enable TypeScript path mapping in production builds
+  typedRoutes: true,
 };
 
 export default nextConfig;

@@ -1,14 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { submitSurveyCompletion } from "../../../lib/api"
+import { submitSurveyCompletion } from "@/lib/api"
 
 // Force dynamic rendering to avoid build-time environment variable issues
 export const dynamic = 'force-dynamic'
 
-export default function PostSuccessLargeSurvey() {
+function PostSuccessLargeSurvey() {
   const [leadId, setLeadId] = useState("")
   const [userType, setUserType] = useState("")
   const [gradYear, setGradYear] = useState("")
@@ -397,5 +397,13 @@ export default function PostSuccessLargeSurvey() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function PostSuccessLargeSurveyWrapper() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <PostSuccessLargeSurvey />
+    </Suspense>
   )
 }

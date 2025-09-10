@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/ui/modal"
-import { submitWaitlistEntry } from "../../../lib/api"
+import { submitWaitlistEntry } from "@/lib/api"
 
 // Force dynamic rendering to avoid build-time environment variable issues
 export const dynamic = 'force-dynamic'
