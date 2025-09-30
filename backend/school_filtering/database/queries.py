@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional
 from supabase import Client
 
 from .connection import SupabaseConnection
-from ..exceptions import DatabaseConnectionError, SchoolDataError
+from ..exceptions import SchoolDataError
 
 
 class SchoolDataQueries:

@@ -6,7 +6,7 @@ import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import logging
 
 from backend.utils.preferences_types import UserPreferences
@@ -307,28 +307,6 @@ class SchoolFilteringPipeline:
                 logger.info(f"{filter_obj.filter_name}: Skipped - {result.reason}")
 
         return current_schools
-
-    def _apply_final_filters(self, schools: List[Dict[str, Any]], preferences: UserPreferences) -> List[Dict[str, Any]]:
-        """
-        Apply preference filters only to overlap schools (primary schools already filtered)
-
-        Note: This method identifies overlap schools and applies filters only to them,
-        keeping all primary schools unchanged.
-
-        Args:
-            schools: Combined list of primary (already filtered) + overlap (unfiltered) schools
-            preferences: User preferences for filtering
-
-        Returns:
-            List with all primary schools + filtered overlap schools
-        """
-        # TODO: Better way to identify which schools are primary vs overlap
-        # For now, apply filters to all schools but this will double-filter primary schools
-        # This is acceptable for now since primary schools should pass filters anyway
-
-        logger.info("Applying filters to combined school list (primary + overlap)")
-        return self._apply_filters(schools, preferences)
-
 
     def _log_filtering_summary(self, initial_count: int, final_count: int) -> None:
         """

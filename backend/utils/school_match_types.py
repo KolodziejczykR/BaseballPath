@@ -6,7 +6,7 @@ filtering system, allowing for dynamic school counting and detailed
 match scoring.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -115,10 +115,8 @@ NICE_TO_HAVE_MAPPING = {
     'preferred_regions': NiceToHaveType.GEOGRAPHIC,
 
     # Academic fit preferences
-    'gpa': NiceToHaveType.ACADEMIC_FIT,
     'sat': NiceToHaveType.ACADEMIC_FIT,
     'act': NiceToHaveType.ACADEMIC_FIT,
-    'intended_major_buckets': NiceToHaveType.ACADEMIC_FIT,
     'min_academic_rating': NiceToHaveType.ACADEMIC_FIT,
     'min_student_satisfaction_rating': NiceToHaveType.ACADEMIC_FIT,
 
@@ -128,7 +126,6 @@ NICE_TO_HAVE_MAPPING = {
 
     # Athletic preferences
     'min_athletics_rating': NiceToHaveType.ATHLETIC_PREFERENCES,
-    'playing_time_priority': NiceToHaveType.ATHLETIC_PREFERENCES,
 
     # Demographic
     'hs_graduation_year': NiceToHaveType.DEMOGRAPHIC,

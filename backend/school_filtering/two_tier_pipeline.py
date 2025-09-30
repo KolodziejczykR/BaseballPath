@@ -6,7 +6,7 @@ providing both quick counts and detailed matching results.
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from backend.utils.preferences_types import UserPreferences
 from backend.utils.prediction_types import MLPipelineResults
 from backend.utils.school_match_types import (
@@ -310,8 +310,6 @@ class TwoTierFilteringPipeline:
             return self._match_preferred_regions(pref_value, school_data)
 
         # Academic fit
-        elif pref_name == 'gpa':
-            return self._match_gpa(pref_value, school_data)
         elif pref_name == 'sat':
             return self._match_sat(pref_value, school_data)
         elif pref_name == 'act':
@@ -320,8 +318,6 @@ class TwoTierFilteringPipeline:
             return self._match_min_academic_rating(pref_value, school_data)
         elif pref_name == 'min_student_satisfaction_rating':
             return self._match_min_student_satisfaction_rating(pref_value, school_data)
-        elif pref_name == 'intended_major_buckets':
-            return self._match_major_buckets(pref_value, school_data)
 
         # School characteristics
         elif pref_name == 'preferred_school_size':
@@ -332,8 +328,6 @@ class TwoTierFilteringPipeline:
         # Athletic preferences
         elif pref_name == 'min_athletics_rating':
             return self._match_athletics_rating(pref_value, school_data)
-        elif pref_name == 'playing_time_priority':
-            return self._match_playing_time(pref_value, school_data)
 
         return None
 
@@ -347,8 +341,6 @@ class TwoTierFilteringPipeline:
             return self._miss_sat(pref_value, school_data)
         elif pref_name == 'act':
             return self._miss_act(pref_value, school_data)
-        elif pref_name == 'gpa':
-            return self._miss_gpa(pref_value, school_data)
         elif pref_name == 'min_academic_rating':
             return self._miss_academic_rating(pref_value, school_data)
         elif pref_name == 'min_student_satisfaction_rating':
@@ -373,8 +365,6 @@ class TwoTierFilteringPipeline:
         # Athletic misses
         elif pref_name == 'min_athletics_rating':
             return self._miss_athletics_rating(pref_value, school_data)
-        elif pref_name == 'playing_time_priority':
-            return self._miss_playing_time(pref_value, school_data)
 
         return None
 
@@ -413,16 +403,6 @@ class TwoTierFilteringPipeline:
             )
         return None
 
-    def _match_gpa(self, user_gpa: float, school_data: Dict[str, Any]) -> Optional[NiceToHaveMatch]:
-        """
-        Match GPA compatibility
-
-        TODO: Implement GPA matching
-        - Database only has overall_grade, academics_grade, not GPA percentiles
-        - Need to add gpa_25th_percentile and gpa_75th_percentile fields
-        - Or implement mapping from grades to GPA ranges
-        """
-        return None  # Not implemented - no GPA percentile data in database
 
     def _match_school_size(self, pref_sizes: List[str],
                           school_data: Dict[str, Any]) -> Optional[NiceToHaveMatch]:
@@ -671,29 +651,6 @@ class TwoTierFilteringPipeline:
         else:
             return None  # Too far from average
 
-    def _match_academic_environment(self, pref: str, school_data: Dict[str, Any]) -> Optional[NiceToHaveMatch]:
-        """
-        Match academic environment preference
-
-        TODO: Implement academic environment matching
-        - Need database field 'academic_environment' with values like:
-          'High-academic', 'Balanced', 'Flexible'
-        - Consider academic reputation, selectivity, rigor
-        - May need composite scoring from multiple fields
-        """
-        return None  # Not implemented - no academic_environment field in database
-
-    def _match_major_buckets(self, pref: str, school_data: Dict[str, Any]) -> Optional[NiceToHaveMatch]:
-        """
-        Match intended major buckets
-
-        TODO: Implement major matching logic
-        - Need database fields for available majors/programs
-        - Map major buckets (Engineering, Business, etc.) to specific programs
-        - Check school's program strength/availability
-        - Consider program rankings if available
-        """
-        return None  # Not implemented - no major data in database
 
     def _match_party_scene(self, pref: List[str], school_data: Dict[str, Any]) -> Optional[NiceToHaveMatch]:
         """Match party scene preference with multi-select support"""
@@ -752,21 +709,6 @@ class TwoTierFilteringPipeline:
             )
         return None
 
-    def _match_playing_time(self, pref: List[str], school_data: Dict[str, Any]) -> Optional[NiceToHaveMatch]:
-        """
-        Match playing time priority with multi-select support
-
-        TODO: Implement playing time matching logic
-        - Complex calculation requiring:
-          * Current roster depth by position
-          * Graduating seniors by position
-          * Team's recruiting class by position
-          * Competition level/difficulty
-          * Coach's playing time history/philosophy
-        - Need database fields for roster analysis
-        - Consider ML prediction vs school's typical recruit profile
-        """
-        return None  # Not implemented - requires complex roster and recruiting analysis
 
     # Miss methods for generating CON explanations
     def _miss_preferred_states(self, pref_states: List[str], school_data: Dict[str, Any]) -> Optional[NiceToHaveMiss]:
@@ -1019,13 +961,6 @@ class TwoTierFilteringPipeline:
             )
         return None
 
-    def _miss_playing_time(self, pref: List[str], school_data: Dict[str, Any]) -> Optional[NiceToHaveMiss]:
-        """Create miss explanation for playing time priority"""
-        return None  # Not implemented - requires complex roster analysis
-    
-    def _miss_gpa(self, user_gpa: float, school_data: Dict[str, Any]) -> Optional[NiceToHaveMiss]:
-        """Create miss explanation for GPA incompatibility"""
-        return None  # Not implemented - no GPA percentile data
 
 
 # Convenience functions for backward compatibility and ease of use
