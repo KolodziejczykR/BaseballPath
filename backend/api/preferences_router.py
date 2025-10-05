@@ -15,7 +15,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from backend.school_filtering.two_tier_pipeline import get_school_matches, count_eligible_schools
+from backend.school_filtering.async_two_tier_pipeline_complete import get_school_matches_shared, count_eligible_schools_shared
 from backend.utils.preferences_types import UserPreferences
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
 from backend.utils.player_types import PlayerInfielder, PlayerOutfielder, PlayerCatcher
@@ -158,9 +158,9 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
             p4_results=p4_results
         )
 
-        # Run the two-tier filtering pipeline
-        logger.info(f"Running school filtering for user from {preferences.user_state}")
-        filtering_result = get_school_matches(preferences, ml_results, limit)
+        # Run the async two-tier filtering pipeline
+        logger.info(f"Running async school filtering for user from {preferences.user_state}")
+        filtering_result = await get_school_matches_shared(preferences, ml_results, limit)
 
         if not filtering_result or not filtering_result.school_matches:
             return {
@@ -325,8 +325,8 @@ async def count_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, Any
             ) if p4_data else None
         )
 
-        # Get quick count
-        count = count_eligible_schools(preferences, ml_results)
+        # Get quick count with async pipeline
+        count = await count_eligible_schools_shared(preferences, ml_results)
 
         return {
             "success": True,
