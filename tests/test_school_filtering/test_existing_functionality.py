@@ -15,10 +15,10 @@ from backend.utils.preferences_types import UserPreferences
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
 from backend.utils.player_types import PlayerInfielder
 from backend.utils.school_match_types import FilteringResult, SchoolMatch
-from backend.school_filtering.two_tier_pipeline import (
-    TwoTierFilteringPipeline,
-    get_school_matches,
-    count_eligible_schools
+from backend.school_filtering.async_two_tier_pipeline_complete import (
+    AsyncTwoTierFilteringPipeline,
+    get_school_matches_shared as get_school_matches,
+    count_eligible_schools_shared as count_eligible_schools
 )
 from backend.school_filtering.filters import (
     FinancialFilter,
@@ -30,14 +30,15 @@ from backend.school_filtering.filters import (
 
 
 class TestExistingTwoTierPipeline:
-    """Test the actual TwoTierFilteringPipeline class"""
+    """Test the actual AsyncTwoTierFilteringPipeline class"""
 
     def test_pipeline_initialization(self):
         """Test that pipeline can be created"""
-        pipeline = TwoTierFilteringPipeline()
+        pipeline = AsyncTwoTierFilteringPipeline()
         assert pipeline is not None
 
-    def test_get_school_matches_function_exists(self):
+    @pytest.mark.asyncio
+    async def test_get_school_matches_function_exists(self):
         """Test that get_school_matches function exists and has correct signature"""
         # Just verify the function exists and can be called
         assert callable(get_school_matches)
@@ -66,14 +67,15 @@ class TestExistingTwoTierPipeline:
 
         # This will likely fail due to database connection, but we're testing the interface
         try:
-            result = get_school_matches(preferences, ml_results, limit=5)
+            result = await get_school_matches(preferences, ml_results, limit=5)
             # If it succeeds, should return FilteringResult
             assert isinstance(result, FilteringResult)
         except Exception as e:
             # Expected to fail due to no database, but function exists
             assert "get_school_matches" not in str(e)  # Function exists
 
-    def test_count_eligible_schools_function_exists(self):
+    @pytest.mark.asyncio
+    async def test_count_eligible_schools_function_exists(self):
         """Test that count_eligible_schools function exists"""
         assert callable(count_eligible_schools)
 
@@ -100,7 +102,7 @@ class TestExistingTwoTierPipeline:
 
         # This will likely fail due to database connection
         try:
-            count = count_eligible_schools(preferences, ml_results)
+            count = await count_eligible_schools(preferences, ml_results)
             assert isinstance(count, int)
         except Exception as e:
             # Expected to fail due to no database, but function exists
@@ -261,21 +263,23 @@ class TestMLResults:
 class TestExistingDatabaseConnection:
     """Test database connection functionality that exists"""
 
-    def test_database_queries_import(self):
+    @pytest.mark.asyncio
+    async def test_database_queries_import(self):
         """Test that database queries can be imported"""
         try:
-            from backend.school_filtering.database import SchoolDataQueries
-            queries = SchoolDataQueries()
+            from backend.school_filtering.database import AsyncSchoolDataQueries
+            queries = AsyncSchoolDataQueries()
             assert queries is not None
-            print("✅ SchoolDataQueries can be imported and created")
+            print("✅ AsyncSchoolDataQueries can be imported and created")
+            await queries.close()
         except Exception as e:
             print(f"⚠️ Database connection issue: {e}")
 
     def test_database_connection_import(self):
         """Test that database connection can be imported"""
         try:
-            from backend.school_filtering.database import SupabaseConnection
-            print("✅ SupabaseConnection can be imported")
+            from backend.school_filtering.database import AsyncSupabaseConnection
+            print("✅ AsyncSupabaseConnection can be imported")
         except Exception as e:
             print(f"⚠️ Database connection import issue: {e}")
 
