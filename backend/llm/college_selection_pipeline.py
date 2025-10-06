@@ -20,8 +20,8 @@ from backend.utils.player_types import PlayerType, PlayerCatcher, PlayerInfielde
 from backend.utils.prediction_types import MLPipelineResults
 from backend.utils.preferences_types import UserPreferences
 from backend.utils.scraping_types import SchoolInformation
-from backend.scraper.college_scoreboard_retrieval import CollegeScorecardRetriever
-from backend.scraper.niche_bs_scraper import NicheBSScraper
+from backend.school_info_scraper.college_scoreboard_retrieval import CollegeScorecardRetriever
+from backend.school_info_scraper.niche_bs_scraper import NicheBSScraper
 from backend.database.school_data_cache import SchoolDataCache
 
 # Load environment variables

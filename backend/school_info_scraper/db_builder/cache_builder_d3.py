@@ -16,8 +16,8 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from backend.database.school_data_cache import SchoolDataCache
-from backend.scraper.college_scoreboard_retrieval import CollegeScorecardRetriever
-from backend.scraper.niche_bs_scraper import NicheBSScraper
+from backend.school_info_scraper.college_scoreboard_retrieval import CollegeScorecardRetriever
+from backend.school_info_scraper.niche_bs_scraper import NicheBSScraper
 
 
 class BackgroundCacheBuilder:

@@ -20,7 +20,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from backend.scraper.selenium_driver import normalize_text, is_valid_grade
+from backend.school_info_scraper.selenium_driver import normalize_text, is_valid_grade
 from backend.utils.niche_xpaths import (
     CATEGORY_GRADE_MAPPING,
     ENROLLMENT_XPATH
