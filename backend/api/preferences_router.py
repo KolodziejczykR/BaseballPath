@@ -15,7 +15,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from backend.school_filtering.async_two_tier_pipeline_complete import get_school_matches_shared, count_eligible_schools_shared
+from backend.school_filtering.async_two_tier_pipeline import get_school_matches_shared, count_eligible_schools_shared
 from backend.utils.preferences_types import UserPreferences
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
 from backend.utils.player_types import PlayerInfielder, PlayerOutfielder, PlayerCatcher

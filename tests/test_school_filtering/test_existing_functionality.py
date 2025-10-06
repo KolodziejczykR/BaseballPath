@@ -15,7 +15,7 @@ from backend.utils.preferences_types import UserPreferences
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
 from backend.utils.player_types import PlayerInfielder
 from backend.utils.school_match_types import FilteringResult, SchoolMatch
-from backend.school_filtering.async_two_tier_pipeline_complete import (
+from backend.school_filtering.async_two_tier_pipeline import (
     AsyncTwoTierFilteringPipeline,
     get_school_matches_shared as get_school_matches,
     count_eligible_schools_shared as count_eligible_schools

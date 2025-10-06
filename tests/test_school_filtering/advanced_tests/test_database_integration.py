@@ -16,7 +16,7 @@ import pytest
 import asyncio
 from typing import Dict, List, Any
 
-from backend.school_filtering.async_two_tier_pipeline_complete import get_school_matches_shared as get_school_matches, count_eligible_schools_shared as count_eligible_schools
+from backend.school_filtering.async_two_tier_pipeline import get_school_matches_shared as get_school_matches, count_eligible_schools_shared as count_eligible_schools
 from backend.school_filtering.database import AsyncSchoolDataQueries
 from backend.utils.preferences_types import UserPreferences
 from backend.utils.prediction_types import MLPipelineResults

@@ -49,7 +49,7 @@ test_dir = os.path.dirname(__file__)
 env_path = os.path.join(test_dir, '.env')
 if os.path.exists(env_path):
     load_dotenv(env_path)
-from backend.school_filtering.async_two_tier_pipeline_complete import AsyncTwoTierFilteringPipeline
+from backend.school_filtering.async_two_tier_pipeline import AsyncTwoTierFilteringPipeline
 from backend.school_filtering.async_pipeline import AsyncSchoolFilteringPipeline
 from backend.school_filtering.database import AsyncSchoolDataQueries
 from fastapi.testclient import TestClient

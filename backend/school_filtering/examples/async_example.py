@@ -19,7 +19,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
 from backend.utils.preferences_types import UserPreferences
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
-from backend.school_filtering.async_two_tier_pipeline_complete import count_eligible_schools_shared, get_school_matches_shared
+from backend.school_filtering.async_two_tier_pipeline import count_eligible_schools_shared, get_school_matches_shared
 from backend.utils.player_types import PlayerInfielder
 
 
