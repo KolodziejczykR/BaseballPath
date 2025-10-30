@@ -196,7 +196,7 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                     "admission_rate": school_match.school_data.get("admission_rate")
                 },
                 "athletics": {
-                    "grade": school_match.school_data.get("athletics_grade")
+                    "grade": school_match.school_data.get("overall_athletics_grade")
                 },
                 "student_life": {
                     "grade": school_match.school_data.get("student_life_grade"),

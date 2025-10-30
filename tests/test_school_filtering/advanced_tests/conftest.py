@@ -191,7 +191,7 @@ def bad_school_data():
             'school_name': 'Inconsistent School',
             'school_state': 'CA',
             'division_group': 'Power 4 D1',
-            'athletics_grade': 'F',  # Contradictory - Power 4 with F athletics
+            'overall_athletics_grade': 'F',  # Contradictory - Power 4 with F athletics
             'academics_grade': 'A+',
             'undergrad_enrollment': 100  # Too small for Power 4
         }

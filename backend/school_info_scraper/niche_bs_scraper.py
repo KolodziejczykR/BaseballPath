@@ -64,7 +64,7 @@ class NicheBSScraper:
             'User-Agent': random.choice(self.user_agents),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': random.choice(['en-US,en;q=0.9', 'en-US,en;q=0.8,es;q=0.7']),
-            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Encoding': 'gzip, deflate',  # Removed 'br' - requests can't decompress Brotli without additional package
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
             'Sec-Fetch-Dest': 'document',
@@ -116,37 +116,29 @@ class NicheBSScraper:
         try:
             # Build Niche URL
             niche_url = custom_url or self._build_niche_url(school_name)
-            
+
+            # Print URL being attempted
+            print(f"    🌐 Niche URL: {niche_url}")
+
             # Warm up session if needed
             if not self._session_warmed:
                 self._warm_up_session()
-            
+
             # Update headers for this specific request
             self._update_headers()
             self.session.headers['Referer'] = 'https://www.niche.com/colleges/search/best-colleges/'
-            
+
             # Random delay before actual request (increased range)
             time.sleep(random.uniform(4, 9))
-            
+
             # Make request with session
             response = self.session.get(niche_url, timeout=30)
-            
-            # If initial request fails, try fallback URL with simplified name
+
+            # Return error if request fails - NO FALLBACK
             if response.status_code != 200:
-                fallback_url = self._get_fallback_general_url(niche_url)
-                if fallback_url and fallback_url != niche_url:
-                    print(f"    🔄 Initial URL failed, trying fallback: {fallback_url}")
-                    time.sleep(random.uniform(2, 4))  # Brief delay before retry
-                    response = self.session.get(fallback_url, timeout=30)
-                    if response.status_code == 200:
-                        niche_url = fallback_url  # Update URL for success logging
-                    else:
-                        return NicheRatings(school_name=school_name, niche_url=niche_url,
-                                          error=f"HTTP {response.status_code} (tried fallback)")
-                else:
-                    return NicheRatings(school_name=school_name, niche_url=niche_url,
-                                      error=f"HTTP {response.status_code}")
-            
+                return NicheRatings(school_name=school_name, niche_url=niche_url,
+                                  error=f"HTTP {response.status_code}")
+
             # Check for bot detection
             if "access to this page has been denied" in response.text.lower():
                 return NicheRatings(school_name=school_name, niche_url=niche_url,
@@ -341,66 +333,51 @@ class NicheBSScraper:
             url_name = url_name.split('-main-campus')[0]
         
         return f"{self.base_url}/{url_name}/"
-    
-    def _get_fallback_general_url(self, original_url: str) -> str:
-        """
-        Create a fallback URL by keeping only the first 2 parts (up to 3rd dash)
-        This won't work for all schools but helps in many cases
-        
-        Examples:
-        - louisiana-state-university-and-agricultural-mechanical-college -> louisiana-state-university
-        - university-of-pittsburgh-pittsburgh-campus -> university-of-pittsburgh
-        
-        Args:
-            original_url: The original Niche URL that failed
-            
-        Returns:
-            Simplified fallback URL or None if no simplification possible
-        """
-        # Extract the school name portion from URL
-        # URL format: https://www.niche.com/colleges/{school-name}/
-        if '/colleges/' not in original_url:
-            return None
-        
-        # Get the school name part
-        school_part = original_url.split('/colleges/')[1].rstrip('/')
 
-        # Split by dashes
-        parts = school_part.split('-')
-        
-        # Need at least 3 parts to simplify (keep first 2, remove rest)
-        if len(parts) < 3:
-            return None  # Can't simplify further
-        
-        # Take only the first 2 parts (everything before the 4rd dash)
-        simplified_name = '-'.join(parts[:3])
-        
-        # Don't oversimplify - need meaningful content
-        if not simplified_name or len(simplified_name) < 5:
-            return None
-        
-        return f"{self.base_url}/{simplified_name}/"
-    
     def _extract_category_grades(self, tree, ratings: NicheRatings):
-        """Extract category grades using class-based approach"""
-        # Find all section grades and map them to categories
-        section_grades = tree.xpath("//div[contains(@class, 'niche__grade--section')]")
-        
-        # Extract all section grades and assign them based on their position in the document
-        for i, element in enumerate(section_grades):
-            if i + 1 in CATEGORY_GRADE_MAPPING:
-                rating_field = CATEGORY_GRADE_MAPPING[i + 1]
-                
-                grade_text = element.text_content().strip()
-                # Remove 'grade' prefix if present
+        """Extract category grades using specific XPath approach"""
+        from backend.utils.niche_xpaths import OVERALL_GRADE_XPATH, get_category_grade_xpath
+
+        # Field mapping for translating database field names to object field names
+        FIELD_MAPPING = {
+            'athletics_grade': 'overall_athletics_grade',
+        }
+
+        # Extract overall grade first
+        try:
+            overall_elements = tree.xpath(OVERALL_GRADE_XPATH)
+            if overall_elements:
+                grade_text = overall_elements[0].text_content().strip()
                 clean_grade = grade_text.replace('grade', '').strip()
-                
-                # Convert "A minus" to "A-", "B plus" to "B+", etc.
                 clean_grade = clean_grade.replace(' minus', '-').replace(' plus', '+')
-                
-                # Accept 'unavailable' as a valid grade value
                 if is_valid_grade(clean_grade) or clean_grade.lower() == 'unavailable':
-                    setattr(ratings, rating_field, clean_grade)
+                    ratings.overall_grade = clean_grade
+        except Exception as e:
+            pass  # Overall grade not critical
+
+        # Extract category grades using specific XPaths
+        for position, rating_field in CATEGORY_GRADE_MAPPING.items():
+            try:
+                xpath = get_category_grade_xpath(position)
+                elements = tree.xpath(xpath)
+
+                if elements:
+                    # Translate field name if needed
+                    actual_field_name = FIELD_MAPPING.get(rating_field, rating_field)
+
+                    grade_text = elements[0].text_content().strip()
+                    # Remove 'grade' prefix if present
+                    clean_grade = grade_text.replace('grade', '').strip()
+
+                    # Convert "A minus" to "A-", "B plus" to "B+", etc.
+                    clean_grade = clean_grade.replace(' minus', '-').replace(' plus', '+')
+
+                    # Accept 'unavailable' as a valid grade value
+                    if is_valid_grade(clean_grade) or clean_grade.lower() == 'unavailable':
+                        setattr(ratings, actual_field_name, clean_grade)
+            except Exception as e:
+                # Skip this grade if there's an error
+                continue
     
     def _extract_school_stats(self, tree, ratings: NicheRatings):
         """Extract school statistics using DOM-like navigation"""
@@ -542,8 +519,8 @@ class NicheBSScraper:
                 ratings.enrollment = None
         
         # Check grades
-        grade_fields = ['overall_grade', 'academics_grade', 'campus_life_grade', 
-                       'athletics_grade', 'value_grade', 'student_life_grade',
+        grade_fields = ['overall_grade', 'academics_grade', 'campus_life_grade',
+                       'overall_athletics_grade', 'value_grade', 'student_life_grade',
                        'party_scene_grade', 'diversity_grade', 'location_grade', 'safety_grade',
                        'professors_grade', 'dorms_grade', 'campus_food_grade']
         
@@ -591,7 +568,7 @@ def main():
         print(f"  Overall: {ratings.overall_grade}")
         print(f"  Academics: {ratings.academics_grade}")
         print(f"  Campus Life: {ratings.campus_life_grade}")
-        print(f"  Athletics: {ratings.athletics_grade}")
+        print(f"  Overall Athletics: {ratings.overall_athletics_grade}")
         print(f"  Value: {ratings.value_grade}")
         print(f"  Student Life: {ratings.student_life_grade}")
         print(f"  Party Scene: {ratings.party_scene_grade}")

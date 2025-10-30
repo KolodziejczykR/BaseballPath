@@ -96,3 +96,6 @@ catboost_info/
 
 # dont commit all logo data
 *logo_concepts  
+
+# miscelaneous
+sql_scripts/

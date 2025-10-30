@@ -63,7 +63,7 @@ class AthleticFilter(BaseFilter):
         """
         # Check minimum athletics rating
         if preferences.min_athletics_rating:
-            school_rating = school.get('athletics_grade')
+            school_rating = school.get('overall_athletics_grade')
             if not school_rating or not self._meets_grade_requirement(
                 school_rating, preferences.min_athletics_rating
             ):
@@ -120,7 +120,7 @@ class AthleticFilter(BaseFilter):
         #   * Competition level/difficulty
 
         # Get athletics level and competitiveness indicators
-        athletics_grade = school.get('athletics_grade', '')
+        athletics_grade = school.get('overall_athletics_grade', '')
         division = school.get('division', '').upper()
         enrollment = school.get('undergrad_enrollment', 0)
 

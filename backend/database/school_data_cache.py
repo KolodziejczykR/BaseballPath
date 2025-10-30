@@ -238,7 +238,7 @@ class SchoolDataCache:
                     overall_grade=niche_data.get("overall_grade"),
                     academics_grade=niche_data.get("academics_grade"),
                     campus_life_grade=niche_data.get("campus_life_grade"),
-                    athletics_grade=niche_data.get("athletics_grade"),
+                    overall_athletics_grade=niche_data.get("athletics_grade"),
                     value_grade=niche_data.get("value_grade"),
                     student_life_grade=niche_data.get("student_life_grade"),
                     party_scene_grade=niche_data.get("party_scene_grade"),
@@ -261,34 +261,47 @@ class SchoolDataCache:
 
     def _has_null_niche_values(self, niche_data: NicheRatings) -> bool:
         """
-        Check if Niche data has null/invalid values indicating failed scraping
-        
+        Check if Niche data has too many null values indicating failed scraping
+        For smaller schools, only reject if more than half of the grades are null
+
         Args:
             niche_data: NicheRatings object to check
-            
+
         Returns:
-            True if data contains null values, False otherwise
+            True if more than half grades are null, False if acceptable data
         """
         if not niche_data:
             return True
-            
-        # Check if critical fields are null/empty
-        critical_fields = [
-            niche_data.overall_grade,
-            niche_data.academics_grade,
-            niche_data.athletics_grade
-        ]
-        
-        # If any critical field is None or empty string, consider it invalid
-        for field in critical_fields:
-            if field is None or field == "":
-                return True
-                
+
         # Check if error field is set
         if niche_data.error:
             return True
-            
-        return False
+
+        # Check grade fields specifically (same logic as missing_schools builders)
+        grade_fields = [
+            niche_data.overall_grade,
+            niche_data.academics_grade,
+            niche_data.campus_life_grade,
+            niche_data.overall_athletics_grade,
+            niche_data.value_grade,
+            niche_data.student_life_grade,
+            niche_data.diversity_grade,
+            niche_data.location_grade,
+            niche_data.safety_grade,
+            niche_data.professors_grade,
+            niche_data.dorms_grade,
+            niche_data.campus_food_grade
+        ]
+
+        # Count non-null, non-empty grade fields
+        valid_grades = [field for field in grade_fields if field and str(field).strip()]
+
+        # For smaller schools, accept data if more than half of grades are present
+        # 12 total grades, so need at least 6 grades to be valid (50%+ threshold)
+        min_required_grades = len(grade_fields) // 2
+
+        # Return True if data should be rejected (less than half grades present)
+        return len(valid_grades) < min_required_grades
 
 
 def create_school_data_cache_table():

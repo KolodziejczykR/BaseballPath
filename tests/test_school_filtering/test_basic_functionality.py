@@ -62,7 +62,7 @@ class TestBasicFunctionality:
             'school_name': 'Test University',
             'school_state': 'CA',
             'academics_grade': 'B+',
-            'athletics_grade': 'A-'
+            'overall_athletics_grade': 'A-'
         }
 
         school_match = SchoolMatch(

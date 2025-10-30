@@ -470,7 +470,7 @@ class BackgroundCacheBuilder:
             niche_data.overall_grade,
             niche_data.academics_grade,
             niche_data.campus_life_grade,
-            niche_data.athletics_grade,
+            niche_data.overall_athletics_grade,
             niche_data.value_grade,
             niche_data.student_life_grade,
             niche_data.diversity_grade,

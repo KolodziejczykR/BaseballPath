@@ -783,7 +783,7 @@ class AsyncTwoTierFilteringPipeline:
 
     async def _match_athletics_rating(self, min_rating: str, school_data: Dict[str, Any]) -> Optional[NiceToHaveMatch]:
         """Match athletics rating preference"""
-        school_athletics = school_data.get('athletics_grade')  # Fixed: use correct field name
+        school_athletics = school_data.get('overall_athletics_grade')  # Fixed: use correct field name
         if not school_athletics:
             return None
 
@@ -935,7 +935,7 @@ class AsyncTwoTierFilteringPipeline:
 
     async def _miss_athletics_rating(self, min_rating: str, school_data: Dict[str, Any]) -> Optional[NiceToHaveMiss]:
         """Create miss explanation for athletics rating"""
-        school_athletics = school_data.get('athletics_grade')
+        school_athletics = school_data.get('overall_athletics_grade')
         if not school_athletics:
             return None
 
