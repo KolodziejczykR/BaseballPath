@@ -8,7 +8,7 @@ class NicheRatings:
     overall_grade: str = None
     academics_grade: str = None
     campus_life_grade: str = None
-    overall_athletics_grade: str = None
+    total_athletics_grade: str = None
     value_grade: str = None
     student_life_grade: str = None
     party_scene_grade: str = None

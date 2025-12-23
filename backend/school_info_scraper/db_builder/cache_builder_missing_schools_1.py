@@ -15,17 +15,29 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from backend.database.school_data_cache import SchoolDataCache
+from supabase import create_client, Client
+from dotenv import load_dotenv
 from backend.school_info_scraper.college_scoreboard_retrieval import CollegeScorecardRetriever
 from backend.school_info_scraper.niche_bs_scraper import NicheBSScraper
+
+# Load environment variables from project root
+load_dotenv(os.path.join(project_root, '.env'))
 
 
 class BackgroundCacheBuilder:
     """Builds cache by scraping popular schools with human-like timing patterns"""
-    
+
     def __init__(self):
         self.process_id = "D3_BUILDER"
-        self.cache = SchoolDataCache()
+
+        # Initialize Supabase client
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_SERVICE_KEY")
+        if not url or not key:
+            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+        self.supabase: Client = create_client(url, key)
+        self.table_name = "school_data_general"
+
         self.scorecard_api = CollegeScorecardRetriever()
         # D3 Builder - Safari macOS configuration
         self.niche_scraper = NicheBSScraper(
@@ -44,8 +56,8 @@ class BackgroundCacheBuilder:
         schools = [
             "Alfred University, Alfred, NY",
             "Alfred State College, Alfred, NY",
-            "Anderson University, Anderson, IN",
-            "Anderson University, Anderson, SC",
+            # "Anderson University, Anderson, IN",
+            # "Anderson University, Anderson, SC",
             "Anna Maria College, Paxton, MA",
             "University of Arkansas at Little Rock, Little Rock, AR",
             "University of Arkansas at Monticello, Monticello, AR",
@@ -71,7 +83,7 @@ class BackgroundCacheBuilder:
             "Bethany Lutheran College, Mankato, MN",
             "Bethany College, Bethany, WV",
             "Bethel University, Saint Paul, MN",
-            "Blackburn College, Carlinville, IL",
+            #"Blackburn College, Carlinville, IL", no scorecard
             "Commonwealth University-Bloomsburg, Bloomsburg, PA", #Bloomsburg University
             "Bluffton University, Bluffton, OH",
             "Bob Jones University, Greenville, SC",
@@ -136,7 +148,6 @@ class BackgroundCacheBuilder:
             "University of Findlay, Findlay, OH",
             "Flagler College, St. Augustine, FL",
             "Florida A&M University, Tallahassee, FL",
-            "Fontbonne University, Clayton, MO",
             "Framingham State University, Framingham, MA",
             "Franciscan University of Steubenville, Steubenville, OH",
             "Gardner-Webb University, Boiling Springs, NC",
@@ -235,7 +246,7 @@ class BackgroundCacheBuilder:
             niche_data.overall_grade,
             niche_data.academics_grade,
             niche_data.campus_life_grade,
-            niche_data.overall_athletics_grade,
+            niche_data.total_athletics_grade,
             niche_data.value_grade,
             niche_data.student_life_grade,
             niche_data.diversity_grade,
@@ -256,50 +267,61 @@ class BackgroundCacheBuilder:
         return len(valid_grades) >= min_required_grades
     
     def filter_uncached_schools(self, matched_schools: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
-        """Remove schools that are already cached"""
+        """Remove schools that are already in school_data_general"""
         school_names = [school_name for _, school_name in matched_schools]
-        cached_data, missing_schools = self.cache.get_cached_school_data(school_names)
-        
-        # Filter to only uncached schools
-        uncached_schools = [(orig, name) for orig, name in matched_schools if name in missing_schools]
-        
-        print(f"📊 Cache status: {len(cached_data)} cached, {len(uncached_schools)} need scraping")
+
+        # Query school_data_general to see which schools already exist
+        try:
+            response = self.supabase.table(self.table_name)\
+                .select("school_name")\
+                .in_("school_name", school_names)\
+                .execute()
+
+            existing_schools = set([record["school_name"] for record in response.data]) if response.data else set()
+        except Exception as e:
+            print(f"  ⚠️ Error checking existing schools: {e}")
+            existing_schools = set()
+
+        # Filter to only schools not in database
+        uncached_schools = [(orig, name) for orig, name in matched_schools if name not in existing_schools]
+
+        print(f"📊 Database status: {len(existing_schools)} already exist, {len(uncached_schools)} need scraping")
         return uncached_schools
     
     def scrape_and_cache_school(self, school_name: str) -> bool:
         """
-        Scrape both College Scorecard and Niche data for a school and immediately cache it
+        Scrape both College Scorecard and Niche data for a school and immediately insert into school_data_general
         Returns True if successful, False if failed
         """
         print(f"\n🔄 Processing: {school_name}")
-        
+
         try:
             # Fetch College Scorecard data using the correct API
             print(f"  📊 Fetching College Scorecard data...")
             scorecard_results = self.scorecard_api.get_school_statistics([school_name])
             scorecard_data = scorecard_results[0] if scorecard_results and len(scorecard_results) > 0 else None
-            
+
             if scorecard_data and scorecard_data.undergrad_enrollment > 500:
                 print(f"  ✅ College Scorecard: Found data for {school_name}")
             else:
                 print(f"  ❌ College Scorecard: No data found")
                 scorecard_data = None
-            
+
             # Fetch Niche data with random delay (D3 specific timing)
             delay = random.randint(*self.delay_range)
             print(f"  ⏱️ [{self.process_id}] Waiting {delay} seconds before Niche scraping...")
             time.sleep(delay)
-            
+
             print(f"  🎓 Fetching Niche data...")
             niche_data = self.niche_scraper.scrape_school_ratings(school_name)
 
-            # DEBUG: Print all field values
+            # DEBUG: Print all field values (even if NULL)
             if niche_data:
                 print(f"  🔍 DEBUG - Niche data for {school_name}:")
                 print(f"      overall_grade: '{niche_data.overall_grade}'")
                 print(f"      academics_grade: '{niche_data.academics_grade}'")
                 print(f"      campus_life_grade: '{niche_data.campus_life_grade}'")
-                print(f"      overall_athletics_grade: '{niche_data.overall_athletics_grade}'")
+                print(f"      total_athletics_grade: '{niche_data.total_athletics_grade}'")
                 print(f"      value_grade: '{niche_data.value_grade}'")
                 print(f"      student_life_grade: '{niche_data.student_life_grade}'")
                 print(f"      diversity_grade: '{niche_data.diversity_grade}'")
@@ -308,39 +330,91 @@ class BackgroundCacheBuilder:
                 print(f"      professors_grade: '{niche_data.professors_grade}'")
                 print(f"      dorms_grade: '{niche_data.dorms_grade}'")
                 print(f"      campus_food_grade: '{niche_data.campus_food_grade}'")
+                print(f"      party_scene_grade: '{niche_data.party_scene_grade}'")
                 print(f"      enrollment: '{niche_data.enrollment}'")
                 print(f"      error: '{niche_data.error}'")
+
+            # Track failure reason
+            failure_reason = None
 
             if niche_data and not niche_data.error:
                 # Validate that we got meaningful data (not just NULL values)
                 if self._validate_niche_data(niche_data):
                     print(f"  ✅ Niche: Successfully scraped {school_name}")
                 else:
-                    print(f"  ❌ Niche: Scrape failed - only NULL values returned for {school_name}")
-                    niche_data = None  # Don't cache incomplete data
+                    print(f"  ⚠️ Niche: Validation failed - insufficient data for {school_name}")
+                    failure_reason = "null values"
+                    niche_data = None
             else:
+                # Has error or no data
                 error_msg = niche_data.error if niche_data else "Unknown error"
                 print(f"  ❌ Niche: Failed to scrape {school_name} - {error_msg}")
+                if niche_data and "404" in str(niche_data.error):
+                    failure_reason = "invalid niche link"
+                else:
+                    failure_reason = "scraping error"
                 niche_data = None
-            
-            # Only cache if we have BOTH College Scorecard AND Niche data
+
+            # Only insert if we have BOTH College Scorecard AND Niche data
             if scorecard_data and niche_data:
-                print(f"  💾 Caching complete data for {school_name}")
-                self.cache.cache_school_data(school_name, scorecard_data, niche_data)
-                return True
+                print(f"  💾 Inserting complete data for {school_name} into school_data_general")
+
+                # Split school_city into city and state (format: "City, ST")
+                city_parts = scorecard_data.school_city.split(', ') if scorecard_data.school_city else [None, None]
+                school_city = city_parts[0] if len(city_parts) > 0 else None
+                school_state = city_parts[1] if len(city_parts) > 1 else None
+
+                # Prepare record for insertion (id will be auto-generated by database)
+                record = {
+                    "school_name": school_name,
+                    "school_city": school_city,
+                    "school_state": school_state,
+                    "undergrad_enrollment": scorecard_data.undergrad_enrollment,
+                    "in_state_tuition": scorecard_data.in_state_tuition,
+                    "out_of_state_tuition": scorecard_data.out_of_state_tuition,
+                    "admission_rate": float(scorecard_data.admission_rate) if scorecard_data.admission_rate else None,
+                    "avg_sat": scorecard_data.avg_sat,
+                    "avg_act": scorecard_data.avg_act,
+                    "overall_grade": niche_data.overall_grade,
+                    "academics_grade": niche_data.academics_grade,
+                    "total_athletics_grade": niche_data.total_athletics_grade,
+                    "value_grade": niche_data.value_grade,
+                    "location_grade": niche_data.location_grade,
+                    "student_life_grade": niche_data.student_life_grade,
+                    "party_scene_grade": niche_data.party_scene_grade,
+                    "campus_life_grade": niche_data.campus_life_grade,
+                    "campus_food_grade": niche_data.campus_food_grade,
+                    "professors_grade": niche_data.professors_grade,
+                    "diversity_grade": niche_data.diversity_grade,
+                    "safety_grade": niche_data.safety_grade,
+                    "dorms_grade": niche_data.dorms_grade
+                }
+
+                # Insert into school_data_general
+                response = self.supabase.table(self.table_name).insert(record).execute()
+
+                if response.data:
+                    print(f"  ✅ Successfully inserted {school_name} into school_data_general")
+                    return True, None
+                else:
+                    print(f"  ❌ Failed to insert {school_name}")
+                    return False, "database insertion failed"
             else:
                 missing_sources = []
                 if not scorecard_data:
                     missing_sources.append("College Scorecard")
+                    if not failure_reason:
+                        failure_reason = "missing scorecard data"
                 if not niche_data:
                     missing_sources.append("Niche")
-                
-                print(f"  ❌ Not caching {school_name} - missing: {', '.join(missing_sources)}")
-                return False
-            
+                    # failure_reason already set above if niche failed
+
+                print(f"  ❌ Not inserting {school_name} - missing: {', '.join(missing_sources)}")
+                return False, failure_reason
+
         except Exception as e:
             print(f"  💥 Error processing {school_name}: {e}")
-            return False
+            return False, f"exception: {str(e)}"
     
     def rotate_session(self):
         """Rotate the scraping session to avoid detection"""
@@ -410,7 +484,7 @@ class BackgroundCacheBuilder:
                 print(f"Progress: {i/len(uncached_schools)*100:.1f}%")
                 
                 # Process the school
-                success = self.scrape_and_cache_school(school_name)
+                success, failure_reason = self.scrape_and_cache_school(school_name)
 
                 if success:
                     successful_schools += 1
@@ -419,7 +493,8 @@ class BackgroundCacheBuilder:
                     # Track failed school for summary
                     failed_school_list.append({
                         'name': school_name,
-                        'original': original_string
+                        'original': original_string,
+                        'reason': failure_reason or "unknown"
                     })
                 
                 self.session_counter += 1
@@ -465,7 +540,7 @@ class BackgroundCacheBuilder:
                 print(f"FAILED SCHOOLS ({len(failed_school_list)}):")
                 print(f"{'='*60}")
                 for idx, failed_school in enumerate(failed_school_list, 1):
-                    print(f"{idx}. {failed_school['name']}")
+                    print(f"{idx}. {failed_school['name']} ({failed_school['reason']})")
                     print(f"   Original: {failed_school['original']}")
             else:
                 print(f"\n🎉 No failed schools!")
