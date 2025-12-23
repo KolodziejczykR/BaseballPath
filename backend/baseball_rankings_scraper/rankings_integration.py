@@ -32,8 +32,8 @@ class BaseballRankingsIntegration:
             raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
 
         self.supabase: Client = create_client(url, key)
-        self.rankings_table = "baseball_rankings"
-        self.schools_table = "school_data_expanded"
+        self.rankings_table = "baseball_rankings_data"
+        self.schools_table = "school_data_general"
 
     def get_school_strength_profile(self, school_name: str, years: List[int] = None) -> Dict:
         """

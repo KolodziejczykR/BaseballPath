@@ -58,7 +58,7 @@ class SeleniumMasseyBaseballScraper:
             raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
 
         self.supabase: Client = create_client(url, key)
-        self.table_name = "baseball_rankings"
+        self.table_name = "baseball_rankings_data"
 
     def _setup_driver(self, headless: bool = False):
         """Setup driver using existing manager"""
