@@ -25,14 +25,14 @@ class AsyncSchoolDataQueries:
 
     async def get_all_schools(self) -> List[Dict[str, Any]]:
         """
-        Retrieve all schools from the school_data_expanded table
+        Retrieve all schools from the school_data_general table
 
         Returns:
             List of school dictionaries with all available data
         """
         async def _get_all_schools_query(client: Client) -> List[Dict[str, Any]]:
             logger.debug("Executing get_all_schools query")
-            response = client.table('school_data_expanded').select('*').execute()
+            response = client.table('school_data_general').select('*').execute()
 
             if not response.data:
                 logger.warning("No schools found in database")
@@ -58,7 +58,7 @@ class AsyncSchoolDataQueries:
         """
         async def _get_schools_by_division_query(client: Client, div_group: str) -> List[Dict[str, Any]]:
             logger.debug(f"Executing get_schools_by_division_group query for: {div_group}")
-            response = client.table('school_data_expanded')\
+            response = client.table('school_data_general')\
                 .select('*')\
                 .eq('division_group', div_group)\
                 .execute()
@@ -93,7 +93,7 @@ class AsyncSchoolDataQueries:
 
             # Execute queries for each division group
             for division_group in div_groups:
-                query = client.table('school_data_expanded')\
+                query = client.table('school_data_general')\
                     .select('*')\
                     .eq('division_group', division_group)
 
@@ -131,7 +131,7 @@ class AsyncSchoolDataQueries:
 
         async def _get_schools_by_names_query(client: Client, names: List[str]) -> List[Dict[str, Any]]:
             logger.debug(f"Executing get_schools_by_names query for {len(names)} schools")
-            response = client.table('school_data_expanded')\
+            response = client.table('school_data_general')\
                 .select('*')\
                 .in_('school_name', names)\
                 .execute()
@@ -157,7 +157,7 @@ class AsyncSchoolDataQueries:
         """
         async def _get_schools_with_filters_query(client: Client, filter_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
             logger.debug(f"Executing get_schools_with_filters query with {len(filter_dict)} filters")
-            query = client.table('school_data_expanded').select('*')
+            query = client.table('school_data_general').select('*')
 
             # Apply filters dynamically
             for column, value in filter_dict.items():
@@ -185,7 +185,7 @@ class AsyncSchoolDataQueries:
 
     async def get_available_columns(self) -> List[str]:
         """
-        Get list of available columns in school_data_expanded table
+        Get list of available columns in school_data_general table
 
         Returns:
             List of column names
@@ -193,7 +193,7 @@ class AsyncSchoolDataQueries:
         async def _get_available_columns_query(client: Client) -> List[str]:
             logger.debug("Executing get_available_columns query")
             # Get one record to inspect columns
-            response = client.table('school_data_expanded').select('*').limit(1).execute()
+            response = client.table('school_data_general').select('*').limit(1).execute()
 
             if response.data and len(response.data) > 0:
                 columns = list(response.data[0].keys())
@@ -217,7 +217,7 @@ class AsyncSchoolDataQueries:
         """
         async def _get_school_count_query(client: Client) -> int:
             logger.debug("Executing get_school_count query")
-            response = client.table('school_data_expanded')\
+            response = client.table('school_data_general')\
                 .select('*', count='exact')\
                 .limit(1)\
                 .execute()

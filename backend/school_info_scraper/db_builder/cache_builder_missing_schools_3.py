@@ -136,7 +136,7 @@ class BackgroundCacheBuilder:
             "Utah Tech University, St. George, UT",
             "The University of Virginia's College at Wise, Wise, VA",
             # "University of Valley Forge, Phoenixville, PA", missing scorecard
-            "University of Virginia-Charlottesville, Charlottesville, VA", #University of Virginia
+            "University of Virginia-Main Campus, Charlottesville, VA", #University of Virginia
             "Western New England University, Springfield, MA",
             "Washington College, Chestertown, MD",
             "Washington University in St. Louis, St. Louis, MO",

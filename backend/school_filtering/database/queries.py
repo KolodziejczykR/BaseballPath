@@ -26,13 +26,13 @@ class SchoolDataQueries:
 
     def get_all_schools(self) -> List[Dict[str, Any]]:
         """
-        Retrieve all schools from the school_data_expanded table
+        Retrieve all schools from the school_data_general table
 
         Returns:
             List of school dictionaries with all available data
         """
         try:
-            response = self.client.table('school_data_expanded').select('*').execute()
+            response = self.client.table('school_data_general').select('*').execute()
 
             if not response.data:
                 return []
@@ -53,7 +53,7 @@ class SchoolDataQueries:
             List of school dictionaries matching the division group
         """
         try:
-            response = self.client.table('school_data_expanded')\
+            response = self.client.table('school_data_general')\
                 .select('*')\
                 .eq('division_group', division_group)\
                 .execute()
@@ -78,7 +78,7 @@ class SchoolDataQueries:
             results = {}
 
             for division_group in division_groups:
-                query = self.client.table('school_data_expanded')\
+                query = self.client.table('school_data_general')\
                     .select('*')\
                     .eq('division_group', division_group)
 
@@ -108,7 +108,7 @@ class SchoolDataQueries:
             return []
 
         try:
-            response = self.client.table('school_data_expanded')\
+            response = self.client.table('school_data_general')\
                 .select('*')\
                 .in_('school_name', school_names)\
                 .execute()
@@ -129,7 +129,7 @@ class SchoolDataQueries:
             List of filtered school dictionaries
         """
         try:
-            query = self.client.table('school_data_expanded').select('*')
+            query = self.client.table('school_data_general').select('*')
 
             # Apply filters dynamically
             for column, value in filters.items():
@@ -153,14 +153,14 @@ class SchoolDataQueries:
 
     def get_available_columns(self) -> List[str]:
         """
-        Get list of available columns in school_data_expanded table
+        Get list of available columns in school_data_general table
 
         Returns:
             List of column names
         """
         try:
             # Get one record to inspect columns
-            response = self.client.table('school_data_expanded').select('*').limit(1).execute()
+            response = self.client.table('school_data_general').select('*').limit(1).execute()
 
             if response.data and len(response.data) > 0:
                 return list(response.data[0].keys())
@@ -180,7 +180,7 @@ class SchoolDataQueries:
             Total count of schools
         """
         try:
-            response = self.client.table('school_data_expanded')\
+            response = self.client.table('school_data_general')\
                 .select('*', count='exact')\
                 .limit(1)\
                 .execute()

@@ -56,8 +56,8 @@ class BackgroundCacheBuilder:
         schools = [
             "Alfred University, Alfred, NY",
             "Alfred State College, Alfred, NY",
-            # "Anderson University, Anderson, IN",
-            # "Anderson University, Anderson, SC",
+            "Anderson University, Anderson, IN",
+            "Anderson University, Anderson, SC",
             "Anna Maria College, Paxton, MA",
             "University of Arkansas at Little Rock, Little Rock, AR",
             "University of Arkansas at Monticello, Monticello, AR",
@@ -83,7 +83,7 @@ class BackgroundCacheBuilder:
             "Bethany Lutheran College, Mankato, MN",
             "Bethany College, Bethany, WV",
             "Bethel University, Saint Paul, MN",
-            #"Blackburn College, Carlinville, IL", no scorecard
+            "Blackburn_College, Carlinville, IL", 
             "Commonwealth University-Bloomsburg, Bloomsburg, PA", #Bloomsburg University
             "Bluffton University, Bluffton, OH",
             "Bob Jones University, Greenville, SC",

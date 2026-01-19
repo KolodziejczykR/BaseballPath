@@ -31,10 +31,10 @@ class AsyncSchoolDataQueries:
         """Check database health and connection"""
         try:
             # Simple query to check connection
-            self.client.table('school_data_expanded').select('school_name').limit(1).execute()
+            self.client.table('school_data_general').select('school_name').limit(1).execute()
 
             # Get total count for health check
-            count_result = self.client.table('school_data_expanded').select('school_name', count='exact').execute()
+            count_result = self.client.table('school_data_general').select('school_name', count='exact').execute()
             school_count = count_result.count if hasattr(count_result, 'count') else len(count_result.data)
 
             return {
@@ -54,7 +54,7 @@ class AsyncSchoolDataQueries:
     async def get_all_schools(self) -> List[Dict[str, Any]]:
         """Get all schools from the database"""
         try:
-            result = self.client.table('school_data_expanded').select('*').execute()
+            result = self.client.table('school_data_general').select('*').execute()
             schools = result.data if result.data else []
             logger.info(f"Retrieved {len(schools)} schools from database")
             return schools
@@ -71,7 +71,7 @@ class AsyncSchoolDataQueries:
                 logger.warning(f"Invalid division group: {division_group}")
                 return []
 
-            result = self.client.table('school_data_expanded')\
+            result = self.client.table('school_data_general')\
                 .select('*')\
                 .eq('division_group', division_group)\
                 .execute()
@@ -90,7 +90,7 @@ class AsyncSchoolDataQueries:
                 return []
 
             # Use 'in' filter for batch query
-            result = self.client.table('school_data_expanded')\
+            result = self.client.table('school_data_general')\
                 .select('*')\
                 .in_('school_name', school_names)\
                 .execute()
@@ -118,7 +118,7 @@ class AsyncSchoolDataQueries:
             if not division_groups:
                 return []
 
-            result = self.client.table('school_data_expanded')\
+            result = self.client.table('school_data_general')\
                 .select('*')\
                 .in_('division_group', division_groups)\
                 .execute()
