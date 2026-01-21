@@ -1,0 +1,13 @@
+# Requirements for school name matching system
+# Install with: pip install -r requirements_matching.txt
+
+# Fuzzy string matching (use one of these)
+rapidfuzz>=3.0.0  # Recommended: faster and more accurate
+
+# Alternative (if rapidfuzz doesn't work)
+# python-Levenshtein>=0.21.0
+# fuzzywuzzy>=0.18.0
+
+# Already in main requirements.txt but included for reference:
+# supabase>=2.0.0
+# python-dotenv>=1.0.0
