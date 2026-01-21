@@ -104,12 +104,46 @@ class SchoolNameMatcher:
 
             school_names = [row['school_name'] for row in response.data if row.get('school_name')]
             unique_names = sorted(list(set(school_names)))
-            logger.info(f"✅ Fetched {len(unique_names)} unique school names")
+            logger.info(f"✅ Fetched {len(unique_names)} unique school names from school_data_general")
             return unique_names
 
         except Exception as e:
             logger.error(f"❌ Error fetching school names: {e}")
             raise
+
+    def fetch_unmatched_school_names(self) -> List[str]:
+        """
+        Fetch school names that are in school_data_general AND have NULL team_name
+        in the mapping table (need to be rematched)
+        """
+        logger.info("Fetching unmatched school names (NULL team_name)...")
+        try:
+            # First get all school names from school_data_general
+            all_schools = self.fetch_school_names()
+
+            # Then get schools that already have mappings with NULL team_name
+            response = self.supabase.table('school_baseball_ranking_name_mapping')\
+                .select('school_name')\
+                .is_('team_name', 'null')\
+                .execute()
+
+            if not response.data:
+                logger.info("No schools with NULL team_name found in mapping table")
+                return all_schools  # Return all schools if none have been processed
+
+            unmatched_schools = [row['school_name'] for row in response.data]
+
+            # Filter to only include schools that are still in school_data_general
+            valid_unmatched = [s for s in unmatched_schools if s in all_schools]
+
+            logger.info(f"✅ Found {len(valid_unmatched)} schools with NULL team_name that need matching")
+            return sorted(valid_unmatched)
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching unmatched schools: {e}")
+            # If there's an error (e.g., table doesn't exist), return all schools
+            logger.info("Falling back to all schools from school_data_general")
+            return self.fetch_school_names()
 
     def fetch_team_names(self) -> List[str]:
         """Fetch all unique team names from baseball_rankings_data"""
@@ -187,10 +221,11 @@ class SchoolNameMatcher:
     def match_school_to_team(self, school_name: str, team_names: List[str]) -> Dict:
         """
         Match a single school name to a team name using the algorithm:
-        1. Normalize school name
-        2. Try exact match
-        3. If no exact match, try fuzzy match (>90% confidence)
-        4. If no qualifying match, return no_match
+        1. Check if original school_name matches any team_name (case-insensitive)
+        2. Normalize school name
+        3. Try exact match with normalized name
+        4. If no exact match, try fuzzy match (>90% confidence)
+        5. If no qualifying match, return no_match
 
         Args:
             school_name: Original school name from school_data_general
@@ -199,10 +234,23 @@ class SchoolNameMatcher:
         Returns:
             Dictionary with match results
         """
-        # Normalize the school name
+        # Step 0: Check if original school_name (case-insensitive) matches any team_name
+        original_match = self.find_exact_match(school_name, team_names)
+        if original_match:
+            logger.debug(f"Original name match: '{school_name}' → '{original_match}'")
+            return {
+                'school_name': school_name,
+                'team_name': original_match,
+                'match_type': 'exact_original',
+                'confidence_score': None,
+                'normalized_school_name': school_name,  # No normalization needed
+                'verified': None
+            }
+
+        # Normalize the school name for further matching
         normalized = self.normalize_school_name(school_name)
 
-        # Step 1: Try exact match
+        # Step 1: Try exact match with normalized name
         exact_match = self.find_exact_match(normalized, team_names)
         if exact_match:
             return {
@@ -238,9 +286,12 @@ class SchoolNameMatcher:
             'verified': None  # Needs manual review
         }
 
-    def match_all_schools(self) -> List[Dict]:
+    def match_all_schools(self, only_unmatched: bool = True) -> List[Dict]:
         """
         Match all schools from school_data_general to baseball_rankings_data
+
+        Args:
+            only_unmatched: If True, only process schools with NULL team_name in mapping table
 
         Returns:
             List of match result dictionaries
@@ -250,11 +301,15 @@ class SchoolNameMatcher:
         logger.info("=" * 80)
 
         # Fetch data
-        self.school_names = self.fetch_school_names()
+        if only_unmatched:
+            self.school_names = self.fetch_unmatched_school_names()
+        else:
+            self.school_names = self.fetch_school_names()
+
         self.team_names = self.fetch_team_names()
 
         if not self.school_names:
-            logger.error("No school names to match!")
+            logger.info("✅ No unmatched schools found - all schools already have matches!")
             return []
 
         if not self.team_names:
@@ -282,29 +337,36 @@ class SchoolNameMatcher:
 
     def _print_summary(self, results: List[Dict]):
         """Print summary statistics of matching results"""
+        exact_original_matches = sum(1 for r in results if r['match_type'] == 'exact_original')
         exact_matches = sum(1 for r in results if r['match_type'] == 'exact')
         fuzzy_matches = sum(1 for r in results if r['match_type'] == 'fuzzy')
         no_matches = sum(1 for r in results if r['match_type'] == 'no_match')
         total = len(results)
 
+        if total == 0:
+            logger.info("\nNo schools to process!")
+            return
+
         logger.info("\n" + "=" * 80)
         logger.info("MATCHING SUMMARY")
         logger.info("=" * 80)
         logger.info(f"Total schools processed: {total}")
-        logger.info(f"Exact matches: {exact_matches} ({exact_matches/total*100:.1f}%)")
+        logger.info(f"Exact matches (original name): {exact_original_matches} ({exact_original_matches/total*100:.1f}%)")
+        logger.info(f"Exact matches (normalized): {exact_matches} ({exact_matches/total*100:.1f}%)")
         logger.info(f"Fuzzy matches (>90%): {fuzzy_matches} ({fuzzy_matches/total*100:.1f}%)")
         logger.info(f"No matches found: {no_matches} ({no_matches/total*100:.1f}%)")
-        logger.info(f"\nTotal matched: {exact_matches + fuzzy_matches} ({(exact_matches + fuzzy_matches)/total*100:.1f}%)")
+        total_matched = exact_original_matches + exact_matches + fuzzy_matches
+        logger.info(f"\nTotal matched: {total_matched} ({total_matched/total*100:.1f}%)")
         logger.info(f"Needs manual review: {fuzzy_matches + no_matches} ({(fuzzy_matches + no_matches)/total*100:.1f}%)")
         logger.info("=" * 80)
 
-    def upload_to_database(self, results: List[Dict], batch_size: int = 100):
+    def upload_to_database(self, results: List[Dict], use_update: bool = True):
         """
         Upload matching results to school_baseball_ranking_name_mapping table
 
         Args:
             results: List of match result dictionaries
-            batch_size: Number of records to insert per batch
+            use_update: If True, UPDATE existing records. If False, INSERT new records
         """
         logger.info("\n" + "=" * 80)
         logger.info("Uploading results to database...")
@@ -315,47 +377,49 @@ class SchoolNameMatcher:
             return
 
         total_results = len(results)
-        successful_inserts = 0
-        failed_inserts = 0
+        successful_updates = 0
+        failed_updates = 0
 
-        # Insert in batches
-        for i in range(0, total_results, batch_size):
-            batch = results[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            total_batches = (total_results + batch_size - 1) // batch_size
+        logger.info(f"Processing {total_results} records...")
+        logger.info(f"Mode: {'UPDATE existing records' if use_update else 'INSERT new records'}")
+        logger.info("-" * 80)
 
-            logger.info(f"Uploading batch {batch_num}/{total_batches} ({len(batch)} records)...")
+        # Process each record individually for UPDATE operations
+        for i, record in enumerate(results, 1):
+            if i % 50 == 0:
+                logger.info(f"Progress: {i}/{total_results} records processed...")
 
             try:
-                response = self.supabase.table('school_baseball_ranking_name_mapping')\
-                    .insert(batch)\
-                    .execute()
+                if use_update:
+                    # UPDATE existing record by school_name
+                    response = self.supabase.table('school_baseball_ranking_name_mapping')\
+                        .update({
+                            'team_name': record['team_name'],
+                            'match_type': record['match_type'],
+                            'confidence_score': record['confidence_score'],
+                            'normalized_school_name': record['normalized_school_name'],
+                            'verified': record['verified']
+                        })\
+                        .eq('school_name', record['school_name'])\
+                        .execute()
+                else:
+                    # INSERT new record
+                    response = self.supabase.table('school_baseball_ranking_name_mapping')\
+                        .insert(record)\
+                        .execute()
 
-                successful_inserts += len(batch)
-                logger.info(f"✅ Batch {batch_num} uploaded successfully")
+                successful_updates += 1
 
             except Exception as e:
-                failed_inserts += len(batch)
-                logger.error(f"❌ Error uploading batch {batch_num}: {e}")
-
-                # Try inserting individually for this batch to identify problematic records
-                logger.info(f"Attempting individual inserts for batch {batch_num}...")
-                for record in batch:
-                    try:
-                        self.supabase.table('school_baseball_ranking_name_mapping')\
-                            .insert(record)\
-                            .execute()
-                        successful_inserts += 1
-                        failed_inserts -= 1
-                    except Exception as individual_error:
-                        logger.error(f"Failed to insert: {record['school_name']}: {individual_error}")
+                failed_updates += 1
+                logger.error(f"❌ Error processing '{record['school_name']}': {e}")
 
         logger.info("\n" + "=" * 80)
         logger.info("UPLOAD SUMMARY")
         logger.info("=" * 80)
         logger.info(f"Total records: {total_results}")
-        logger.info(f"Successfully inserted: {successful_inserts}")
-        logger.info(f"Failed inserts: {failed_inserts}")
+        logger.info(f"Successfully updated: {successful_updates}")
+        logger.info(f"Failed updates: {failed_updates}")
         logger.info("=" * 80)
 
     def print_sample_matches(self, results: List[Dict], sample_size: int = 10):
@@ -364,10 +428,17 @@ class SchoolNameMatcher:
         logger.info("SAMPLE MATCHES (for verification)")
         logger.info("=" * 80)
 
-        # Show some exact matches
+        # Show some exact original matches
+        exact_original = [r for r in results if r['match_type'] == 'exact_original']
+        if exact_original:
+            logger.info("\nExact Original Matches (no normalization needed):")
+            for match in exact_original[:sample_size]:
+                logger.info(f"  '{match['school_name']}' → '{match['team_name']}'")
+
+        # Show some exact matches (normalized)
         exact = [r for r in results if r['match_type'] == 'exact']
         if exact:
-            logger.info("\nExact Matches (sample):")
+            logger.info("\nExact Matches (normalized):")
             for match in exact[:sample_size]:
                 logger.info(f"  '{match['school_name']}' → '{match['team_name']}'")
 
@@ -394,11 +465,20 @@ def main():
     try:
         matcher = SchoolNameMatcher()
 
-        # Run matching algorithm
-        results = matcher.match_all_schools()
+        logger.info("\n" + "=" * 80)
+        logger.info("SCHOOL NAME MATCHING - UPDATE MODE")
+        logger.info("=" * 80)
+        logger.info("This will:")
+        logger.info("1. Only process schools with NULL team_name (unmatched)")
+        logger.info("2. Check original name first, then normalized name, then fuzzy match")
+        logger.info("3. UPDATE existing records in the database")
+        logger.info("=" * 80)
+
+        # Run matching algorithm (only unmatched schools)
+        results = matcher.match_all_schools(only_unmatched=True)
 
         if not results:
-            logger.error("No matching results generated!")
+            logger.info("\n✅ All schools already matched! No work to do.")
             return
 
         # Print sample matches for review
@@ -406,17 +486,17 @@ def main():
 
         # Ask for confirmation before uploading
         logger.info("\n" + "=" * 80)
-        response = input("\nDo you want to upload these results to the database? (yes/no): ").strip().lower()
+        response = input("\nDo you want to UPDATE these results in the database? (yes/no): ").strip().lower()
 
         if response in ['yes', 'y']:
-            matcher.upload_to_database(results)
+            matcher.upload_to_database(results, use_update=True)
             logger.info("\n✅ Matching process completed successfully!")
             logger.info("\nNext steps:")
-            logger.info("1. Review the matches in Supabase")
+            logger.info("1. Review the updated matches in Supabase")
             logger.info("2. Manually verify fuzzy matches and no_matches")
             logger.info("3. Update the 'verified' column (true/false) for each record")
         else:
-            logger.info("\nUpload cancelled. Results not saved to database.")
+            logger.info("\nUpdate cancelled. Results not saved to database.")
 
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
