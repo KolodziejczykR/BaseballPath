@@ -6,7 +6,7 @@ filtering system, allowing for dynamic school counting and detailed
 match scoring.
 """
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -50,7 +50,7 @@ class NiceToHaveMiss:
 class SchoolMatch:
     """
     Represents a school that meets must-have requirements with
-    nice-to-have preference matching details
+    nice-to-have preference matching details and baseball rankings data
     """
     school_name: str
     school_data: Dict[str, Any]  # Full school information from database
@@ -59,6 +59,11 @@ class SchoolMatch:
     # Nice-to-have matching
     nice_to_have_matches: List[NiceToHaveMatch] = field(default_factory=list)
     nice_to_have_misses: List[NiceToHaveMiss] = field(default_factory=list)
+
+    # Baseball rankings integration
+    baseball_strength: Optional[Dict[str, Any]] = None  # From BaseballRankingsIntegration
+    playing_time_factor: Optional[float] = None  # 0.7 (elite) to 1.3 (rebuilding)
+    has_baseball_data: bool = False  # Whether baseball rankings are available
 
     def add_nice_to_have_match(self, match: NiceToHaveMatch):
         """Add a nice-to-have match"""
@@ -71,7 +76,7 @@ class SchoolMatch:
 
     def get_match_summary(self) -> Dict[str, Any]:
         """Get a simplified summary of matches and misses for display"""
-        return {
+        summary = {
             "school_name": self.school_name,
             "division_group": self.division_group,
             "total_nice_to_have_matches": len(self.nice_to_have_matches),
@@ -90,6 +95,21 @@ class SchoolMatch:
                 for miss in self.nice_to_have_misses
             ]
         }
+
+        # Add baseball strength if available
+        if self.has_baseball_data and self.baseball_strength:
+            summary["baseball_strength"] = {
+                "has_data": True,
+                "team_name": self.baseball_strength.get("team_name"),
+                "strength_classification": self.baseball_strength.get("strength_classification"),
+                "playing_time_factor": self.playing_time_factor,
+                "current_season": self.baseball_strength.get("current_season"),
+                "trend": self.baseball_strength.get("trend_analysis", {}).get("trend")
+            }
+        else:
+            summary["baseball_strength"] = {"has_data": False}
+
+        return summary
 
 
 @dataclass

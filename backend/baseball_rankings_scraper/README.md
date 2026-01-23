@@ -223,11 +223,11 @@ POST /schools/compare-strength
 ### Database Views
 The system includes a computed view for easy querying:
 ```sql
--- Query percentile rankings
+-- Query percentile rankings (Note: lower rating = better, so use ASC for best teams)
 SELECT team_name, overall_percentile, power_percentile
 FROM baseball_rankings_with_percentiles
 WHERE year = 2024 AND division = 1
-ORDER BY overall_rating DESC;
+ORDER BY overall_rating ASC;  -- ASC shows best teams first (lowest ratings)
 ```
 
 ## Maintenance

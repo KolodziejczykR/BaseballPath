@@ -18,6 +18,8 @@ from backend.school_filtering.filters import (
     GeographicFilter, FinancialFilter, AcademicFilter,
     AthleticFilter, DemographicFilter
 )
+from backend.baseball_rankings_scraper.rankings_integration import BaseballRankingsIntegration
+from backend.database.name_matching import get_resolver
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,10 @@ class AsyncTwoTierFilteringPipeline:
         self.academic_filter = AcademicFilter()
         self.athletic_filter = AthleticFilter()
         self.demographic_filter = DemographicFilter()
+
+        # Baseball rankings integration
+        self.rankings_integration = BaseballRankingsIntegration()
+        self.name_resolver = get_resolver()
 
         # Concurrency control for scalability
         self.max_concurrent_batches = max_concurrent_batches
@@ -352,9 +358,11 @@ class AsyncTwoTierFilteringPipeline:
     async def _create_school_match(self, school_data: Dict[str, Any],
                                  preferences: UserPreferences,
                                  ml_results: MLPipelineResults) -> SchoolMatch:
-        """Create a SchoolMatch object with nice-to-have scoring"""
+        """Create a SchoolMatch object with nice-to-have scoring and baseball rankings"""
+        school_name = school_data.get('school_name', 'Unknown School')
+
         school_match = SchoolMatch(
-            school_name=school_data.get('school_name', 'Unknown School'),
+            school_name=school_name,
             school_data=school_data,
             division_group=school_data.get('division_group', 'Unknown')
         )
@@ -362,7 +370,40 @@ class AsyncTwoTierFilteringPipeline:
         # Score all nice-to-have preferences
         await self._score_nice_to_haves(school_match, preferences)
 
+        # Enrich with baseball rankings data if available
+        await self._enrich_with_baseball_rankings(school_match)
+
         return school_match
+
+    async def _enrich_with_baseball_rankings(self, school_match: SchoolMatch):
+        """
+        Enrich SchoolMatch with baseball rankings data if available
+        This runs async to avoid blocking the main filtering flow
+        """
+        school_name = school_match.school_name
+
+        try:
+            # Check if this school has baseball rankings data
+            has_data = self.name_resolver.has_baseball_data(school_name)
+
+            if has_data:
+                # Get strength profile from rankings integration
+                strength_profile = self.rankings_integration.get_school_strength_profile(school_name)
+
+                if strength_profile.get('has_data'):
+                    school_match.baseball_strength = strength_profile
+                    school_match.playing_time_factor = strength_profile.get('playing_time_factor')
+                    school_match.has_baseball_data = True
+                    logger.debug(f"Enriched {school_name} with baseball rankings")
+                else:
+                    logger.debug(f"No baseball rankings data found for {school_name}")
+            else:
+                logger.debug(f"No baseball name mapping for {school_name}")
+
+        except Exception as e:
+            logger.error(f"Error enriching {school_name} with baseball rankings: {e}")
+            # Don't fail the whole match if baseball enrichment fails
+            school_match.has_baseball_data = False
 
     async def _score_nice_to_haves(self, school_match: SchoolMatch, preferences: UserPreferences):
         """Score all nice-to-have preferences for a school"""
