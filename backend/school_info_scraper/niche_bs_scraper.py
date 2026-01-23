@@ -20,10 +20,11 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from backend.scraper.selenium_driver import normalize_text, is_valid_grade
+from backend.school_info_scraper.selenium_driver import normalize_text, is_valid_grade
 from backend.utils.niche_xpaths import (
     CATEGORY_GRADE_MAPPING,
-    ENROLLMENT_XPATH
+    ENROLLMENT_XPATH,
+    ENROLLMENT_XPATH_2
 )
 
 from backend.utils.scraping_types import NicheRatings
@@ -64,7 +65,7 @@ class NicheBSScraper:
             'User-Agent': random.choice(self.user_agents),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': random.choice(['en-US,en;q=0.9', 'en-US,en;q=0.8,es;q=0.7']),
-            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Encoding': 'gzip, deflate',  # Removed 'br' - requests can't decompress Brotli without additional package
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
             'Sec-Fetch-Dest': 'document',
@@ -102,51 +103,44 @@ class NicheBSScraper:
             # If warmup fails, continue anyway
             self._session_warmed = True
     
-    def scrape_school_ratings(self, school_name: str, custom_url: str = None) -> NicheRatings:
+    def scrape_school_ratings(self, school_name: str, custom_url: str = None, use_alternative_xpath: bool = False) -> NicheRatings:
         """
         Scrape comprehensive Niche.com ratings for a school using BeautifulSoup
-        
+
         Args:
             school_name: Official school name
             custom_url: Optional custom Niche URL if known
-            
+            use_alternative_xpath: If True, use alternative XPath for pages with different structure
+
         Returns:
             NicheRatings object with all available data
         """
         try:
             # Build Niche URL
             niche_url = custom_url or self._build_niche_url(school_name)
-            
+
+            # Print URL being attempted
+            print(f"    🌐 Niche URL: {niche_url}")
+
             # Warm up session if needed
             if not self._session_warmed:
                 self._warm_up_session()
-            
+
             # Update headers for this specific request
             self._update_headers()
             self.session.headers['Referer'] = 'https://www.niche.com/colleges/search/best-colleges/'
-            
+
             # Random delay before actual request (increased range)
             time.sleep(random.uniform(4, 9))
-            
+
             # Make request with session
             response = self.session.get(niche_url, timeout=30)
-            
-            # If initial request fails, try fallback URL with simplified name
+
+            # Return error if request fails - NO FALLBACK
             if response.status_code != 200:
-                fallback_url = self._get_fallback_general_url(niche_url)
-                if fallback_url and fallback_url != niche_url:
-                    print(f"    🔄 Initial URL failed, trying fallback: {fallback_url}")
-                    time.sleep(random.uniform(2, 4))  # Brief delay before retry
-                    response = self.session.get(fallback_url, timeout=30)
-                    if response.status_code == 200:
-                        niche_url = fallback_url  # Update URL for success logging
-                    else:
-                        return NicheRatings(school_name=school_name, niche_url=niche_url,
-                                          error=f"HTTP {response.status_code} (tried fallback)")
-                else:
-                    return NicheRatings(school_name=school_name, niche_url=niche_url,
-                                      error=f"HTTP {response.status_code}")
-            
+                return NicheRatings(school_name=school_name, niche_url=niche_url,
+                                  error=f"HTTP {response.status_code}")
+
             # Check for bot detection
             if "access to this page has been denied" in response.text.lower():
                 return NicheRatings(school_name=school_name, niche_url=niche_url,
@@ -158,12 +152,18 @@ class NicheBSScraper:
             
             # Parse with lxml for XPath support
             tree = html.fromstring(response.text)
-            
+
+            # DEBUG: Save raw HTML to file for inspection
+            # debug_filename = f"/tmp/niche_raw_{school_name.replace(' ', '_').replace('/', '_')}.html"
+            # with open(debug_filename, 'w', encoding='utf-8') as f:
+            #     f.write(response.text)
+            # print(f"    [DEBUG] Saved raw HTML to: {debug_filename}")
+
             # Initialize ratings object
             ratings = NicheRatings(school_name=school_name, niche_url=niche_url)
             
             # Extract data using XPaths with lxml
-            self._extract_category_grades(tree, ratings)  # This now includes overall grade
+            self._extract_category_grades(tree, ratings, use_alternative_xpath)  # This now includes overall grade
             self._extract_school_stats(tree, ratings)
             
             # Validate extracted data
@@ -306,9 +306,155 @@ class NicheBSScraper:
             "The University of Tennessee-Martin": "university-of-tennessee-at-martin",
         }
         
+        missing_schools_specific_map = { 
+            # ======================
+            # FAILED SCHOOLS (54)
+            # ======================
+            "State University of New York at Plattsburgh": "suny-plattsburgh",
+            "University of Valley Forge": "university-of-valley-forge",
+            "Pennsylvania State University-Penn State Abington": "penn-state-abington",
+            "Saint Vincent College": "saint-vincent-college-pennsylvania",
+            "St. Mary's University": "st-marys-university",  # San Antonio, TX
+            "University of California-Santa Barbara": "university-of-california-santa-barbara",
+            "State University of New York at Cortland": "suny-cortland",
+            "SUNY College of Agriculture and Technology at Cobleskill": "suny-college-of-agriculture-and-technology-at-cobleskill",
+            "Slippery Rock University of Pennsylvania": "slippery-rock-university",
+            "Western New England University": "western-new-england-university",
+            "The University of the South": "sewanee-the-university-of-the-south",
+            "University of Southern Maine": "university-of-southern-maine",
+            "Tennessee Technological University": "tennessee-technological-university",
+            "Whitman College": "whitman-college",
+            "Pennsylvania State University-Penn State Altoona": "penn-state-altoona",
+            "St. Mary's College of Maryland": "st-marys-college-of-maryland",
+            "Principia College": "principia-college",
+            "The University of Texas at Tyler": "university-of-texas-tyler",
+            "College of Staten Island CUNY": "cuny-college-of-staten-island",
+            "University of Virginia's College at Wise": "the-university-of-virginias-college-at-wise",
+            "Pennsylvania State University-Penn State Erie-Behrend College": "penn-state-erie-the-behrend-college",
+            "The College of Wooster": "college-of-wooster",
+            "University of St Thomas": "university-of-st-thomas-texas",  # Houston, TX
+            "The University of Texas at Dallas": "university-of-texas-dallas",
+            "York College of Pennsylvania": "york-college-of-pennsylvania",
+            "Rivier University": "rivier-university",
+            "Saint Norbert College": "st-norbert-college",
+            "Washington University in St Louis": "washington-university-in-st-louis",
+            "Wentworth Institute of Technology": "wentworth-institute-of-technology",
+            "Thomas More University": "thomas-more-university",
+            "Southern Nazarene University": "southern-nazarene-university",
+            "Thomas College": "thomas-college",  # Waterville, ME
+            "State University of New York at Oswego": "suny-oswego",
+
+            # Two separate campuses – disambiguated for you:
+            "St. Joseph's University-New York (Brooklyn)": "st-josephs-university-new-york-brooklyn",
+            "Saint Joseph's College of Maine": "saint-josephs-college-of-maine",
+            "Widener University": "widener-university",
+            "Wheaton College": "wheaton-college-illinois",  # Wheaton, IL
+            "Wheaton College (Massachusetts)": "wheaton-college-massachusetts",
+            "Schreiner University": "schreiner-university",
+            "Utah Tech University": "utah-tech-university",
+            "SUNY College of Technology at Canton": "suny-canton",
+            "Rasmussen University-Minnesota": "rasmussen-university-st-cloud",
+            "University of the Ozarks": "university-of-the-ozarks",
+            "St. Joseph's University-New York (Long Island)": "st-josephs-university-new-york-long-island",
+            "Pennsylvania State University-Penn State Harrisburg": "penn-state-harrisburg",
+            "St. John Fisher University": "st-john-fisher-university",
+            "Young Harris College": "young-harris-college",
+            "State University of New York at New Paltz": "suny-new-paltz",
+            "The College of Saint Scholastica": "the-college-of-st-scholastica",
+            "SUNY Old Westbury": "suny-college-at-old-westbury",
+            "Westminster College": "westminster-college-missouri",  # Fulton, MO
+            "St Bonaventure University": "st-bonaventure-university",
+            "Upper Iowa University": "upper-iowa-university",
+            "Pennsylvania State University-Penn State Berks": "penn-state-berks",
+
+            # ======================
+            # FAILED SCHOOLS (34)
+            # ======================
+            "Cairn University-Langhorne": "cairn-university",
+            "Anderson University": "anderson-university-indiana",
+            "Commonwealth University of Pennsylvania": "commonwealth-university-bloomsburg",  # Bloomsburg campus
+            "Hillsdale College": "hillsdale-college",
+            "Flagler College": "flagler-college-st-augustine",
+            "Beloit College": "beloit-college",
+            "University of Arkansas-Fort Smith": "university-of-arkansas-at-fort-smith",
+            "Concordia University-Saint Paul": "concordia-university-st-paul",
+            "Farmingdale State College": "suny-farmingdale-state-college",
+            "California State University-San Bernardino": "california-state-university-san-bernardino",
+            "Gwynedd Mercy University": "gwynedd-mercy-university",
+            "Hardin-Simmons University": "hardin-simmons-university",
+            "University of Arkansas at Monticello": "university-of-arkansas-at-monticello",
+            "CUNY Bernard M Baruch College": "cuny-baruch-college",
+            "Arkansas Tech University": "arkansas-tech-university",
+            "Colby-Sawyer College": "colby-sawyer-college",
+            "The University of Findlay": "university-of-findlay",
+            "Arkansas State University": "arkansas-state-university",
+            "Blackburn College": "blackburn-college",
+            "Fontbonne University": "fontbonne-university",
+            "Augustana College": "augustana-college-illinois",
+            "United States Military Academy": "united-states-military-academy-at-west-point",
+            "Belhaven University": "belhaven-university",
+            "University of Hawaii at Hilo": "university-of-hawaii-at-hilo",
+            "Bethany Lutheran College": "bethany-lutheran-college",
+            "Centenary College of Louisiana": "centenary-college-of-louisiana",
+
+            # Parent name, but your original row is the California, PA campus
+            "Pennsylvania Western University": "pennwest-california",
+
+            "Bethel University": "bethel-university-minnesota",  # Saint Paul, MN
+            "University of Arkansas at Little Rock": "university-of-arkansas-at-little-rock",
+            "Bethany College": "bethany-college-west-virginia",
+            "Benedictine University": "benedictine-university",
+            "Dallas Baptist University": "dallas-baptist-university",
+            "Anderson University": "anderson-university-south-carolina",
+
+            # ======================
+            # FAILED SCHOOLS (38)
+            # ======================
+           # "Mitchell College": "mitchell-college", no scorecard
+            "Moravian University": "moravian-university",
+            "CUNY Lehman College": "cuny-lehman-college",
+            "Northwood University": "northwood-university-midland",
+            "Le Moyne-Owen College": "lemoyne-owen-college",
+            "University of Minnesota-Crookston": "university-of-minnesota-crookston",
+            "Lincoln University": "lincoln-university-of-pennsylvania",
+            "Northwest Missouri State University": "northwest-missouri-state-university",
+            "New England College": "new-england-college",
+            "King University": "king-university-tennessee",
+            "New York University": "new-york-university",
+            "Newman University": "newman-university",
+            "Nebraska Wesleyan University": "nebraska-wesleyan-university",
+            "Marian University": "marian-university-wisconsin",
+            "University of Northwestern-St Paul": "university-of-northwestern-st-paul",
+            "Louisiana Tech University": "louisiana-tech-university",
+            "Missouri University of Science and Technology": "missouri-university-of-science-and-technology",
+            "Illinois Institute of Technology": "illinois-institute-of-technology",
+            # "Northland College": "northland-college", no niche
+            "La Roche University": "la-roche-university",
+            "The University of Texas Permian Basin": "university-of-texas-permian-basin",
+            "University of North Carolina at Pembroke": "university-of-north-carolina-at-pembroke",
+            "University of Minnesota-Duluth": "university-of-minnesota-duluth",
+            "Mount Saint Mary College": "mount-saint-mary-college",
+            # "Limestone University": "limestone-university",
+            "Nichols College": "nichols-college",
+            "University of Maine at Presque Isle": "university-of-maine-at-presque-isle",
+            "Lipscomb University": "lipscomb-university",
+            "Marymount University": "marymount-university",
+            "University of Pittsburgh-Bradford": "university-of-pittsburgh-bradford",
+            "Husson University": "husson-university",
+            "Mount St. Joseph University": "mount-st-joseph-university",
+            "Hobart William Smith Colleges": "hobart-and-william-smith",
+            "University of Pittsburgh-Greensburg": "university-of-pittsburgh-at-greensburg",
+            "University of Maine at Farmington": "university-of-maine-at-farmington",
+            "Lesley University": "lesley-university",
+        }
+
         # If school name is in the mapping, use the predefined simplified name
         if school_name in school_map_d1:
             return f"{self.base_url}/{school_map_d1[school_name]}/"
+        
+        # If school name is in the mapping, use the predefined simplified name
+        if school_name in missing_schools_specific_map:
+            return f"{self.base_url}/{missing_schools_specific_map[school_name]}/"
         
         # Otherwise, use the standard URL generation logic
         url_name = school_name.lower().strip()
@@ -341,66 +487,113 @@ class NicheBSScraper:
             url_name = url_name.split('-main-campus')[0]
         
         return f"{self.base_url}/{url_name}/"
-    
-    def _get_fallback_general_url(self, original_url: str) -> str:
-        """
-        Create a fallback URL by keeping only the first 2 parts (up to 3rd dash)
-        This won't work for all schools but helps in many cases
-        
-        Examples:
-        - louisiana-state-university-and-agricultural-mechanical-college -> louisiana-state-university
-        - university-of-pittsburgh-pittsburgh-campus -> university-of-pittsburgh
-        
-        Args:
-            original_url: The original Niche URL that failed
-            
-        Returns:
-            Simplified fallback URL or None if no simplification possible
-        """
-        # Extract the school name portion from URL
-        # URL format: https://www.niche.com/colleges/{school-name}/
-        if '/colleges/' not in original_url:
-            return None
-        
-        # Get the school name part
-        school_part = original_url.split('/colleges/')[1].rstrip('/')
 
-        # Split by dashes
-        parts = school_part.split('-')
-        
-        # Need at least 3 parts to simplify (keep first 2, remove rest)
-        if len(parts) < 3:
-            return None  # Can't simplify further
-        
-        # Take only the first 2 parts (everything before the 4rd dash)
-        simplified_name = '-'.join(parts[:3])
-        
-        # Don't oversimplify - need meaningful content
-        if not simplified_name or len(simplified_name) < 5:
-            return None
-        
-        return f"{self.base_url}/{simplified_name}/"
-    
-    def _extract_category_grades(self, tree, ratings: NicheRatings):
-        """Extract category grades using class-based approach"""
-        # Find all section grades and map them to categories
-        section_grades = tree.xpath("//div[contains(@class, 'niche__grade--section')]")
-        
-        # Extract all section grades and assign them based on their position in the document
-        for i, element in enumerate(section_grades):
-            if i + 1 in CATEGORY_GRADE_MAPPING:
-                rating_field = CATEGORY_GRADE_MAPPING[i + 1]
-                
-                grade_text = element.text_content().strip()
-                # Remove 'grade' prefix if present
+    def _extract_category_grades(self, tree, ratings: NicheRatings, use_alternative: bool = False):
+        """
+        Extract category grades using specific XPath approach
+
+        Args:
+            tree: lxml tree object
+            ratings: NicheRatings object to populate
+            use_alternative: If True, use alternative XPath base for pages with different structure
+        """
+        from backend.utils.niche_xpaths import OVERALL_GRADE_XPATH, get_category_grade_xpath, get_category_grade_xpath_lasting
+
+        # Field mapping for translating database field names to object field names
+        FIELD_MAPPING = {
+            'athletics_grade': 'total_athletics_grade',
+        }
+
+        # Extract overall grade first
+        try:
+            overall_elements = tree.xpath(OVERALL_GRADE_XPATH)
+            if overall_elements:
+                grade_text = overall_elements[0].text_content().strip()
                 clean_grade = grade_text.replace('grade', '').strip()
-                
-                # Convert "A minus" to "A-", "B plus" to "B+", etc.
                 clean_grade = clean_grade.replace(' minus', '-').replace(' plus', '+')
-                
-                # Accept 'unavailable' as a valid grade value
                 if is_valid_grade(clean_grade) or clean_grade.lower() == 'unavailable':
-                    setattr(ratings, rating_field, clean_grade)
+                    ratings.overall_grade = clean_grade
+        except Exception as e:
+            pass  # Overall grade not critical
+
+        """
+        # DEBUG: Check what lxml sees for <ol> elements
+        if 1 in CATEGORY_GRADE_MAPPING:  # Only print once
+            all_ols = tree.xpath('//ol')
+            print(f"    [DEBUG] Total <ol> elements in tree: {len(all_ols)}")
+            for idx, ol in enumerate(all_ols[:3]):  # Show first 3
+                classes = ol.get('class', 'NO_CLASS')
+                print(f"    [DEBUG]   <ol> #{idx}: class='{classes}'")
+
+            # Check the target <ol> element and its children
+            target_ol = tree.xpath('//ol[@class="ordered__list__bucket"]')
+            if target_ol:
+                ol_elem = target_ol[0]
+                all_children = list(ol_elem)
+                print(f"    [DEBUG] Target <ol> has {len(all_children)} direct children")
+                for idx, child in enumerate(all_children[:3]):  # Show first 3
+                    tag = child.tag
+                    classes = child.get('class', 'NO_CLASS')
+                    print(f"    [DEBUG]   Child #{idx}: <{tag}> class='{classes}'")
+
+                # Check what's inside the first <li> element
+                if all_children:
+                    first_li = all_children[0]
+                    print(f"    [DEBUG] First <li> children:")
+                    for idx, grandchild in enumerate(list(first_li)[:5]):
+                        tag = grandchild.tag
+                        classes = grandchild.get('class', 'NO_CLASS')
+                        print(f"    [DEBUG]     Grandchild #{idx}: <{tag}> class='{classes}'")
+                        # Look for div elements with 'niche__grade' class
+                        grade_divs = grandchild.xpath('.//div[@class="niche__grade"]')
+                        if grade_divs:
+                            print(f"    [DEBUG]       Found {len(grade_divs)} niche__grade divs here!")
+                        # Also check for any div with 'grade' in the class
+                        any_grade_divs = grandchild.xpath('.//div[contains(@class, "grade")]')
+                        if any_grade_divs:
+                            print(f"    [DEBUG]       Found {len(any_grade_divs)} divs with 'grade' in class")
+                            for gd in any_grade_divs[:2]:
+                                print(f"    [DEBUG]         div class='{gd.get('class', 'NO_CLASS')}'")
+        """
+
+        # Extract category grades using specific XPaths
+        for position, rating_field in CATEGORY_GRADE_MAPPING.items():
+            try:
+                # xpath = get_category_grade_xpath(position, use_alternative)
+                xpath = get_category_grade_xpath_lasting(position, use_alternative)
+                elements = tree.xpath(xpath)
+
+                # DEBUG: Print XPath and results
+                print(f"    [DEBUG] Position {position} ({rating_field}): xpath='{xpath}'")
+                print(f"    [DEBUG] Found {len(elements)} elements")
+
+                if elements:
+                    # Translate field name if needed
+                    actual_field_name = FIELD_MAPPING.get(rating_field, rating_field)
+
+                    grade_text = elements[0].text_content().strip()
+                    print(f"    [DEBUG] Raw text: '{grade_text}'")
+
+                    # Remove 'grade' prefix if present
+                    clean_grade = grade_text.replace('grade', '').strip()
+                    print(f"    [DEBUG] After removing 'grade': '{clean_grade}'")
+
+                    # Convert "A minus" to "A-", "B plus" to "B+", etc.
+                    clean_grade = clean_grade.replace(' minus', '-').replace(' plus', '+')
+                    print(f"    [DEBUG] After cleanup: '{clean_grade}'")
+
+                    # Accept 'unavailable' as a valid grade value
+                    if is_valid_grade(clean_grade) or clean_grade.lower() == 'unavailable':
+                        print(f"    [DEBUG] ✅ Valid grade, setting {actual_field_name} = '{clean_grade}'")
+                        setattr(ratings, actual_field_name, clean_grade)
+                    else:
+                        print(f"    [DEBUG] ❌ Invalid grade: '{clean_grade}'")
+                else:
+                    print(f"    [DEBUG] ❌ No elements found for position {position}")
+            except Exception as e:
+                # Skip this grade if there's an error
+                print(f"    [DEBUG] ❌ Exception for position {position}: {e}")
+                continue
     
     def _extract_school_stats(self, tree, ratings: NicheRatings):
         """Extract school statistics using DOM-like navigation"""
@@ -411,7 +604,8 @@ class NicheBSScraper:
         """Extract enrollment using pattern search"""
         try:
             # Use the advanced approach with .lastChild.data suffix
-            enrollment_xpath = ENROLLMENT_XPATH + ".lastChild.data"
+            # enrollment_xpath = ENROLLMENT_XPATH + ".lastChild.data"
+            enrollment_xpath = ENROLLMENT_XPATH_2 + ".lastChild.data"
             enrollment_text = self._fetch_text_by_xpath_advanced(ratings.niche_url, enrollment_xpath)
             
             if enrollment_text:
@@ -542,8 +736,8 @@ class NicheBSScraper:
                 ratings.enrollment = None
         
         # Check grades
-        grade_fields = ['overall_grade', 'academics_grade', 'campus_life_grade', 
-                       'athletics_grade', 'value_grade', 'student_life_grade',
+        grade_fields = ['overall_grade', 'academics_grade', 'campus_life_grade',
+                       'total_athletics_grade', 'value_grade', 'student_life_grade',
                        'party_scene_grade', 'diversity_grade', 'location_grade', 'safety_grade',
                        'professors_grade', 'dorms_grade', 'campus_food_grade']
         
@@ -591,7 +785,7 @@ def main():
         print(f"  Overall: {ratings.overall_grade}")
         print(f"  Academics: {ratings.academics_grade}")
         print(f"  Campus Life: {ratings.campus_life_grade}")
-        print(f"  Athletics: {ratings.athletics_grade}")
+        print(f"  Total Athletics: {ratings.total_athletics_grade}")
         print(f"  Value: {ratings.value_grade}")
         print(f"  Student Life: {ratings.student_life_grade}")
         print(f"  Party Scene: {ratings.party_scene_grade}")

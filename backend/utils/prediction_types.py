@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from backend.utils.player_types import PlayerType
+from backend.utils.school_group_constants import POWER_4_D1, NON_P4_D1, NON_D1
 
 @dataclass
 class P4PredictionResult:
@@ -50,16 +51,16 @@ class MLPipelineResults:
     def get_final_prediction(self) -> str:
         """
         Determine the final prediction given the results of both stages
-        
+
         Returns:
-            str: One of "Power 4 D1", "Non-P4 D1", or "Non-D1"
+            str: One of POWER_4_D1, NON_P4_D1, or NON_D1
         """
         if self.p4_results and self.p4_results.p4_prediction:
-            return "Power 4 D1"
+            return POWER_4_D1
         elif self.d1_results.d1_prediction:
-            return "Non-P4 D1"
+            return NON_P4_D1
         else:
-            return "Non-D1"
+            return NON_D1
 
     def get_pipeline_confidence(self) -> str:
         """

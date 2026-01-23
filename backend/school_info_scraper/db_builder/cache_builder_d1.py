@@ -16,8 +16,8 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from backend.database.school_data_cache import SchoolDataCache
-from backend.scraper.college_scoreboard_retrieval import CollegeScorecardRetriever
-from backend.scraper.niche_bs_scraper import NicheBSScraper
+from backend.school_info_scraper.college_scoreboard_retrieval import CollegeScorecardRetriever
+from backend.school_info_scraper.niche_bs_scraper import NicheBSScraper
 
 
 class BackgroundCacheBuilder:
@@ -470,7 +470,7 @@ class BackgroundCacheBuilder:
             niche_data.overall_grade,
             niche_data.academics_grade,
             niche_data.campus_life_grade,
-            niche_data.athletics_grade,
+            niche_data.total_athletics_grade,
             niche_data.value_grade,
             niche_data.student_life_grade,
             niche_data.diversity_grade,
