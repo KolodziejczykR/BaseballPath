@@ -177,7 +177,6 @@ PLAYER_LEVEL_D2_SCALE = 50            # d1_prob * 50 = 0-50 for sub-D1 players
 # - Non-P4 D1: 45-75 (30-point band)
 # - D2: 25-55 (30-point band)
 # - D3: 10-40 (30-point band)
-# - NAIA: 0-25 (25-point band)
 #
 # Formula: school_level = BAND_FLOOR + (percentile/100) * BAND_WIDTH
 
@@ -197,15 +196,7 @@ SCHOOL_LEVEL_BANDS: Dict[str, Dict[str, float]] = {
     "D3": {
         "floor": 10.0,
         "width": 30.0,  # 10 + (percentile * 0.30) = 10-40
-    },
-    "NAIA": {
-        "floor": 0.0,
-        "width": 25.0,  # 0 + (percentile * 0.25) = 0-25
-    },
-    "JUCO": {
-        "floor": 0.0,
-        "width": 25.0,  # Same as NAIA
-    },
+    }
 }
 
 
@@ -295,27 +286,7 @@ DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
         "pop_time": {"mean": 2.15, "std": 0.10},
         "height": {"mean": 71.0, "std": 2.5},
         "weight": {"mean": 175.0, "std": 15.0},
-    },
-    "NAIA": {
-        "exit_velo": {"mean": 82.0, "std": 6.0},
-        "sixty_time": {"mean": 7.40, "std": 0.28},
-        "inf_velo": {"mean": 75.0, "std": 3.5},
-        "of_velo": {"mean": 78.0, "std": 3.5},
-        "c_velo": {"mean": 72.0, "std": 3.0},
-        "pop_time": {"mean": 2.20, "std": 0.11},
-        "height": {"mean": 70.5, "std": 2.5},
-        "weight": {"mean": 172.0, "std": 15.0},
-    },
-    "JUCO": {
-        "exit_velo": {"mean": 82.0, "std": 6.0},
-        "sixty_time": {"mean": 7.40, "std": 0.28},
-        "inf_velo": {"mean": 75.0, "std": 3.5},
-        "of_velo": {"mean": 78.0, "std": 3.5},
-        "c_velo": {"mean": 72.0, "std": 3.0},
-        "pop_time": {"mean": 2.20, "std": 0.11},
-        "height": {"mean": 70.5, "std": 2.5},
-        "weight": {"mean": 172.0, "std": 15.0},
-    },
+    }
 }
 
 
@@ -338,7 +309,6 @@ STAT_TO_STRENGTH: Dict[str, str] = {
     "c_velo": "defensive",
     "pop_time": "defensive",
 }
-
 
 # =============================================================================
 # INVERTED STATS

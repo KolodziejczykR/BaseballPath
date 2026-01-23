@@ -245,18 +245,18 @@ class PlayerStats:
     weight: Optional[float] = None          # Weight in lbs
 
     # Position
-    primary_position: str = "IF"            # IF, OF, C, etc.
+    primary_position: str = None          # IF, OF, C, etc.
 
     def get_position_velo(self) -> Optional[float]:
         """Get the relevant position velocity based on primary position"""
         position_upper = self.primary_position.upper()
 
-        if position_upper in ["C", "CATCHER"]:
+        if position_upper in ["C"]:
             return self.c_velo
-        elif position_upper in ["OF", "OUTFIELD", "OUTFIELDER", "LF", "CF", "RF"]:
+        elif position_upper in ["OF", "LF", "CF", "RF"]:
             return self.of_velo
         else:
-            # Default to infielder (IF, 1B, 2B, 3B, SS, etc.)
+            # Default to infielder (1B, 2B, 3B, SS)
             return self.inf_velo
 
     def is_catcher(self) -> bool:
@@ -303,7 +303,5 @@ class SchoolData:
             return "P4" if self.is_power_4 else "Non-P4 D1"
         elif self.division == 2:
             return "D2"
-        elif self.division == 3:
-            return "D3"
         else:
-            return "NAIA"  # Default for other divisions
+            return "D3"
