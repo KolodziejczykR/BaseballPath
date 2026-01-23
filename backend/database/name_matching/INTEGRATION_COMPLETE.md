@@ -59,12 +59,12 @@ profile = integration.get_school_strength_profile("Stanford University, Stanford
     "current_season": {
         "year": 2025,
         "record": "42-15",
-        "overall_rating": 95.3,
-        "division_percentile": 92.5
+        "overall_rating": 15.3,  # Lower = better (Stanford is elite)
+        "division_percentile": 92.5  # Higher = better (top 92.5%)
     },
     "trend_analysis": {
         "trend": "improving",  # improving, stable, declining
-        "change": 3.2
+        "change": -3.2  # Negative = improving (rating decreased/got better)
     }
 }
 ```
@@ -147,7 +147,7 @@ async def _create_school_match():
 3. **Data-Driven Decisions**
    - "This is an elite program (top 10%) but very competitive for playing time"
    - "This is a developing program (50th percentile) with more opportunities"
-   - "This program is improving - overall rating up 3.2 points over 3 years"
+   - "This program is improving - overall rating down 3.2 points over 3 years (lower = better)"
 
 ---
 

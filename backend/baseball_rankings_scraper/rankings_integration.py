@@ -16,6 +16,9 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# Import name resolver
+from backend.database.name_matching import get_resolver
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -24,7 +27,7 @@ class BaseballRankingsIntegration:
     """Integration class for baseball rankings data with school filtering"""
 
     def __init__(self):
-        """Initialize Supabase client"""
+        """Initialize Supabase client and name resolver"""
         url = os.environ.get("SUPABASE_URL")
         key = os.environ.get("SUPABASE_SERVICE_KEY")
 
@@ -35,12 +38,15 @@ class BaseballRankingsIntegration:
         self.rankings_table = "baseball_rankings_data"
         self.schools_table = "school_data_general"
 
+        # Initialize name resolver for school_name <-> team_name mapping
+        self.name_resolver = get_resolver()
+
     def get_school_strength_profile(self, school_name: str, years: List[int] = None) -> Dict:
         """
         Get strength profile for a school across multiple years
 
         Args:
-            school_name: Name of the school
+            school_name: Name of the school (from school_data_general format: "University, City, ST")
             years: List of years to include (defaults to [2023, 2024, 2025])
 
         Returns:
@@ -50,10 +56,21 @@ class BaseballRankingsIntegration:
             years = [2023, 2024, 2025]
 
         try:
-            # Query rankings data for the school
+            # Resolve school_name to team_name
+            team_name = self.name_resolver.get_team_name(school_name, verified_only=True)
+
+            if not team_name:
+                logger.debug(f"No baseball rankings mapping found for: {school_name}")
+                return {
+                    "school_name": school_name,
+                    "has_data": False,
+                    "message": "No baseball rankings mapping found for this school"
+                }
+
+            # Query rankings data for the school using team_name
             response = self.supabase.table(self.rankings_table)\
                 .select("*")\
-                .eq("team_name", school_name)\
+                .eq("team_name", team_name)\
                 .in_("year", years)\
                 .order("year", desc=True)\
                 .execute()
@@ -61,8 +78,9 @@ class BaseballRankingsIntegration:
             if not response.data:
                 return {
                     "school_name": school_name,
+                    "team_name": team_name,
                     "has_data": False,
-                    "message": "No rankings data found for this school"
+                    "message": "No rankings data found for this team"
                 }
 
             rankings_data = response.data
@@ -90,6 +108,7 @@ class BaseballRankingsIntegration:
 
             return {
                 "school_name": school_name,
+                "team_name": team_name,
                 "has_data": True,
                 "current_division": recent_data['division'] if recent_data else None,
                 "most_recent_year": recent_data['year'] if recent_data else None,
@@ -153,7 +172,13 @@ class BaseballRankingsIntegration:
         return weighted_averages
 
     def _calculate_trend(self, rankings_data: List[Dict]) -> Dict:
-        """Calculate trend direction based on overall rating changes"""
+        """
+        Calculate trend direction based on overall rating changes
+
+        Note: Massey ratings use LOWER = BETTER
+        - Negative change = improving (rating decreased/got better)
+        - Positive change = declining (rating increased/got worse)
+        """
         if len(rankings_data) < 2:
             return {"trend": "insufficient_data", "change": None}
 
@@ -169,10 +194,11 @@ class BaseballRankingsIntegration:
 
         change = last_rating - first_rating
 
-        if change > 2.0:
-            trend = "improving"
-        elif change < -2.0:
-            trend = "declining"
+        # Lower rating = better, so negative change = improving
+        if change < -2.0:
+            trend = "improving"  # Rating decreased (got better)
+        elif change > 2.0:
+            trend = "declining"  # Rating increased (got worse)
         else:
             trend = "stable"
 
@@ -183,7 +209,12 @@ class BaseballRankingsIntegration:
         }
 
     def _get_division_percentile(self, overall_rating: float, year: int, division: int) -> Optional[float]:
-        """Get percentile ranking within division for a given year"""
+        """
+        Get percentile ranking within division for a given year
+
+        Note: Massey ratings use LOWER = BETTER (e.g., 1.0 = #1 team, 300.0 = #300 team)
+        Percentile returned is standard (higher = better), where 100th percentile = best team
+        """
         try:
             response = self.supabase.table(self.rankings_table)\
                 .select("overall_rating")\
@@ -198,8 +229,9 @@ class BaseballRankingsIntegration:
             ratings = [r['overall_rating'] for r in response.data]
             ratings.sort()
 
-            # Find percentile
-            position = sum(1 for r in ratings if r < overall_rating)
+            # Find percentile (count teams with HIGHER/WORSE ratings)
+            # Lower Massey rating = better team, so we count teams with higher ratings
+            position = sum(1 for r in ratings if r > overall_rating)
             percentile = (position / len(ratings)) * 100
 
             return round(percentile, 1)
@@ -245,13 +277,17 @@ class BaseballRankingsIntegration:
             return 1.3  # Rebuilding programs - most opportunities
 
     def get_division_rankings(self, year: int, division: int, limit: int = 50) -> List[Dict]:
-        """Get top rankings for a specific year and division"""
+        """
+        Get top rankings for a specific year and division
+
+        Note: Massey ratings use LOWER = BETTER, so we order ASC to get best teams
+        """
         try:
             response = self.supabase.table(self.rankings_table)\
                 .select("*")\
                 .eq("year", year)\
                 .eq("division", division)\
-                .order("overall_rating", desc=True)\
+                .order("overall_rating", desc=False)\
                 .limit(limit)\
                 .execute()
 
@@ -278,12 +314,12 @@ class BaseballRankingsIntegration:
                 }
             }
 
-            # Find strongest program (highest weighted overall rating)
-            strongest_rating = -999
+            # Find strongest program (lowest weighted overall rating = best)
+            strongest_rating = 9999  # Initialize high to find minimum
             strongest_school = None
 
-            # Find most improving program
-            best_trend = -999
+            # Find most improving program (most negative change = best improvement)
+            best_trend = 9999  # Initialize high to find most negative
             most_improving_school = None
 
             # Find best playing time opportunity (highest factor)
@@ -294,15 +330,15 @@ class BaseballRankingsIntegration:
                 if not profile.get('has_data'):
                     continue
 
-                # Check strongest
+                # Check strongest (lower rating = better)
                 weighted_overall = profile.get('weighted_averages', {}).get('weighted_overall_rating')
-                if weighted_overall and weighted_overall > strongest_rating:
+                if weighted_overall and weighted_overall < strongest_rating:
                     strongest_rating = weighted_overall
                     strongest_school = school_name
 
-                # Check most improving
+                # Check most improving (most negative change = best)
                 trend_change = profile.get('trend_analysis', {}).get('change')
-                if trend_change and trend_change > best_trend:
+                if trend_change is not None and trend_change < best_trend:
                     best_trend = trend_change
                     most_improving_school = school_name
 
