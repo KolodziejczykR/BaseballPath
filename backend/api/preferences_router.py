@@ -50,6 +50,20 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
             "hs_graduation_year": "2025",     # Graduation year
             "must_have_preferences": ["max_budget", "min_academic_rating"] # Dynamic must-haves
         },
+        "player_info": {
+            "height": 72,                     # Height in inches
+            "weight": 180,                    # Weight in lbs
+            "primary_position": "SS",         # Position (1B, 2B, 3B, SS, OF, C)
+            "exit_velo_max": 95.0,            # Max exit velocity (mph)
+            "sixty_time": 6.85,               # 60-yard dash (seconds)
+            "inf_velo": 85.0,                 # Infield throw velo (mph) - for infielders
+            "of_velo": null,                  # Outfield throw velo (mph) - for outfielders
+            "c_velo": null,                   # Catcher throw velo (mph) - for catchers
+            "pop_time": null,                 # Pop time (seconds) - for catchers
+            "throwing_hand": "R",             # R or L
+            "hitting_handedness": "R",        # R, L, or S
+            "region": "West"                  # Player's home region
+        },
         "ml_results": {
             "d1_results": {
                 "d1_probability": 0.75,
@@ -72,12 +86,14 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
     - School details (name, division, location, size, grades, costs)
     - PROs: What matches user preferences with descriptions
     - CONs: What doesn't match with explanations
+    - Playing time analysis: z-score, percentile, bucket, interpretation
     - Must-have filtering summary
     - Nice-to-have preference breakdown
     """
     try:
         # Validate required data
         user_preferences_data = request.get("user_preferences", {})
+        player_info = request.get("player_info", {})
         ml_data = request.get("ml_results", {})
         limit = request.get("limit", 50)
 
@@ -87,6 +103,8 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
             raise HTTPException(status_code=400, detail="ml_results is required")
         if not user_preferences_data.get("user_state"):
             raise HTTPException(status_code=400, detail="user_state is required for tuition calculation")
+        if not player_info:
+            raise HTTPException(status_code=400, detail="player_info is required for playing time calculation")
 
         # Create UserPreferences object with all current fields
         preferences = UserPreferences(
@@ -124,16 +142,12 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
         for pref_name in must_have_prefs:
             preferences.make_must_have(pref_name)
 
-        # Create ML results object (simplified - no player object needed for filtering)
+        # Create ML results object with player stats for playing time calculation
         d1_data = ml_data.get("d1_results", {})
         p4_data = ml_data.get("p4_results")
 
-        # Create a minimal player object for ML results structure
-        dummy_player = PlayerInfielder(
-            height=72, weight=180, exit_velo_max=90, sixty_time=7.0,
-            throwing_hand='R', hitting_handedness='R', region='West',
-            primary_position='SS', inf_velo=80
-        )
+        # Create the appropriate player object based on position
+        player = _create_player_from_info(player_info)
 
         d1_results = D1PredictionResult(
             d1_probability=d1_data.get("d1_probability", 0.0),
@@ -153,7 +167,7 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
             )
 
         ml_results = MLPipelineResults(
-            player=dummy_player,
+            player=player,
             d1_results=d1_results,
             p4_results=p4_results
         )
@@ -227,7 +241,10 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                         }
                         for miss in school_match.nice_to_have_misses
                     ]
-                }
+                },
+
+                # Playing time analysis
+                "playing_time": _format_playing_time(school_match.playing_time_result)
             }
             schools_data.append(school_info)
 
@@ -351,6 +368,89 @@ def _get_size_category(enrollment: int) -> str:
     else:
         return "Very Large"
 
+
+def _format_playing_time(playing_time_result) -> Dict[str, Any]:
+    """
+    Format PlayingTimeResult for API response.
+
+    Args:
+        playing_time_result: PlayingTimeResult object or None
+
+    Returns:
+        Dictionary with playing time data for API response
+    """
+    if playing_time_result is None:
+        return {
+            "available": False,
+            "message": "Playing time analysis not available for this school"
+        }
+
+    return {
+        "available": True,
+        "z_score": round(playing_time_result.final_z_score, 2),
+        "percentile": round(playing_time_result.percentile, 1),
+        "bucket": playing_time_result.bucket,
+        "bucket_description": playing_time_result.bucket_description,
+        "interpretation": playing_time_result.interpretation,
+        "breakdown": {
+            "stats_component": round(playing_time_result.stats_breakdown.component_total, 3),
+            "physical_component": round(playing_time_result.physical_breakdown.component_total, 3),
+            "ml_component": round(playing_time_result.ml_breakdown.component_total, 3),
+            "team_fit_bonus": round(playing_time_result.team_fit_breakdown.bonus, 3),
+            "trend_bonus": round(playing_time_result.trend_breakdown.bonus, 3),
+        },
+        "player_strength": playing_time_result.stats_breakdown.player_strength.value,
+        "team_needs": playing_time_result.team_fit_breakdown.team_needs.value,
+        "program_trend": playing_time_result.trend_breakdown.trend.value,
+    }
+
+
+def _create_player_from_info(player_info: Dict[str, Any]):
+    """
+    Create the appropriate PlayerType object based on position.
+
+    Args:
+        player_info: Dictionary with player stats including:
+            - height, weight, primary_position (required)
+            - exit_velo_max, sixty_time (common stats)
+            - inf_velo (infielders), of_velo (outfielders), c_velo/pop_time (catchers)
+            - throwing_hand, hitting_handedness, region
+
+    Returns:
+        PlayerInfielder, PlayerOutfielder, or PlayerCatcher based on position
+    """
+    position = player_info.get("primary_position", "SS").upper()
+
+    # Common args for all player types
+    common_args = {
+        "height": player_info.get("height", 72),
+        "weight": player_info.get("weight", 180),
+        "primary_position": position,
+        "throwing_hand": player_info.get("throwing_hand", "R"),
+        "hitting_handedness": player_info.get("hitting_handedness", "R"),
+        "region": player_info.get("region", "West"),
+        "exit_velo_max": player_info.get("exit_velo_max", 90.0),
+        "sixty_time": player_info.get("sixty_time", 7.0),
+    }
+
+    if position == "C":
+        return PlayerCatcher(
+            **common_args,
+            c_velo=player_info.get("c_velo", 75.0),
+            pop_time=player_info.get("pop_time", 2.0),
+        )
+    elif position in ["OF", "LF", "CF", "RF"]:
+        return PlayerOutfielder(
+            **common_args,
+            of_velo=player_info.get("of_velo", 85.0),
+        )
+    else:
+        # Default to infielder (1B, 2B, 3B, SS, DH, etc.)
+        return PlayerInfielder(
+            **common_args,
+            inf_velo=player_info.get("inf_velo", 80.0),
+        )
+
 @router.get("/example")
 async def get_preferences_example() -> Dict[str, Any]:
     """
@@ -392,6 +492,20 @@ async def get_preferences_example() -> Dict[str, Any]:
             # Dynamic must-have marking
             "must_have_preferences": ["max_budget", "min_academic_rating", "preferred_states"]
         },
+        "player_info": {
+            "height": 72,
+            "weight": 180,
+            "primary_position": "SS",
+            "exit_velo_max": 95.0,
+            "sixty_time": 6.85,
+            "inf_velo": 85.0,
+            "of_velo": None,
+            "c_velo": None,
+            "pop_time": None,
+            "throwing_hand": "R",
+            "hitting_handedness": "R",
+            "region": "West"
+        },
         "ml_results": {
             "d1_results": {
                 "d1_probability": 0.75,
@@ -411,9 +525,9 @@ async def get_preferences_example() -> Dict[str, Any]:
     }
 
     return {
-        "description": "Complete school filtering system with two-tier preferences",
+        "description": "Complete school filtering system with two-tier preferences and playing time analysis",
         "endpoints": {
-            "POST /preferences/filter": "Get detailed school matches with PROs/CONs analysis",
+            "POST /preferences/filter": "Get detailed school matches with PROs/CONs and playing time analysis",
             "POST /preferences/count": "Get quick count of schools meeting must-haves (for UI updates)",
             "GET /preferences/example": "This example endpoint",
             "GET /preferences/health": "Health check"
@@ -425,16 +539,21 @@ async def get_preferences_example() -> Dict[str, Any]:
             "Multi-select support: states, regions, school sizes, party scene",
             "PROs analysis: detailed explanations of what matches",
             "CONs analysis: explanations of what doesn't match and why",
+            "Playing time analysis: z-score, percentile, and bucket classification",
+            "Team fit analysis: player strength vs team needs alignment",
+            "Program trend bonus: opportunity assessment based on program trajectory",
             "ML integration: probability-based school selection across divisions",
             "Financial intelligence: in-state vs out-of-state tuition calculation",
             "Academic fit scoring: SAT/ACT compatibility analysis"
         ],
         "notes": [
             "user_state is required for accurate tuition calculation",
+            "player_info is required for playing time calculation",
             "must_have_preferences dynamically controls filtering strictness",
             "ML results determine division group selection and overlap",
+            "Playing time uses z-scores against division benchmarks",
             "Limit parameter controls maximum schools returned (default: 50)",
-            "/count endpoint is optimized for real-time UI updates"
+            "/count endpoint is optimized for real-time UI updates (no playing time)"
         ]
     }
 

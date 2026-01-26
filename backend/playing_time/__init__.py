@@ -56,6 +56,14 @@ from .constants import (
     SCHOOL_LEVEL_BANDS,
 )
 
+# Mappers (for pipeline integration)
+from .mappers import (
+    player_type_to_stats,
+    ml_results_to_predictions,
+    school_data_to_context,
+    create_playing_time_inputs,
+)
+
 __all__ = [
     # Calculator
     "PlayingTimeCalculator",
@@ -81,4 +89,9 @@ __all__ = [
     "DIVISION_BENCHMARKS",
     "PLAYING_TIME_BUCKETS",
     "SCHOOL_LEVEL_BANDS",
+    # Mappers
+    "player_type_to_stats",
+    "ml_results_to_predictions",
+    "school_data_to_context",
+    "create_playing_time_inputs",
 ]

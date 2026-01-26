@@ -6,9 +6,13 @@ filtering system, allowing for dynamic school counting and detailed
 match scoring.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
+
+# Use TYPE_CHECKING to avoid circular imports
+if TYPE_CHECKING:
+    from backend.playing_time.types import PlayingTimeResult
 
 
 class PreferenceCategory(Enum):
@@ -62,8 +66,11 @@ class SchoolMatch:
 
     # Baseball rankings integration
     baseball_strength: Optional[Dict[str, Any]] = None  # From BaseballRankingsIntegration
-    playing_time_factor: Optional[float] = None  # 0.7 (elite) to 1.3 (rebuilding)
+    playing_time_factor: Optional[float] = None  # DEPRECATED: use playing_time_result instead
     has_baseball_data: bool = False  # Whether baseball rankings are available
+
+    # Playing time analysis (comprehensive result from PlayingTimeCalculator)
+    playing_time_result: Optional["PlayingTimeResult"] = None
 
     def add_nice_to_have_match(self, match: NiceToHaveMatch):
         """Add a nice-to-have match"""
@@ -102,12 +109,17 @@ class SchoolMatch:
                 "has_data": True,
                 "team_name": self.baseball_strength.get("team_name"),
                 "strength_classification": self.baseball_strength.get("strength_classification"),
-                "playing_time_factor": self.playing_time_factor,
                 "current_season": self.baseball_strength.get("current_season"),
                 "trend": self.baseball_strength.get("trend_analysis", {}).get("trend")
             }
         else:
             summary["baseball_strength"] = {"has_data": False}
+
+        # Add playing time analysis if available
+        if self.playing_time_result is not None:
+            summary["playing_time"] = self.playing_time_result.to_summary_dict()
+        else:
+            summary["playing_time"] = {"has_data": False}
 
         return summary
 

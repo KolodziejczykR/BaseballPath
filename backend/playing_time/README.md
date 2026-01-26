@@ -224,23 +224,16 @@ TREND_BONUS_IMPROVING = -0.08
 
 ### Division Benchmarks
 
-**IMPORTANT:** The benchmark values in `constants.py` are **placeholders**. You should replace them with actual calculated averages from your dataset.
+The benchmark values in `constants.py` are calculated from real player data (19,512 players across divisions):
 
-```python
-DIVISION_BENCHMARKS = {
-    "P4": {
-        "exit_velo": {"mean": 96.0, "std": 4.0},
-        "sixty_time": {"mean": 6.75, "std": 0.18},
-        # ... etc
-    },
-    # ... other divisions
-}
-```
+| Division | Players | Exit Velo Mean | 60-Time Mean | Inf Velo Mean |
+|----------|---------|----------------|--------------|---------------|
+| P4 | 2,603 | 95.4 mph | 7.02s | 84.7 mph |
+| Non-P4 D1 | 5,630 | 93.4 mph | 7.10s | 82.9 mph |
+| D2 | 4,176 | 91.0 mph | 7.25s | 80.1 mph |
+| D3 | 7,103 | 88.7 mph | 7.35s | 77.7 mph |
 
-To calculate real benchmarks:
-1. Query your player data grouped by committed division
-2. Calculate mean and standard deviation for each stat
-3. Update `constants.py` with actual values
+Benchmarks include outlier filtering (reasonable bounds) to prevent data entry errors from skewing calculations. See `backend/data/division_benchmarks.ipynb` for the full calculation methodology.
 
 ## Output Structure
 
@@ -305,42 +298,83 @@ result.to_summary_dict()
 
 ## Integration
 
-### With School Filtering Pipeline
+The playing time calculator is fully integrated with the school filtering pipeline and API.
+
+### Data Mappers
+
+The `mappers.py` module provides conversion functions between pipeline types and playing time types:
 
 ```python
-from backend.playing_time import calculate_playing_time, PlayerStats, MLPredictions, SchoolData
+from backend.playing_time import create_playing_time_inputs
 
-# In async_two_tier_pipeline.py
-async def _enrich_with_playing_time(self, school_match, player_stats, ml_results):
-    school_data = SchoolData(
-        school_name=school_match.school_name,
-        division=school_match.school_data.get("division", 1),
-        is_power_4=school_match.school_data.get("is_power_4", False),
-        division_percentile=school_match.baseball_strength.get("current_season", {}).get("division_percentile", 50),
-        offensive_rating=school_match.baseball_strength.get("current_season", {}).get("offensive_rating"),
-        defensive_rating=school_match.baseball_strength.get("current_season", {}).get("defensive_rating"),
-        trend=school_match.baseball_strength.get("trend_analysis", {}).get("trend", "stable"),
-    )
+# Convert pipeline data to playing time calculator inputs
+player_stats, ml_predictions, school_context = create_playing_time_inputs(
+    player=ml_results.player,        # PlayerInfielder/PlayerOutfielder/PlayerCatcher
+    ml_results=ml_results,           # MLPipelineResults
+    school_data=school_data,         # Dict from database
+    baseball_strength=baseball_strength,  # Optional Dict from rankings
+)
 
-    result = calculate_playing_time(player_stats, ml_results, school_data)
-    school_match.playing_time_result = result
+# Calculate playing time
+result = calculator.calculate(player_stats, ml_predictions, school_context)
 ```
 
-### With API Response
+Available mapper functions:
+- `player_type_to_stats()` - Converts PlayerType to PlayerStats
+- `ml_results_to_predictions()` - Converts MLPipelineResults to MLPredictions
+- `school_data_to_context()` - Converts school dict + baseball rankings to SchoolData
+- `create_playing_time_inputs()` - All-in-one convenience function
+
+### Pipeline Integration
+
+Playing time is automatically calculated in `async_two_tier_pipeline.py`:
 
 ```python
-# In preferences_router.py
-@router.post("/filter")
-async def filter_schools(request: FilterRequest):
-    # ... filtering logic ...
+# In AsyncTwoTierFilteringPipeline._create_school_match()
+async def _create_school_match(self, school_data, preferences, ml_results):
+    school_match = SchoolMatch(...)
 
-    # Add playing time to response
-    for match in school_matches:
-        if match.playing_time_result:
-            match.playing_time_summary = match.playing_time_result.to_summary_dict()
+    # Score preferences
+    await self._score_nice_to_haves(school_match, preferences)
 
-    return {"school_matches": school_matches}
+    # Enrich with baseball rankings
+    await self._enrich_with_baseball_rankings(school_match)
+
+    # Calculate playing time
+    await self._calculate_playing_time(school_match, ml_results)
+
+    return school_match
 ```
+
+### API Response
+
+The `/preferences/filter` endpoint includes playing time in each school's response:
+
+```json
+{
+    "school_name": "Example University",
+    "playing_time": {
+        "available": true,
+        "z_score": 1.18,
+        "percentile": 88.1,
+        "bucket": "Compete for Time",
+        "bucket_description": "Top 16% - strong chance to earn spot",
+        "interpretation": "Your stats put you in the top 12%...",
+        "breakdown": {
+            "stats_component": 1.075,
+            "physical_component": 0.06,
+            "ml_component": 0.014,
+            "team_fit_bonus": 0.15,
+            "trend_bonus": 0.12
+        },
+        "player_strength": "defensive",
+        "team_needs": "defense",
+        "program_trend": "declining"
+    }
+}
+```
+
+The API requires `player_info` in the request for playing time calculation. See `GET /preferences/example` for the full request format.
 
 ## File Structure
 
@@ -350,7 +384,8 @@ backend/playing_time/
 ├── README.md                   # This documentation
 ├── constants.py                # All configurable values with rationale
 ├── types.py                    # Input/output data structures
-└── playing_time_calculator.py  # Main algorithm implementation
+├── playing_time_calculator.py  # Main algorithm implementation
+└── mappers.py                  # Data conversion for pipeline integration
 ```
 
 ## Future Enhancements
@@ -374,7 +409,9 @@ Some conferences within the same division have different talent levels. Could ad
 
 ### Z-scores seem too high/low
 
-Check that `DIVISION_BENCHMARKS` in `constants.py` reflect actual data. The placeholder values may not match your dataset.
+The benchmarks in `constants.py` are calculated from real data with outlier filtering. If your sample players consistently produce extreme z-scores, check that:
+- Player stats are in expected ranges (exit_velo in mph, sixty_time in seconds)
+- The correct division group is being passed (P4, Non-P4 D1, D2, D3)
 
 ### Missing stats cause issues
 
@@ -382,7 +419,11 @@ Missing stats are handled gracefully — they use the division average (z-score 
 
 ### Team needs always "balanced"
 
-Ensure `offensive_rating` and `defensive_rating` are being passed from the baseball rankings data. If both are `None`, the calculator defaults to balanced.
+Ensure `offensive_rating` and `defensive_rating` are being passed from the baseball rankings data. If both are `None`, the calculator defaults to balanced. Check that the school has baseball rankings data available.
+
+### Playing time not appearing in API response
+
+Ensure `player_info` is included in the API request. The playing time calculation requires player stats. Check the logs for any calculation errors.
 
 ## References
 

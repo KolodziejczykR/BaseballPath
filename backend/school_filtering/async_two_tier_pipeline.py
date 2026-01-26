@@ -4,7 +4,6 @@ Complete async version of the two-tier filtering system with all business logic 
 """
 
 import asyncio
-import asyncio
 import logging
 from typing import Dict, List, Optional, Any
 from backend.utils.preferences_types import UserPreferences
@@ -20,6 +19,12 @@ from backend.school_filtering.filters import (
 )
 from backend.baseball_rankings_scraper.rankings_integration import BaseballRankingsIntegration
 from backend.database.name_matching import get_resolver
+
+# Playing time calculation
+from backend.playing_time import (
+    PlayingTimeCalculator,
+    create_playing_time_inputs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +52,9 @@ class AsyncTwoTierFilteringPipeline:
         # Baseball rankings integration
         self.rankings_integration = BaseballRankingsIntegration()
         self.name_resolver = get_resolver()
+
+        # Playing time calculator
+        self.playing_time_calculator = PlayingTimeCalculator()
 
         # Concurrency control for scalability
         self.max_concurrent_batches = max_concurrent_batches
@@ -358,7 +366,7 @@ class AsyncTwoTierFilteringPipeline:
     async def _create_school_match(self, school_data: Dict[str, Any],
                                  preferences: UserPreferences,
                                  ml_results: MLPipelineResults) -> SchoolMatch:
-        """Create a SchoolMatch object with nice-to-have scoring and baseball rankings"""
+        """Create a SchoolMatch object with nice-to-have scoring, baseball rankings, and playing time"""
         school_name = school_data.get('school_name', 'Unknown School')
 
         school_match = SchoolMatch(
@@ -372,6 +380,9 @@ class AsyncTwoTierFilteringPipeline:
 
         # Enrich with baseball rankings data if available
         await self._enrich_with_baseball_rankings(school_match)
+
+        # Calculate playing time opportunity
+        await self._calculate_playing_time(school_match, ml_results)
 
         return school_match
 
@@ -404,6 +415,39 @@ class AsyncTwoTierFilteringPipeline:
             logger.error(f"Error enriching {school_name} with baseball rankings: {e}")
             # Don't fail the whole match if baseball enrichment fails
             school_match.has_baseball_data = False
+
+    async def _calculate_playing_time(self, school_match: SchoolMatch,
+                                       ml_results: MLPipelineResults):
+        """
+        Calculate playing time opportunity for this school-player combination.
+
+        Uses the PlayingTimeCalculator to produce a comprehensive analysis including
+        z-score, percentile, bucket classification, and detailed breakdown.
+        """
+        try:
+            # Convert pipeline data to playing time calculator inputs
+            player_stats, ml_predictions, school_context = create_playing_time_inputs(
+                player=ml_results.player,
+                ml_results=ml_results,
+                school_data=school_match.school_data,
+                baseball_strength=school_match.baseball_strength,
+            )
+
+            # Calculate playing time
+            result = self.playing_time_calculator.calculate(
+                player_stats, ml_predictions, school_context
+            )
+
+            school_match.playing_time_result = result
+            logger.debug(
+                f"Playing time for {school_match.school_name}: "
+                f"z={result.final_z_score:.2f}, bucket={result.bucket}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error calculating playing time for {school_match.school_name}: {e}")
+            # Don't fail the whole match if playing time calculation fails
+            school_match.playing_time_result = None
 
     async def _score_nice_to_haves(self, school_match: SchoolMatch, preferences: UserPreferences):
         """Score all nice-to-have preferences for a school"""
