@@ -9,7 +9,7 @@ IMPORTANT: When updating these values, update the corresponding documentation
 in README.md to keep everything in sync.
 """
 
-from typing import Dict, Any
+from typing import Dict
 
 
 # =============================================================================
@@ -226,18 +226,25 @@ PLAYING_TIME_BUCKETS = [
 
 
 # =============================================================================
-# DIVISION BENCHMARKS (PLACEHOLDER)
+# DIVISION BENCHMARKS
 # =============================================================================
-# These benchmark values (mean and std for each stat per division) should be
-# calculated from your actual player data. The values below are PLACEHOLDERS.
+# Calculated from all_hitter_data.csv with outlier filtering.
+# See backend/data/division_benchmarks.ipynb for calculation methodology.
 #
-# TODO: Replace with actual calculated benchmarks from your dataset.
+# Data sources:
+# - P4: 2,603 players from Power 4 conferences
+# - Non-P4 D1: 5,630 players from non-Power 4 D1 conferences
+# - D2: 4,176 players from Division 2
+# - D3: 7,103 players from Division 3
+#
+# Position-specific stats (inf_velo, of_velo, c_velo, pop_time) are calculated
+# only from players whose primary_position matches that position type.
 #
 # Structure:
 # DIVISION_BENCHMARKS[division_group][stat_name] = {"mean": float, "std": float}
 #
 # Stats tracked:
-# - exit_velo: Exit velocity (mph) - higher is better
+# - exit_velo: Exit velocity max (mph) - higher is better
 # - sixty_time: 60-yard dash time (seconds) - lower is better
 # - inf_velo: Infielder throw velocity (mph) - higher is better
 # - of_velo: Outfielder throw velocity (mph) - higher is better
@@ -248,45 +255,45 @@ PLAYING_TIME_BUCKETS = [
 
 DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
     "P4": {
-        "exit_velo": {"mean": 96.0, "std": 4.0},
-        "sixty_time": {"mean": 6.75, "std": 0.18},
-        "inf_velo": {"mean": 87.0, "std": 3.5},
-        "of_velo": {"mean": 90.0, "std": 3.5},
-        "c_velo": {"mean": 83.0, "std": 3.0},
-        "pop_time": {"mean": 1.95, "std": 0.07},
-        "height": {"mean": 73.0, "std": 2.5},
-        "weight": {"mean": 195.0, "std": 18.0},
+        "exit_velo": {"mean": 95.4, "std": 5.97},
+        "sixty_time": {"mean": 7.02, "std": 0.34},
+        "inf_velo": {"mean": 84.66, "std": 5.29},
+        "of_velo": {"mean": 86.94, "std": 5.57},
+        "c_velo": {"mean": 79.02, "std": 3.9},
+        "pop_time": {"mean": 1.99, "std": 0.1},
+        "height": {"mean": 72.65, "std": 2.25},
+        "weight": {"mean": 187.32, "std": 19.04},
     },
     "Non-P4 D1": {
-        "exit_velo": {"mean": 92.0, "std": 4.5},
-        "sixty_time": {"mean": 7.0, "std": 0.20},
-        "inf_velo": {"mean": 83.0, "std": 3.5},
-        "of_velo": {"mean": 86.0, "std": 3.5},
-        "c_velo": {"mean": 80.0, "std": 3.0},
-        "pop_time": {"mean": 2.02, "std": 0.08},
-        "height": {"mean": 72.0, "std": 2.5},
-        "weight": {"mean": 185.0, "std": 17.0},
+        "exit_velo": {"mean": 93.4, "std": 5.58},
+        "sixty_time": {"mean": 7.1, "std": 0.34},
+        "inf_velo": {"mean": 82.94, "std": 5.01},
+        "of_velo": {"mean": 85.53, "std": 4.94},
+        "c_velo": {"mean": 77.54, "std": 3.87},
+        "pop_time": {"mean": 2.0, "std": 0.1},
+        "height": {"mean": 72.11, "std": 2.22},
+        "weight": {"mean": 182.71, "std": 18.66},
     },
     "D2": {
-        "exit_velo": {"mean": 88.0, "std": 5.0},
-        "sixty_time": {"mean": 7.15, "std": 0.22},
-        "inf_velo": {"mean": 80.0, "std": 3.5},
-        "of_velo": {"mean": 83.0, "std": 3.5},
-        "c_velo": {"mean": 77.0, "std": 3.0},
-        "pop_time": {"mean": 2.08, "std": 0.09},
-        "height": {"mean": 71.5, "std": 2.5},
-        "weight": {"mean": 180.0, "std": 16.0},
+        "exit_velo": {"mean": 91.0, "std": 5.44},
+        "sixty_time": {"mean": 7.25, "std": 0.35},
+        "inf_velo": {"mean": 80.07, "std": 5.08},
+        "of_velo": {"mean": 82.83, "std": 4.97},
+        "c_velo": {"mean": 75.44, "std": 3.58},
+        "pop_time": {"mean": 2.06, "std": 0.11},
+        "height": {"mean": 71.52, "std": 2.3},
+        "weight": {"mean": 179.35, "std": 19.98},
     },
     "D3": {
-        "exit_velo": {"mean": 84.0, "std": 5.5},
-        "sixty_time": {"mean": 7.30, "std": 0.25},
-        "inf_velo": {"mean": 77.0, "std": 3.5},
-        "of_velo": {"mean": 80.0, "std": 3.5},
-        "c_velo": {"mean": 74.0, "std": 3.0},
-        "pop_time": {"mean": 2.15, "std": 0.10},
-        "height": {"mean": 71.0, "std": 2.5},
-        "weight": {"mean": 175.0, "std": 15.0},
-    }
+        "exit_velo": {"mean": 88.65, "std": 5.77},
+        "sixty_time": {"mean": 7.35, "std": 0.39},
+        "inf_velo": {"mean": 77.67, "std": 5.19},
+        "of_velo": {"mean": 80.56, "std": 5.2},
+        "c_velo": {"mean": 73.72, "std": 3.74},
+        "pop_time": {"mean": 2.11, "std": 0.12},
+        "height": {"mean": 71.12, "std": 2.33},
+        "weight": {"mean": 175.38, "std": 20.56},
+    },
 }
 
 

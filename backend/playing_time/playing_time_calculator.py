@@ -21,7 +21,7 @@ See constants.py for all configurable values and their rationale.
 
 import logging
 import math
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 
 from .constants import (
     # Stat weights
@@ -72,7 +72,6 @@ from .constants import (
 
     # Stat classification
     STAT_TO_STRENGTH,
-    INVERTED_STATS,
 )
 
 from .types import (
@@ -343,7 +342,7 @@ class PlayingTimeCalculator:
     def _rank_and_weight_stats(
         self,
         z_scores: List[StatZScore],
-        player_stats: PlayerStats
+        _player_stats: PlayerStats
     ) -> StatsBreakdown:
         """
         Rank stats by z-score and apply weights (30% best, 25% mid, 20% worst).
