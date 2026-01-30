@@ -12,7 +12,6 @@ class UserPreferences:
     min_academic_rating: Optional[str] = None       # e.g., "B+", "A-"
 
     preferred_school_size: Optional[List[str]] = None     # "Small" (0-2999 students), "Medium" (3000-9999 students), "Large" (10000-29999 students), "Very Large" (30000+ students)
-    gpa: Optional[float] = None                           # Student's GPA (out of 4.0)
     sat: Optional[int] = None                             # Student's SAT score (out of 1600)
     act: Optional[int] = None                             # Student's ACT score (out of 36)
     hs_graduation_year: Optional[int] = None              # e.g., 2027
@@ -27,7 +26,6 @@ class UserPreferences:
     
     # Athletic preferences
     min_athletics_rating: Optional[str] = None           # e.g., "B", "A-"
-    playing_time_priority: Optional[List[str]] = None    # ["High", "Medium"] for multi-select: "High", "Medium", "Low"
     
     # Recruiting profile links
     pbr_profile_link: Optional[str] = None

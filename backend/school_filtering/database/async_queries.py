@@ -1,5 +1,10 @@
 """
 Async database query operations for school filtering with connection pooling and retry logic
+
+Database Schema:
+- school_data_general: Main school data (school_name, school_state, tuition, etc.)
+- school_baseball_ranking_name_mapping: Maps school_name → team_name
+- baseball_rankings_data: Has division_group and baseball rankings by team_name
 """
 
 import os
@@ -13,22 +18,97 @@ from supabase import Client
 
 from .async_connection import AsyncSupabaseConnection
 from ..exceptions import SchoolDataError
+from backend.utils.school_group_constants import NON_D1
 
 logger = logging.getLogger(__name__)
 
 
 class AsyncSchoolDataQueries:
-    """Async database query operations for school data with resilience patterns"""
+    """Async database query operations for school data with resilience patterns
+
+    Division group is stored in baseball_rankings_data, accessed via:
+    school_data_general.school_name → school_baseball_ranking_name_mapping.team_name → baseball_rankings_data.division_group
+    """
 
     def __init__(self, connection: Optional[AsyncSupabaseConnection] = None):
         self.connection = connection or AsyncSupabaseConnection()
 
+        # Cache for division_group mappings (school_name → division_group)
+        self._division_group_cache: Dict[str, str] = {}
+        self._cache_loaded = False
+
+    async def _load_division_group_cache(self) -> None:
+        """Load division_group mappings from baseball_rankings_data via name mapping"""
+        if self._cache_loaded:
+            return
+
+        async def _load_cache_query(client: Client) -> Dict[str, str]:
+            logger.info("Loading division_group cache from database...")
+            result_cache: Dict[str, str] = {}
+
+            # Get verified name mappings (school_name → team_name)
+            mapping_response = client.table('school_baseball_ranking_name_mapping')\
+                .select('school_name, team_name')\
+                .eq('verified', True)\
+                .not_.is_('team_name', 'null')\
+                .execute()
+
+            if not mapping_response.data:
+                logger.warning("No verified name mappings found")
+                return result_cache
+
+            # Create team_name → school_name reverse mapping
+            team_to_school = {row['team_name']: row['school_name'] for row in mapping_response.data}
+            team_names = list(team_to_school.keys())
+
+            # Get division_group for each team (most recent year's data)
+            rankings_response = client.table('baseball_rankings_data')\
+                .select('team_name, division_group')\
+                .in_('team_name', team_names)\
+                .order('year', desc=True)\
+                .execute()
+
+            if rankings_response.data:
+                # Use first occurrence for each team (most recent year)
+                seen_teams = set()
+                for row in rankings_response.data:
+                    team_name = row['team_name']
+                    division_group = row.get('division_group')
+
+                    if team_name not in seen_teams and division_group:
+                        seen_teams.add(team_name)
+                        school_name = team_to_school.get(team_name)
+                        if school_name:
+                            result_cache[school_name] = division_group
+
+            logger.info(f"Loaded {len(result_cache)} division_group mappings into cache")
+            return result_cache
+
+        try:
+            self._division_group_cache = await self.connection.execute_with_retry(_load_cache_query)
+            self._cache_loaded = True
+        except Exception as e:
+            logger.error(f"Error loading division_group cache: {e}")
+            self._cache_loaded = True  # Mark as loaded to prevent repeated failures
+
+    async def _enrich_schools_with_division_group(self, schools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Enrich school data with division_group from cache"""
+        await self._load_division_group_cache()
+
+        for school in schools:
+            school_name = school.get('school_name')
+            if school_name:
+                division_group = self._division_group_cache.get(school_name)
+                school['division_group'] = division_group or NON_D1  # Default to Non-D1 if not found
+
+        return schools
+
     async def get_all_schools(self) -> List[Dict[str, Any]]:
         """
-        Retrieve all schools from the school_data_general table
+        Retrieve all schools from the school_data_general table, enriched with division_group
 
         Returns:
-            List of school dictionaries with all available data
+            List of school dictionaries with all available data including division_group
         """
         async def _get_all_schools_query(client: Client) -> List[Dict[str, Any]]:
             logger.debug("Executing get_all_schools query")
@@ -42,7 +122,10 @@ class AsyncSchoolDataQueries:
             return response.data
 
         try:
-            return await self.connection.execute_with_retry(_get_all_schools_query)
+            schools = await self.connection.execute_with_retry(_get_all_schools_query)
+            # Enrich with division_group from baseball rankings
+            schools = await self._enrich_schools_with_division_group(schools)
+            return schools
         except Exception as e:
             raise SchoolDataError(f"Failed to retrieve schools: {str(e)}")
 
@@ -50,25 +133,23 @@ class AsyncSchoolDataQueries:
         """
         Retrieve schools filtered by division_group
 
+        Division group is determined by looking up via:
+        school_baseball_ranking_name_mapping → baseball_rankings_data
+
         Args:
             division_group: The division group to filter by (e.g., "Power 4 D1", "Non-P4 D1", "Non-D1")
 
         Returns:
             List of school dictionaries matching the division group
         """
-        async def _get_schools_by_division_query(client: Client, div_group: str) -> List[Dict[str, Any]]:
-            logger.debug(f"Executing get_schools_by_division_group query for: {div_group}")
-            response = client.table('school_data_general')\
-                .select('*')\
-                .eq('division_group', div_group)\
-                .execute()
-
-            result = response.data or []
-            logger.info(f"Retrieved {len(result)} schools for division group: {div_group}")
-            return result
-
         try:
-            return await self.connection.execute_with_retry(_get_schools_by_division_query, division_group)
+            # Get all schools (already enriched with division_group)
+            all_schools = await self.get_all_schools()
+
+            # Filter by division_group
+            schools = [s for s in all_schools if s.get('division_group') == division_group]
+            logger.info(f"Filtered to {len(schools)} schools for division group: {division_group}")
+            return schools
         except Exception as e:
             raise SchoolDataError(f"Failed to retrieve schools by division group: {str(e)}")
 
@@ -78,6 +159,9 @@ class AsyncSchoolDataQueries:
         """
         Retrieve schools from multiple division groups with optional limits per group
 
+        Division group is determined by looking up via:
+        school_baseball_ranking_name_mapping → baseball_rankings_data
+
         Args:
             division_groups: List of division groups to retrieve
             limit_per_group: Optional dictionary mapping division_group -> max_schools
@@ -85,33 +169,27 @@ class AsyncSchoolDataQueries:
         Returns:
             Dictionary mapping division_group -> list of schools
         """
-        async def _get_schools_by_division_groups_query(client: Client,
-                                                       div_groups: List[str],
-                                                       limits: Optional[Dict[str, int]]) -> Dict[str, List[Dict[str, Any]]]:
-            logger.debug(f"Executing get_schools_by_division_groups query for: {div_groups}")
-            results = {}
+        try:
+            if not division_groups:
+                return {}
 
-            # Execute queries for each division group
-            for division_group in div_groups:
-                query = client.table('school_data_general')\
-                    .select('*')\
-                    .eq('division_group', division_group)
+            # Get all schools (already enriched with division_group)
+            all_schools = await self.get_all_schools()
 
-                # Apply limit if specified
-                if limits and division_group in limits:
-                    query = query.limit(limits[division_group])
+            # Group schools by division_group and apply limits
+            results: Dict[str, List[Dict[str, Any]]] = {dg: [] for dg in division_groups}
 
-                response = query.execute()
-                schools = response.data or []
-                results[division_group] = schools
-                logger.debug(f"Retrieved {len(schools)} schools for division group: {division_group}")
+            for school in all_schools:
+                school_division = school.get('division_group')
+                if school_division in division_groups:
+                    # Apply limit if specified
+                    limit = limit_per_group.get(school_division) if limit_per_group else None
+                    if limit is None or len(results[school_division]) < limit:
+                        results[school_division].append(school)
 
             total_schools = sum(len(schools) for schools in results.values())
-            logger.info(f"Retrieved {total_schools} total schools across {len(div_groups)} division groups")
+            logger.info(f"Retrieved {total_schools} total schools across {len(division_groups)} division groups")
             return results
-
-        try:
-            return await self.connection.execute_with_retry(_get_schools_by_division_groups_query, division_groups, limit_per_group)
         except Exception as e:
             raise SchoolDataError(f"Failed to retrieve schools by division groups: {str(e)}")
 

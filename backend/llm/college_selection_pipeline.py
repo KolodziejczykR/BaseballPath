@@ -175,10 +175,8 @@ class CollegeSelectionPipeline:
             player_info += f"\n- Outfield Velocity: {player_info_dict.get('of_velo', 'N/A')} mph"
         
         # Add optional fields from user preferences
-        if user_preferences.graduation_year:
-            player_info += f"\n- Graduation Year: {user_preferences.graduation_year}"
-        if user_preferences.gpa:
-            player_info += f"\n- GPA: {user_preferences.gpa}"
+        if user_preferences.hs_graduation_year:
+            player_info += f"\n- Graduation Year: {user_preferences.hs_graduation_year}"
         
         # ML results (from your code)
         model_probs = ml_results.get_player_probabilities()
@@ -518,11 +516,9 @@ class CollegeSelectionPipeline:
         elif isinstance(player, PlayerOutfielder):
             player_info += f"\n- Outfield Velocity: {player_info_dict.get('of_velo', 'N/A')} mph"
         
-        if user_preferences.graduation_year:
-            player_info += f"\n- Graduation Year: {user_preferences.graduation_year}"
-        if user_preferences.gpa:
-            player_info += f"\n- GPA: {user_preferences.gpa}"
-        
+        if user_preferences.hs_graduation_year:
+            player_info += f"\n- Graduation Year: {user_preferences.hs_graduation_year}"
+
         # ML predictions
         model_probs = ml_results.get_player_probabilities()
         model_probs_str = model_probs if isinstance(model_probs, str) else str(model_probs)
@@ -670,12 +666,11 @@ if __name__ == "__main__":
     )
     
     sample_preferences = UserPreferences(
+        user_state="NC",
         preferred_regions=["Southeast", "Midwest"],
         min_academic_rating="B+",
-        max_tuition_budget=40000,
-        playing_time_priority="High",
-        graduation_year="2026",
-        gpa=3.5
+        max_budget=40000,
+        hs_graduation_year="2026"
     )
     
     # Run pipeline

@@ -22,8 +22,16 @@ from backend.utils.preferences_types import UserPreferences
 from backend.utils.prediction_types import MLPipelineResults
 
 
+@pytest.mark.integration
 class TestRealDatabaseIntegration:
-    """Test real database integration with actual Supabase data"""
+    """Test real database integration with actual Supabase data
+
+    Note: These tests require:
+    1. Supabase credentials (SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    2. Database with correct schema (division_group in baseball_rankings_data)
+
+    Run with: pytest -m integration tests/testbackend/test_school_filtering/advanced_tests/test_database_integration.py
+    """
 
     @pytest.mark.skipif(not os.getenv('SUPABASE_URL') or not os.getenv('SUPABASE_SERVICE_KEY'),
                        reason="Supabase credentials not available")
@@ -124,7 +132,7 @@ class TestRealDatabaseIntegration:
             )
 
             # Higher achieving students get better predictions
-            base_d1_prob = 0.6 if preferences.gpa and preferences.gpa > 3.5 else 0.4
+            base_d1_prob = 0.6 if preferences.sat and preferences.sat > 1350 else 0.4
             base_p4_prob = 0.4 if preferences.sat and preferences.sat > 1400 else 0.2
 
             ml_results = MLPipelineResults(

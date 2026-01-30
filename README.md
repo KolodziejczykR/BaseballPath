@@ -1,4 +1,4 @@
-# AI/ML Baseball Recruitment App
+# BaseballPath
 
 ## Overview
 This project is an AI/ML-assisted baseball recruitment platform that helps athletes find the best-fit colleges based on their stats and preferences.

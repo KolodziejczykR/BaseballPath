@@ -21,8 +21,16 @@ from backend.school_filtering.database import AsyncSchoolDataQueries
 from backend.school_filtering.async_two_tier_pipeline import get_school_matches_shared as get_school_matches, count_eligible_schools_shared as count_eligible_schools
 
 
+@pytest.mark.integration
 class TestQueryOptimization:
-    """Test database query performance and optimization"""
+    """Test database query performance and optimization
+
+    Note: These tests require:
+    1. Supabase credentials (SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    2. Database with correct schema (division_group in baseball_rankings_data)
+
+    Run with: pytest -m integration tests/testbackend/test_school_filtering/advanced_tests/test_query_optimization.py
+    """
 
     @pytest.mark.skipif(not os.getenv('SUPABASE_URL') or not os.getenv('SUPABASE_SERVICE_KEY'),
                        reason="Supabase credentials not available")

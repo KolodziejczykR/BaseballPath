@@ -184,12 +184,10 @@ class TestBasicFunctionality:
         # Valid preferences should work
         preferences = UserPreferences(
             user_state='CA',
-            gpa=3.5,
             sat=1350,
             act=30
         )
 
-        assert preferences.gpa == 3.5
         assert preferences.sat == 1350
         assert preferences.act == 30
 

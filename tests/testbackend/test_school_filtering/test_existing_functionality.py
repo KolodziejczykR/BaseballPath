@@ -317,7 +317,6 @@ class TestUserPreferencesExistingMethods:
             max_budget=30000,
             preferred_states=['CA', 'TX'],
             min_academic_rating='B+',
-            gpa=3.5,
             sat=1350
         )
 
@@ -326,5 +325,4 @@ class TestUserPreferencesExistingMethods:
         assert preferences.max_budget == 30000
         assert preferences.preferred_states == ['CA', 'TX']
         assert preferences.min_academic_rating == 'B+'
-        assert preferences.gpa == 3.5
         assert preferences.sat == 1350

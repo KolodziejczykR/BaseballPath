@@ -15,7 +15,7 @@ logging.getLogger().setLevel(logging.WARNING)  # Only show warnings and errors
 logging.getLogger('backend').setLevel(logging.WARNING)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
 from backend.utils.preferences_types import UserPreferences
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
@@ -112,12 +112,10 @@ async def example_detailed_matching():
         preferred_states=['CA', 'TX', 'FL'],
         preferred_regions=['West', 'South'],
         preferred_school_size=['Medium', 'Large'],
-        gpa=3.5,
         sat=1350,
         intended_major_buckets='Engineering',
         party_scene_preference=['Moderate'],
         min_athletics_rating='B+',
-        playing_time_priority=['High'],
     )
 
     # Create ML results
@@ -160,7 +158,7 @@ async def example_detailed_matching():
         print(f"\nASYNC FILTERING SUMMARY:")
         print(f"  • Schools meeting must-haves: {filtering_result.must_have_count}")
         print(f"  • Schools with detailed scoring: {len(filtering_result.school_matches)}")
-        print(f"  • Total schools considered: {filtering_result.total_schools_considered}")
+        print(f"  • Total schools in division: {filtering_result.total_possible_schools}")
 
         print(f"\nMUST-HAVE PREFERENCES:")
         must_haves = preferences.get_must_haves()
@@ -172,25 +170,46 @@ async def example_detailed_matching():
         for key, value in nice_to_haves.items():
             print(f"  • {key}: {value}")
 
-        print(f"\nTOP MATCHING SCHOOLS:")
-        print(f"ML Prediction: {ml_results.get_final_prediction()}")
+        print(f"\nML PREDICTION: {ml_results.get_final_prediction()}")
+        print(f"D1 Probability: {ml_results.d1_results.d1_probability:.1%}")
+        if ml_results.p4_results:
+            print(f"P4 Probability: {ml_results.p4_results.p4_probability:.1%}")
 
-        for i, school_match in enumerate(filtering_result.school_matches[:5], 1):  # Show top 5
+        print(f"\n{'='*80}")
+        print(f"ALL MATCHING SCHOOLS ({len(filtering_result.school_matches)} total)")
+        print(f"{'='*80}")
+
+        for i, school_match in enumerate(filtering_result.school_matches, 1):
             summary = school_match.get_match_summary()
-            print(f"\n{i}. {summary['school_name']} ({summary['division_group']})")
+            print(f"\n{'─'*60}")
+            print(f"{i}. {summary['school_name']}")
+            print(f"   Division: {summary['division_group']}")
+
+            # Show MUST-HAVE STATUS (all schools have all must-haves)
+            print(f"   ✓ Meets ALL must-have requirements")
+
+            # Show NICE-TO-HAVE MATCHES
             print(f"   Nice-to-have Matches: {summary['total_nice_to_have_matches']}")
-
-            # Show PROs (matched preferences)
             if summary['pros']:
-                print("   PROs (What matches your preferences):")
-                for match in summary['pros'][:3]:  # Show top 3 pros
-                    print(f"     ✓ {match['description']}")
+                for match in summary['pros']:
+                    print(f"     + {match['description']}")
 
-            # Show CONs (missed preferences)
+            # Show NICE-TO-HAVE MISSES
             if summary['cons']:
-                print("   CONs (What doesn't match your preferences):")
-                for miss in summary['cons'][:3]:  # Show top 3 cons
-                    print(f"     ✗ {miss['reason']}")
+                print(f"   Nice-to-have Misses: {len(summary['cons'])}")
+                for miss in summary['cons']:
+                    print(f"     - {miss['reason']}")
+
+            # Show PLAYING TIME ANALYSIS
+            print(f"\n   ⚾ PLAYING TIME ANALYSIS:")
+            if summary.get('playing_time', {}).get('bucket'):
+                pt = summary['playing_time']
+                print(f"      Bucket: {pt['bucket']}")
+                print(f"      Percentile: {pt['percentile']}th")
+                print(f"      Z-Score: {pt['final_z_score']:.2f}")
+                print(f"      {pt['interpretation']}")
+            else:
+                print(f"      Data not available for this school")
 
     except Exception as e:
         print(f"Error: {e}")

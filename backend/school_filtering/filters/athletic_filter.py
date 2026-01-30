@@ -45,10 +45,7 @@ class AthleticFilter(BaseFilter):
 
     def _should_apply_filter(self, preferences: UserPreferences) -> bool:
         """Check if athletic filtering should be applied"""
-        return (
-            preferences.min_athletics_rating is not None or
-            preferences.playing_time_priority is not None
-        )
+        return preferences.min_athletics_rating is not None
 
     def _meets_athletic_criteria(self, school: Dict[str, Any], preferences: UserPreferences) -> bool:
         """
@@ -68,15 +65,6 @@ class AthleticFilter(BaseFilter):
                 school_rating, preferences.min_athletics_rating
             ):
                 return False
-
-        """        
-        
-        # Check playing time priority considerations
-        if preferences.playing_time_priority:
-            if not self._meets_playing_time_criteria(school, preferences.playing_time_priority):
-                return False
-                
-        """
 
         return True
 

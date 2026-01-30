@@ -4,7 +4,6 @@ Complete async version of the two-tier filtering system with all business logic 
 """
 
 import asyncio
-import asyncio
 import logging
 from typing import Dict, List, Optional, Any
 from backend.utils.preferences_types import UserPreferences
@@ -20,6 +19,12 @@ from backend.school_filtering.filters import (
 )
 from backend.baseball_rankings_scraper.rankings_integration import BaseballRankingsIntegration
 from backend.database.name_matching import get_resolver
+
+# Playing time calculation
+from backend.playing_time import (
+    PlayingTimeCalculator,
+    create_playing_time_inputs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +52,9 @@ class AsyncTwoTierFilteringPipeline:
         # Baseball rankings integration
         self.rankings_integration = BaseballRankingsIntegration()
         self.name_resolver = get_resolver()
+
+        # Playing time calculator
+        self.playing_time_calculator = PlayingTimeCalculator()
 
         # Concurrency control for scalability
         self.max_concurrent_batches = max_concurrent_batches
@@ -250,7 +258,7 @@ class AsyncTwoTierFilteringPipeline:
             filtered_schools = filter_result.schools
 
         # Apply academic filter if any academic preferences are must-have
-        academic_must_haves = {'min_academic_rating', 'admit_rate_floor', 'gpa', 'sat', 'act'}.intersection(must_have_names)
+        academic_must_haves = {'min_academic_rating', 'admit_rate_floor', 'sat', 'act'}.intersection(must_have_names)
         if academic_must_haves:
             filter_result = self.academic_filter.apply(filtered_schools, temp_prefs)
             filtered_schools = filter_result.schools
@@ -262,7 +270,7 @@ class AsyncTwoTierFilteringPipeline:
             filtered_schools = filter_result.schools
 
         # Apply athletic filter if any athletic preferences are must-have
-        athletic_must_haves = {'min_athletics_rating', 'playing_time_priority'}.intersection(must_have_names)
+        athletic_must_haves = {'min_athletics_rating'}.intersection(must_have_names)
         if athletic_must_haves:
             filter_result = self.athletic_filter.apply(filtered_schools, temp_prefs)
             filtered_schools = filter_result.schools
@@ -358,7 +366,7 @@ class AsyncTwoTierFilteringPipeline:
     async def _create_school_match(self, school_data: Dict[str, Any],
                                  preferences: UserPreferences,
                                  ml_results: MLPipelineResults) -> SchoolMatch:
-        """Create a SchoolMatch object with nice-to-have scoring and baseball rankings"""
+        """Create a SchoolMatch object with nice-to-have scoring, baseball rankings, and playing time"""
         school_name = school_data.get('school_name', 'Unknown School')
 
         school_match = SchoolMatch(
@@ -372,6 +380,9 @@ class AsyncTwoTierFilteringPipeline:
 
         # Enrich with baseball rankings data if available
         await self._enrich_with_baseball_rankings(school_match)
+
+        # Calculate playing time opportunity
+        await self._calculate_playing_time(school_match, ml_results)
 
         return school_match
 
@@ -404,6 +415,39 @@ class AsyncTwoTierFilteringPipeline:
             logger.error(f"Error enriching {school_name} with baseball rankings: {e}")
             # Don't fail the whole match if baseball enrichment fails
             school_match.has_baseball_data = False
+
+    async def _calculate_playing_time(self, school_match: SchoolMatch,
+                                       ml_results: MLPipelineResults):
+        """
+        Calculate playing time opportunity for this school-player combination.
+
+        Uses the PlayingTimeCalculator to produce a comprehensive analysis including
+        z-score, percentile, bucket classification, and detailed breakdown.
+        """
+        try:
+            # Convert pipeline data to playing time calculator inputs
+            player_stats, ml_predictions, school_context = create_playing_time_inputs(
+                player=ml_results.player,
+                ml_results=ml_results,
+                school_data=school_match.school_data,
+                baseball_strength=school_match.baseball_strength,
+            )
+
+            # Calculate playing time
+            result = self.playing_time_calculator.calculate(
+                player_stats, ml_predictions, school_context
+            )
+
+            school_match.playing_time_result = result
+            logger.debug(
+                f"Playing time for {school_match.school_name}: "
+                f"z={result.final_z_score:.2f}, bucket={result.bucket}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error calculating playing time for {school_match.school_name}: {e}")
+            # Don't fail the whole match if playing time calculation fails
+            school_match.playing_time_result = None
 
     async def _score_nice_to_haves(self, school_match: SchoolMatch, preferences: UserPreferences):
         """Score all nice-to-have preferences for a school"""
@@ -530,7 +574,7 @@ class AsyncTwoTierFilteringPipeline:
     async def _match_preferred_regions(self, pref_regions: List[str],
                                      school_data: Dict[str, Any]) -> Optional[NiceToHaveMatch]:
         """Match preferred regions"""
-        school_region = school_data.get('school_region')  # Fixed: use correct field name
+        school_region = school_data.get('region')  # Uses 'region' column from school_data_general
         if not school_region or not pref_regions:
             return None
 
@@ -699,7 +743,14 @@ class AsyncTwoTierFilteringPipeline:
         if not avg_sat:
             avg_act = school_data.get('avg_act')
             if not avg_act:
-                return None
+                # Return a miss indicating data is unavailable
+                return NiceToHaveMiss(
+                    preference_type=NiceToHaveType.ACADEMIC_FIT,
+                    preference_name='sat',
+                    user_value=user_sat,
+                    school_value=None,
+                    reason="No SAT/ACT data available for this school"
+                )
             avg_sat = self._act_to_sat(avg_act)
 
         difference = abs(user_sat - avg_sat)
@@ -869,9 +920,19 @@ class AsyncTwoTierFilteringPipeline:
 
     async def _miss_preferred_regions(self, pref_regions: List[str], school_data: Dict[str, Any]) -> Optional[NiceToHaveMiss]:
         """Create miss explanation for preferred regions"""
-        school_region = school_data.get('school_region')
-        if not school_region or not pref_regions:
+        school_region = school_data.get('region')
+        if not pref_regions:
             return None
+
+        if not school_region:
+            # Return a miss indicating data is unavailable
+            return NiceToHaveMiss(
+                preference_type=NiceToHaveType.GEOGRAPHIC,
+                preference_name='preferred_regions',
+                user_value=pref_regions,
+                school_value=None,
+                reason="No region data available for this school"
+            )
 
         if school_region not in pref_regions:
             return NiceToHaveMiss(
@@ -951,7 +1012,14 @@ class AsyncTwoTierFilteringPipeline:
         if not avg_act:
             avg_sat = school_data.get('avg_sat')
             if not avg_sat:
-                return None
+                # Return a miss indicating data is unavailable
+                return NiceToHaveMiss(
+                    preference_type=NiceToHaveType.ACADEMIC_FIT,
+                    preference_name='act',
+                    user_value=user_act,
+                    school_value=None,
+                    reason="No ACT/SAT data available for this school"
+                )
             avg_act = self._sat_to_act(avg_sat)
 
         difference = abs(user_act - avg_act)
