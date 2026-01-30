@@ -15,19 +15,55 @@ This directory contains tests for the existing school filtering functionality, f
 
 #### **`advanced_tests/`** - Production-ready async testing suite
 
-- **`test_load_testing.py`** - Concurrent user load testing (25-30 simultaneous users)
-- **`test_database_integration.py`** - Real Supabase database integration tests
-- **`test_query_optimization.py`** - Database query performance benchmarks
-- **`test_memory_cache.py`** - Memory usage and caching behavior tests
+- **`test_load_testing.py`** - Concurrent user load testing (25-30 simultaneous users) **[SLOW]**
+- **`test_database_integration.py`** - Real Supabase database integration tests **[INTEGRATION]**
+- **`test_query_optimization.py`** - Database query performance benchmarks **[INTEGRATION]**
+- **`test_memory_cache.py`** - Memory usage and caching behavior tests (some **[INTEGRATION]**)
 - **`test_bad_data_handling.py`** - Error handling and data validation tests
+
+#### Test Markers
+
+Tests are organized with pytest markers for selective execution:
+
+- **`@pytest.mark.slow`** - Tests that take a long time (load testing)
+- **`@pytest.mark.integration`** - Tests that require external database with correct schema
+
+**By default, slow and integration tests are SKIPPED.** This is configured in `pytest.ini`:
+```ini
+addopts = -m "not slow and not integration"
+```
+
+#### Running Different Test Sets
+
+```bash
+# Run default tests (fast, no external dependencies)
+python3 -m pytest tests/testbackend/test_school_filtering/ -v
+
+# Run integration tests (requires Supabase with correct schema)
+python3 -m pytest tests/testbackend/test_school_filtering/ -v -m integration
+
+# Run slow tests (load testing)
+python3 -m pytest tests/testbackend/test_school_filtering/ -v -m slow
+
+# Run ALL tests including slow and integration
+python3 -m pytest tests/testbackend/test_school_filtering/ -v -m ""
+```
+
+#### Integration Test Requirements
+
+Integration tests require:
+1. **Supabase credentials** - `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` environment variables
+2. **Correct database schema**:
+   - `school_data_general` table with school data
+   - `school_baseball_ranking_name_mapping` table with verified mappings
+   - `baseball_rankings_data` table with `division_group` column
+
+**Note**: The `division_group` column is NOT in `school_data_general`. It comes from `baseball_rankings_data` via the name mapping table.
 
 **IMPORTANT: Advanced Test Limitation**
 ```bash
-# ✅ These work perfectly individually (5/5 pass each)
-python3 -m pytest tests/test_school_filtering/advanced_tests/test_load_testing.py -v
-
 # ⚠️ When run together, some may fail due to Supabase free tier rate limits
-python3 -m pytest tests/test_school_filtering/advanced_tests/ -v
+python3 -m pytest tests/testbackend/test_school_filtering/advanced_tests/ -v -m ""
 ```
 
 This is **NOT a code issue** - it's a Supabase free tier limitation. The async architecture is production-ready and will scale properly with upgraded infrastructure.

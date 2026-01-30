@@ -56,6 +56,7 @@ class TestMemoryAndCache:
 
         print(f"📊 Memory Baseline: {baseline_memory:.1f}MB")
 
+    @pytest.mark.integration
     @pytest.mark.skipif(not os.getenv('SUPABASE_URL') or not os.getenv('SUPABASE_SERVICE_KEY'),
                        reason="Supabase credentials not available")
     @pytest.mark.asyncio
@@ -115,6 +116,7 @@ class TestMemoryAndCache:
             memory_monitor.stop_monitoring()
             pytest.fail(f"Memory test failed: {e}")
 
+    @pytest.mark.integration
     @pytest.mark.skipif(not os.getenv('SUPABASE_URL') or not os.getenv('SUPABASE_SERVICE_KEY'),
                        reason="Supabase credentials not available")
     @pytest.mark.asyncio
@@ -183,6 +185,7 @@ class TestMemoryAndCache:
         total_increase = final_memory - start_memory
         assert total_increase < 100, f"Total memory increase too high: {total_increase:.1f}MB"
 
+    @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_memory_efficiency_with_different_limits(self, memory_monitor, realistic_preferences):
         """Test memory efficiency with different result set sizes"""
@@ -271,7 +274,7 @@ class TestMemoryAndCache:
                 user_state='CA',
                 max_budget=20000 + i * 100,
                 min_academic_rating='B+',
-                gpa=3.0 + (i % 10) * 0.1
+                sat=1200 + (i % 10) * 20
             )
             preferences_list.append(prefs)
 
@@ -324,78 +327,84 @@ class TestMemoryAndCache:
         assert ml_memory / 100 < 5, f"ML Results objects too large: {ml_memory/100:.3f}MB each"
 
     def test_garbage_collection_effectiveness(self, memory_monitor):
-        """Test that garbage collection effectively frees memory"""
+        """Test that garbage collection works and memory doesn't leak
+
+        Note: Python's memory allocator may not immediately return memory to the OS,
+        but should properly manage it internally. This test verifies:
+        1. Objects can be created without crashing
+        2. Objects can be garbage collected
+        3. Memory usage stays within reasonable bounds
+        """
 
         memory_monitor.start_monitoring()
         gc.collect()
         baseline_memory = memory_monitor.current_usage
 
-        # Create larger and more memory-intensive objects
-        large_objects = []
-        for i in range(200):  # Increased from 50 to 200
-            # Create large preference scenarios with more data
-            prefs = UserPreferences(
-                user_state='CA',
-                preferred_states=['CA', 'TX', 'FL', 'NY', 'PA', 'OH', 'MI', 'IL'],
-                preferred_regions=['West', 'South', 'Northeast', 'Midwest'],
-                max_budget=30000 + i * 100,
-                gpa=3.0 + (i % 10) * 0.1,
-                sat=1200 + (i % 400),
-                act=24 + (i % 12)
-            )
+        # Create objects in batches to test GC between batches
+        total_memory_after_batches = []
 
-            # Create player objects with more variation
-            player = PlayerInfielder(
-                height=70 + (i % 8), weight=170 + (i % 40),
-                exit_velo_max=85 + (i % 15), sixty_time=6.5 + (i % 10) * 0.1,
-                throwing_hand='R', hitting_handedness='R', region='West',
-                primary_position='SS', inf_velo=75 + (i % 15)
-            )
+        for batch in range(3):
+            # Create objects
+            large_objects = []
+            for i in range(100):
+                prefs = UserPreferences(
+                    user_state='CA',
+                    preferred_states=['CA', 'TX', 'FL', 'NY', 'PA', 'OH', 'MI', 'IL'],
+                    preferred_regions=['West', 'South', 'Northeast', 'Midwest'],
+                    max_budget=30000 + i * 100,
+                    sat=1200 + (i % 400),
+                    act=24 + (i % 12)
+                )
 
-            # Create large data structures to consume more memory
-            large_data = {
-                'preferences': prefs,
-                'player': player,
-                'large_list': list(range(100)),  # Add memory-consuming data
-                'large_dict': {f'key_{j}': f'value_{j}' for j in range(50)},
-                'large_string': 'x' * 1000  # 1KB string
-            }
+                player = PlayerInfielder(
+                    height=70 + (i % 8), weight=170 + (i % 40),
+                    exit_velo_max=85 + (i % 15), sixty_time=6.5 + (i % 10) * 0.1,
+                    throwing_hand='R', hitting_handedness='R', region='West',
+                    primary_position='SS', inf_velo=75 + (i % 15)
+                )
 
-            large_objects.append(large_data)
+                large_data = {
+                    'preferences': prefs,
+                    'player': player,
+                    'large_list': list(range(100)),
+                    'large_dict': {f'key_{j}': f'value_{j}' for j in range(50)},
+                    'large_string': 'x' * 1000
+                }
+                large_objects.append(large_data)
 
-        after_creation_memory = memory_monitor.current_usage
+            # Clear and collect
+            large_objects.clear()
+            gc.collect()
+            time.sleep(0.05)
 
-        # Clear references and force garbage collection
-        large_objects.clear()
+            total_memory_after_batches.append(memory_monitor.current_usage)
+
         gc.collect()
-        time.sleep(0.1)  # Give GC time to work
-        gc.collect()  # Second collection for good measure
-
-        after_gc_memory = memory_monitor.current_usage
+        final_memory = memory_monitor.current_usage
         memory_monitor.stop_monitoring()
 
-        memory_created = after_creation_memory - baseline_memory
-        memory_freed = after_creation_memory - after_gc_memory
-        memory_remaining = after_gc_memory - baseline_memory
+        memory_increase = final_memory - baseline_memory
 
         print(f"📊 Garbage Collection Effectiveness:")
-        print(f"  Memory created: {memory_created:.1f}MB")
-        print(f"  Memory freed: {memory_freed:.1f}MB")
-        print(f"  Memory remaining: {memory_remaining:.1f}MB")
+        print(f"  Baseline memory: {baseline_memory:.1f}MB")
+        print(f"  Final memory: {final_memory:.1f}MB")
+        print(f"  Net increase after 3 batches: {memory_increase:.1f}MB")
 
-        # Handle division by zero case
-        if memory_created > 0:
-            gc_effectiveness_pct = (memory_freed / memory_created) * 100
-            print(f"  GC effectiveness: {gc_effectiveness_pct:.1f}%")
+        # Check memory after each batch
+        if len(total_memory_after_batches) >= 2:
+            memory_growth = total_memory_after_batches[-1] - total_memory_after_batches[0]
+            print(f"  Memory growth across batches: {memory_growth:.1f}MB")
 
-            # Garbage collection should free most memory
-            gc_effectiveness = memory_freed / memory_created
-            assert gc_effectiveness > 0.5, f"Poor GC effectiveness: {gc_effectiveness*100:.1f}%"  # Lowered threshold
-        else:
-            print(f"  GC effectiveness: Unable to measure (no detectable memory allocation)")
-            # If no memory was allocated, that's actually fine - objects are very lightweight
-            print("✅ Objects are memory-efficient (no measurable allocation)")
+            # Memory should not continuously grow (would indicate a leak)
+            # Allow for some variance in memory measurements
+            assert memory_growth < 10.0, f"Possible memory leak: {memory_growth:.1f}MB growth across batches"
 
+        # Total memory increase should be reasonable (no unbounded growth)
+        assert memory_increase < 20.0, f"Excessive memory usage: {memory_increase:.1f}MB increase"
+
+        print("✅ Garbage collection working correctly (no memory leak detected)")
+
+    @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_cache_behavior_if_implemented(self, realistic_preferences):
         """Test caching behavior if any caching is implemented"""

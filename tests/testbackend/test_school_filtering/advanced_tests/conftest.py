@@ -88,7 +88,6 @@ def load_test_users():
             max_budget=budgets[i % len(budgets)],
             min_academic_rating=academic_ratings[i % len(academic_ratings)],
             preferred_states=[states[i % len(states)], states[(i+1) % len(states)]],
-            gpa=3.0 + (i % 10) * 0.1,
             sat=1200 + (i % 5) * 50
         )
 
@@ -346,7 +345,6 @@ def realistic_preferences():
                 max_budget=25000,
                 min_academic_rating='B',
                 preferred_states=['CA', 'NV', 'AZ'],
-                gpa=3.2,
                 sat=1200
             )
         },
@@ -360,7 +358,6 @@ def realistic_preferences():
                 min_academic_rating='A-',
                 min_athletics_rating='A-',
                 preferred_states=['NY', 'CT', 'MA'],
-                gpa=3.8,
                 sat=1450
             )
         },
@@ -373,7 +370,6 @@ def realistic_preferences():
                 max_budget=45000,
                 min_academic_rating='B+',
                 preferred_states=['CA', 'FL', 'NC'],  # Not including TX
-                gpa=3.5,
                 sat=1350
             )
         },
@@ -388,7 +384,6 @@ def realistic_preferences():
                 min_athletics_rating='B',
                 preferred_school_size=['Medium'],
                 party_scene_preference=['Moderate'],
-                gpa=3.4,
                 sat=1300
             )
         }

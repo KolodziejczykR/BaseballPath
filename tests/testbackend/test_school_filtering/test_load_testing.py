@@ -6,6 +6,9 @@ simultaneously to validate performance under realistic load.
 
 Target: 25-30 concurrent users with 600-800 schools in database
 
+IMPORTANT: These tests are marked as 'slow' and skipped by default.
+Run explicitly with: pytest -m slow tests/testbackend/test_school_filtering/test_load_testing.py
+
 IMPORTANT NOTES:
 ================
 
@@ -115,7 +118,6 @@ def load_test_users():
             max_budget=budgets[i % len(budgets)],
             min_academic_rating=academic_ratings[i % len(academic_ratings)],
             preferred_states=[states[i % len(states)], states[(i+1) % len(states)]],
-            gpa=3.0 + (i % 10) * 0.1,
             sat=1200 + (i % 5) * 50
         )
 
@@ -217,8 +219,13 @@ async def isolated_filtering_pipeline():
         pass  # Graceful cleanup
 
 
+@pytest.mark.slow
 class TestConcurrentLoad:
-    """Test system performance under concurrent user load"""
+    """Test system performance under concurrent user load
+
+    These tests are marked as 'slow' and skipped by default.
+    Run with: pytest -m slow
+    """
 
     @pytest.mark.skipif(not os.getenv('SUPABASE_URL') or not os.getenv('SUPABASE_SERVICE_KEY'),
                        reason="Supabase credentials not available")
@@ -347,7 +354,6 @@ class TestConcurrentLoad:
                     "max_budget": preferences.max_budget,
                     "min_academic_rating": preferences.min_academic_rating,
                     "preferred_states": preferences.preferred_states,
-                    "gpa": preferences.gpa,
                     "sat": preferences.sat
                 },
                 "ml_results": {
