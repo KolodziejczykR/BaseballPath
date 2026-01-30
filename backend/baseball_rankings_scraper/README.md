@@ -52,14 +52,15 @@ backend/baseball_rankings_scraper/
 
 ## Database Schema
 
-The scraper creates a `baseball_rankings` table with the following structure:
+The scraper creates a `baseball_rankings_data` table with the following structure:
 
 ```sql
-CREATE TABLE baseball_rankings (
+CREATE TABLE baseball_rankings_data (
     id SERIAL PRIMARY KEY,
     team_name VARCHAR(255) NOT NULL,
     year INTEGER NOT NULL,
     division INTEGER CHECK (division IN (1, 2, 3)),
+    division_group VARCHAR(50),            -- "Power 4 D1", "Non-P4 D1", "Non-D1" (SOURCE OF TRUTH)
     record VARCHAR(50),                    -- e.g., "35-15"
     overall_rating DECIMAL(8,4),           -- Massey overall rating
     power_rating DECIMAL(8,4),             -- Massey power rating
@@ -75,6 +76,18 @@ CREATE TABLE baseball_rankings (
     UNIQUE(team_name, year, division)
 );
 ```
+
+### Division Group Classification
+
+The `division_group` column is the **SOURCE OF TRUTH** for baseball division classification:
+
+| division_group | Description |
+|----------------|-------------|
+| `Power 4 D1` | Power 4 conference D1 programs (SEC, Big Ten, ACC, Big 12) |
+| `Non-P4 D1` | Non-Power 4 D1 programs |
+| `Non-D1` | Division 2 and Division 3 programs |
+
+**Important**: The school filtering pipeline fetches `division_group` from this table, NOT from `school_data_general`. Schools are linked via the `school_baseball_ranking_name_mapping` table.
 
 ## Setup & Installation
 
@@ -207,10 +220,30 @@ weighted_rating = (2024_rating * 0.5) + (2023_rating * 0.3) + (2022_rating * 0.2
 ## Integration Points
 
 ### School Filtering Pipeline
-1. **Strength Rankings**: Integrate with existing academic/athletic grades
-2. **Playing Time Calculations**: Factor into ML prediction confidence
-3. **Preference Matching**: Add competitive level preferences
-4. **School Recommendations**: Weight by program strength and opportunity
+
+The school filtering pipeline relies on this data for:
+
+1. **Division Group Classification** (**CRITICAL**):
+   - `division_group` is fetched from `baseball_rankings_data`
+   - Linked via `school_baseball_ranking_name_mapping` (school_name → team_name)
+   - Used to filter schools by ML-predicted division
+
+2. **Strength Rankings**: Integrate with existing academic/athletic grades
+3. **Playing Time Calculations**: Factor into ML prediction confidence
+4. **Preference Matching**: Add competitive level preferences
+5. **School Recommendations**: Weight by program strength and opportunity
+
+### Data Flow for Division Group
+
+```
+school_data_general.school_name
+    ↓ (lookup)
+school_baseball_ranking_name_mapping.team_name
+    ↓ (fetch)
+baseball_rankings_data.division_group
+```
+
+Schools without a verified mapping default to "Non-D1" in the filtering pipeline.
 
 ### API Endpoints (Future)
 ```python

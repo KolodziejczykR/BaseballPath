@@ -67,11 +67,9 @@ async def run_college_selection(request: Dict[str, Any]) -> Dict[str, Any]:
             "preferred_school_size": "Medium",
             "max_tuition_budget": 40000,
             "min_athletics_rating": "B",
-            "playing_time_priority": "High",
             "campus_life_important": true,
             "party_scene_preference": "Moderate",
-            "graduation_year": "2026",
-            "gpa": 3.5
+            "graduation_year": "2026"
         }
     }
     
@@ -216,17 +214,14 @@ def _create_ml_results(player, ml_data: Dict[str, Any]):
 def _create_user_preferences(preferences_data: Dict[str, Any]) -> UserPreferences:
     """Create UserPreferences object from request data"""
     return UserPreferences(
+        user_state=preferences_data.get("user_state", "CA"),
         preferred_regions=preferences_data.get("preferred_regions"),
-        max_distance_from_home=preferences_data.get("max_distance_from_home"),
         min_academic_rating=preferences_data.get("min_academic_rating"),
         preferred_school_size=preferences_data.get("preferred_school_size"),
-        max_tuition_budget=preferences_data.get("max_tuition_budget"),
+        max_budget=preferences_data.get("max_tuition_budget"),
         min_athletics_rating=preferences_data.get("min_athletics_rating"),
-        playing_time_priority=preferences_data.get("playing_time_priority", "Medium"),
-        campus_life_important=preferences_data.get("campus_life_important", False),
         party_scene_preference=preferences_data.get("party_scene_preference"),
-        gpa=preferences_data.get("gpa"),
-        graduation_year=preferences_data.get("graduation_year")
+        hs_graduation_year=preferences_data.get("graduation_year")
     )
 
 @router.get("/example")
@@ -267,19 +262,14 @@ async def get_selection_example() -> Dict[str, Any]:
             }
         },
         "user_preferences": {
-            "preferred_regions": ["Southeast", "Mid-Atlantic"],
-            "max_distance_from_home": 500,
+            "user_state": "NC",
+            "preferred_regions": ["Southeast", "South"],
             "min_academic_rating": "B+",
-            "preferred_school_size": "Medium",
+            "preferred_school_size": ["Medium", "Large"],
             "max_tuition_budget": 40000,
             "min_athletics_rating": "B",
-            "playing_time_priority": "High",
-            "campus_life_important": True,
-            "party_scene_preference": "Moderate"
-        },
-        "additional_info": {
-            "graduation_year": "2026",
-            "gpa": 3.5
+            "party_scene_preference": ["Moderate"],
+            "graduation_year": "2026"
         }
     }
     

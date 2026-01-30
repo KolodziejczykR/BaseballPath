@@ -258,7 +258,7 @@ class AsyncTwoTierFilteringPipeline:
             filtered_schools = filter_result.schools
 
         # Apply academic filter if any academic preferences are must-have
-        academic_must_haves = {'min_academic_rating', 'admit_rate_floor', 'gpa', 'sat', 'act'}.intersection(must_have_names)
+        academic_must_haves = {'min_academic_rating', 'admit_rate_floor', 'sat', 'act'}.intersection(must_have_names)
         if academic_must_haves:
             filter_result = self.academic_filter.apply(filtered_schools, temp_prefs)
             filtered_schools = filter_result.schools
@@ -270,7 +270,7 @@ class AsyncTwoTierFilteringPipeline:
             filtered_schools = filter_result.schools
 
         # Apply athletic filter if any athletic preferences are must-have
-        athletic_must_haves = {'min_athletics_rating', 'playing_time_priority'}.intersection(must_have_names)
+        athletic_must_haves = {'min_athletics_rating'}.intersection(must_have_names)
         if athletic_must_haves:
             filter_result = self.athletic_filter.apply(filtered_schools, temp_prefs)
             filtered_schools = filter_result.schools
@@ -574,7 +574,7 @@ class AsyncTwoTierFilteringPipeline:
     async def _match_preferred_regions(self, pref_regions: List[str],
                                      school_data: Dict[str, Any]) -> Optional[NiceToHaveMatch]:
         """Match preferred regions"""
-        school_region = school_data.get('school_region')  # Fixed: use correct field name
+        school_region = school_data.get('region')  # Uses 'region' column from school_data_general
         if not school_region or not pref_regions:
             return None
 
@@ -743,7 +743,14 @@ class AsyncTwoTierFilteringPipeline:
         if not avg_sat:
             avg_act = school_data.get('avg_act')
             if not avg_act:
-                return None
+                # Return a miss indicating data is unavailable
+                return NiceToHaveMiss(
+                    preference_type=NiceToHaveType.ACADEMIC_FIT,
+                    preference_name='sat',
+                    user_value=user_sat,
+                    school_value=None,
+                    reason="No SAT/ACT data available for this school"
+                )
             avg_sat = self._act_to_sat(avg_act)
 
         difference = abs(user_sat - avg_sat)
@@ -913,9 +920,19 @@ class AsyncTwoTierFilteringPipeline:
 
     async def _miss_preferred_regions(self, pref_regions: List[str], school_data: Dict[str, Any]) -> Optional[NiceToHaveMiss]:
         """Create miss explanation for preferred regions"""
-        school_region = school_data.get('school_region')
-        if not school_region or not pref_regions:
+        school_region = school_data.get('region')
+        if not pref_regions:
             return None
+
+        if not school_region:
+            # Return a miss indicating data is unavailable
+            return NiceToHaveMiss(
+                preference_type=NiceToHaveType.GEOGRAPHIC,
+                preference_name='preferred_regions',
+                user_value=pref_regions,
+                school_value=None,
+                reason="No region data available for this school"
+            )
 
         if school_region not in pref_regions:
             return NiceToHaveMiss(
@@ -995,7 +1012,14 @@ class AsyncTwoTierFilteringPipeline:
         if not avg_act:
             avg_sat = school_data.get('avg_sat')
             if not avg_sat:
-                return None
+                # Return a miss indicating data is unavailable
+                return NiceToHaveMiss(
+                    preference_type=NiceToHaveType.ACADEMIC_FIT,
+                    preference_name='act',
+                    user_value=user_act,
+                    school_value=None,
+                    reason="No ACT/SAT data available for this school"
+                )
             avg_act = self._sat_to_act(avg_sat)
 
         difference = abs(user_act - avg_act)

@@ -49,7 +49,6 @@ class AcademicFilter(BaseFilter):
             preferences.min_academic_rating is not None or
             preferences.min_student_satisfaction_rating is not None or
             preferences.admit_rate_floor is not None or
-            preferences.gpa is not None or
             preferences.sat is not None or
             preferences.act is not None
         )

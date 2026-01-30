@@ -43,7 +43,6 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
             "min_athletics_rating": "B",      # Minimum athletics grade
             "min_student_satisfaction_rating": "B+", # Student life rating
             "party_scene_preference": ["Moderate"], # Multi-select list
-            "gpa": 3.5,                       # Student's GPA
             "sat": 1350,                      # Student's SAT score
             "act": 30,                        # Student's ACT score
             "intended_major_buckets": "Engineering", # Major area
@@ -118,7 +117,6 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
             # Academic preferences
             min_academic_rating=user_preferences_data.get("min_academic_rating"),
             min_student_satisfaction_rating=user_preferences_data.get("min_student_satisfaction_rating"),
-            gpa=user_preferences_data.get("gpa"),
             sat=user_preferences_data.get("sat"),
             act=user_preferences_data.get("act"),
             intended_major_buckets=user_preferences_data.get("intended_major_buckets"),
@@ -471,7 +469,6 @@ async def get_preferences_example() -> Dict[str, Any]:
             # Academic preferences
             "min_academic_rating": "B+",
             "min_student_satisfaction_rating": "B",
-            "gpa": 3.5,
             "sat": 1350,
             "act": 30,
             "intended_major_buckets": "Engineering",

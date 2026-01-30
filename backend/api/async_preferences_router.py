@@ -80,7 +80,6 @@ async def filter_schools_by_preferences_async(
             "min_athletics_rating": "B",      # Minimum athletics grade
             "min_student_satisfaction_rating": "B+", # Student life rating
             "party_scene_preference": ["Moderate"], # Multi-select list
-            "gpa": 3.5,                       # Student's GPA
             "sat": 1350,                      # Student's SAT score
             "act": 30,                        # Student's ACT score
             "intended_major_buckets": "Engineering", # Major area
@@ -144,7 +143,6 @@ async def filter_schools_by_preferences_async(
 
             # Academic preferences
             min_academic_rating=user_preferences_data.get("min_academic_rating"),
-            gpa=user_preferences_data.get("gpa"),
             sat=user_preferences_data.get("sat"),
             act=user_preferences_data.get("act"),
             admit_rate_floor=user_preferences_data.get("admit_rate_floor"),
@@ -159,7 +157,6 @@ async def filter_schools_by_preferences_async(
 
             # Athletic preferences
             min_athletics_rating=user_preferences_data.get("min_athletics_rating"),
-            playing_time_priority=user_preferences_data.get("playing_time_priority"),
 
             # Additional preferences
             intended_major_buckets=user_preferences_data.get("intended_major_buckets"),
@@ -342,7 +339,6 @@ async def count_schools_by_preferences_async(
             preferred_states=user_preferences_data.get("preferred_states"),
             preferred_regions=user_preferences_data.get("preferred_regions"),
             min_academic_rating=user_preferences_data.get("min_academic_rating"),
-            gpa=user_preferences_data.get("gpa"),
             sat=user_preferences_data.get("sat"),
             act=user_preferences_data.get("act"),
             admit_rate_floor=user_preferences_data.get("admit_rate_floor"),
@@ -351,7 +347,6 @@ async def count_schools_by_preferences_async(
             party_scene_preference=user_preferences_data.get("party_scene_preference"),
             min_student_satisfaction_rating=user_preferences_data.get("min_student_satisfaction_rating"),
             min_athletics_rating=user_preferences_data.get("min_athletics_rating"),
-            playing_time_priority=user_preferences_data.get("playing_time_priority"),
             intended_major_buckets=user_preferences_data.get("intended_major_buckets"),
             hs_graduation_year=user_preferences_data.get("hs_graduation_year"),
             must_have_preferences=set(user_preferences_data.get("must_have_preferences", []))
@@ -535,7 +530,6 @@ async def get_example_request() -> Dict[str, Any]:
                 "min_athletics_rating": "B",
                 "min_student_satisfaction_rating": "B+",
                 "party_scene_preference": ["Moderate"],
-                "gpa": 3.5,
                 "sat": 1350,
                 "act": 30,
                 "intended_major_buckets": "Engineering",

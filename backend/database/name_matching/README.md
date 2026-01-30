@@ -167,9 +167,9 @@ After uploading, manually verify the matches in Supabase:
 Once verified, use the mapping in your code:
 
 ```python
-from backend.database.school_name_resolver import SchoolNameResolver
+from backend.database.name_matching import get_resolver
 
-resolver = SchoolNameResolver()
+resolver = get_resolver()
 
 # Get team name from school name
 team_name = resolver.get_team_name("Stanford University, Stanford, CA")
@@ -179,6 +179,56 @@ team_name = resolver.get_team_name("Stanford University, Stanford, CA")
 school_name = resolver.get_school_name("Stanford")
 # Returns: "Stanford University, Stanford, CA"
 ```
+
+## Integration with School Filtering Pipeline
+
+The name mapping is **critical** for the school filtering pipeline because:
+
+### Division Group Lookup
+
+The `division_group` field (Power 4 D1, Non-P4 D1, Non-D1) is stored in `baseball_rankings_data`, NOT in `school_data_general`. The filtering pipeline uses this mapping to enrich schools with their division group:
+
+```
+school_data_general.school_name
+    ↓ (lookup via this mapping)
+school_baseball_ranking_name_mapping.team_name
+    ↓ (fetch division_group)
+baseball_rankings_data.division_group
+```
+
+### How It Works in the Pipeline
+
+1. **Cache Loading**: On first query, the pipeline loads all verified mappings into memory
+2. **Enrichment**: Each school from `school_data_general` is enriched with `division_group`
+3. **Fallback**: Schools without a verified mapping default to "Non-D1"
+
+### Code Example (Pipeline Usage)
+
+```python
+# In backend/school_filtering/database.py and database/async_queries.py
+
+async def _load_division_group_cache(self):
+    """Load division_group mappings from baseball_rankings_data via name mapping"""
+    # Get verified mappings: school_name → team_name
+    mapping_result = self.client.table('school_baseball_ranking_name_mapping')\
+        .select('school_name, team_name')\
+        .eq('verified', True)\
+        .execute()
+
+    # Get division_group from baseball_rankings_data using team_name
+    rankings_result = self.client.table('baseball_rankings_data')\
+        .select('team_name, division_group')\
+        .in_('team_name', team_names)\
+        .execute()
+
+    # Cache: school_name → division_group
+```
+
+### Why This Matters
+
+- **ML Division Prediction**: The ML model predicts which division a player belongs to (Power 4 D1, Non-P4 D1, Non-D1)
+- **School Filtering**: The pipeline filters schools by their `division_group` to match the ML prediction
+- **Without Mapping**: Schools couldn't be properly categorized by baseball division
 
 ## Troubleshooting
 
