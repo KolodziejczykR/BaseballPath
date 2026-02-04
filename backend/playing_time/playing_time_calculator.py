@@ -428,7 +428,10 @@ class PlayingTimeCalculator:
         Calculate the height/weight component (15% of total).
         Uses simple average of height and weight z-scores.
         """
-        benchmarks = self.benchmarks.get(division_group, self.benchmarks.get("Non-P4 D1"))
+        if self._is_pitcher(player_stats):
+            benchmarks = PITCHER_DIVISION_BENCHMARKS.get(division_group, PITCHER_DIVISION_BENCHMARKS.get("Non-P4 D1"))
+        else:
+            benchmarks = self.benchmarks.get(division_group, self.benchmarks.get("Non-P4 D1"))
 
         z_height = self._calc_single_z_score(
             player_stats.height,

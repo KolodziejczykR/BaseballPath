@@ -272,18 +272,85 @@ class PlayerOutfielder(PlayerType):
 
 
 class PlayerPitcher(PlayerType):
-    # TODO: go through and add base attributes for pitchers
     def __init__(
             self,
             height: int,
             weight: int,
             primary_position: str,
             throwing_hand: str,
-            region: str
+            region: str,
+            fastball_velo_range: float = None,
+            fastball_velo_max: float = None,
+            fastball_spin: float = None,
+            changeup_velo: float = None,
+            changeup_spin: float = None,
+            curveball_velo: float = None,
+            curveball_spin: float = None,
+            slider_velo: float = None,
+            slider_spin: float = None
         ):
         super().__init__(height, weight, region, primary_position)
         self.throwing_hand = throwing_hand
+        self.fastball_velo_range = fastball_velo_range
+        self.fastball_velo_max = fastball_velo_max
+        self.fastball_spin = fastball_spin
+        self.changeup_velo = changeup_velo
+        self.changeup_spin = changeup_spin
+        self.curveball_velo = curveball_velo
+        self.curveball_spin = curveball_spin
+        self.slider_velo = slider_velo
+        self.slider_spin = slider_spin
 
     def get_player_type(self) -> str:
         return "Pitcher"
+
+    def get_player_features(self) -> dict:
+        return {
+            'height': 'player height',
+            'weight': 'player weight',
+            'primary_position': 'player primary position (RHP/LHP)',
+            'player_region': 'player region (northeast, midwest, south, west)',
+            'throwing_hand': 'player throwing hand (left, right)',
+            'fastball_velo_range': 'fastball velo range (mph)',
+            'fastball_velo_max': 'fastball max velo (mph)',
+            'fastball_spin': 'fastball spin rate (rpm)',
+            'changeup_velo': 'changeup velo (mph)',
+            'changeup_spin': 'changeup spin (rpm)',
+            'curveball_velo': 'curveball velo (mph)',
+            'curveball_spin': 'curveball spin (rpm)',
+            'slider_velo': 'slider velo (mph)',
+            'slider_spin': 'slider spin (rpm)',
+        }
+
+    def get_player_info(self) -> dict:
+        return {
+            'height': self.height,
+            'weight': self.weight,
+            'primary_position': self.primary_position,
+            'player_region': self.region,
+            'throwing_hand': self.throwing_hand,
+            # snake_case keys
+            'fastball_velo_range': self.fastball_velo_range,
+            'fastball_velo_max': self.fastball_velo_max,
+            'fastball_spin': self.fastball_spin,
+            'changeup_velo': self.changeup_velo,
+            'changeup_spin': self.changeup_spin,
+            'curveball_velo': self.curveball_velo,
+            'curveball_spin': self.curveball_spin,
+            'slider_velo': self.slider_velo,
+            'slider_spin': self.slider_spin,
+            # CSV-style keys for compatibility
+            'FastballVelo (avg)': self.fastball_velo_range,
+            'FastballVelocity (max)': self.fastball_velo_max,
+            'FastballSpin Rate (avg)': self.fastball_spin,
+            'Changeup Velo Range': self.changeup_velo,
+            'Changeup Spin Rate (avg)': self.changeup_spin,
+            'Curveball Velo Range': self.curveball_velo,
+            'Curveball Spin Rate (avg)': self.curveball_spin,
+            'Slider Velo Range': self.slider_velo,
+            'Slider Spin Rate (avg)': self.slider_spin,
+        }
+
+    def __str__(self):
+        return self.get_player_info().__str__()
     

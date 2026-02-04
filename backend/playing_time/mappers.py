@@ -59,7 +59,11 @@ def player_type_to_stats(player: PlayerType) -> PlayerStats:
         stats.inf_velo = player_info.get('inf_velo')
     elif isinstance(player, PlayerPitcher):
         # Map pitcher metrics if present
-        stats.fb_velo_range = player_info.get('FastballVelo Range') or player_info.get('fastball_velo_range')
+        stats.fb_velo_range = (
+            player_info.get('FastballVelo Range')
+            or player_info.get('FastballVelo (avg)')
+            or player_info.get('fastball_velo_range')
+        )
         stats.fb_velo_max = player_info.get('FastballVelocity (max)') or player_info.get('fastball_velo_max')
         stats.fb_spin = player_info.get('FastballSpin Rate (avg)') or player_info.get('fastball_spin')
 
