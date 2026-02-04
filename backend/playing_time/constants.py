@@ -296,6 +296,61 @@ DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
     },
 }
 
+PITCHER_DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
+    "P4": {
+        "height": {"mean": 74.40, "std": 2.19},
+        "weight": {"mean": 192.69, "std": 19.50},
+        "FastballVelo Range": {"mean": 88.39, "std": 3.62},
+        "FastballVelocity (max)": {"mean": 90.47, "std": 3.63},
+        "FastballSpin Rate (avg)": {"mean": 2187.07, "std": 194.27},
+        "Changeup Velo Range": {"mean": 79.49, "std": 4.27},
+        "Changeup Spin Rate (avg)": {"mean": 1764.20, "std": 265.67},
+        "Curveball Velo Range": {"mean": 74.22, "std": 4.14},
+        "Curveball Spin Rate (avg)": {"mean": 2221.73, "std": 307.94},
+        "Slider Velo Range": {"mean": 77.27, "std": 4.17},
+        "Slider Spin Rate (avg)": {"mean": 2267.83, "std": 295.67},
+    },
+    "Non-P4 D1": {
+        "height": {"mean": 73.69, "std": 2.24},
+        "weight": {"mean": 187.89, "std": 19.33},
+        "FastballVelo Range": {"mean": 85.92, "std": 3.40},
+        "FastballVelocity (max)": {"mean": 87.88, "std": 3.39},
+        "FastballSpin Rate (avg)": {"mean": 2137.07, "std": 177.43},
+        "Changeup Velo Range": {"mean": 77.55, "std": 4.08},
+        "Changeup Spin Rate (avg)": {"mean": 1710.87, "std": 262.72},
+        "Curveball Velo Range": {"mean": 72.56, "std": 3.84},
+        "Curveball Spin Rate (avg)": {"mean": 2149.25, "std": 281.01},
+        "Slider Velo Range": {"mean": 75.09, "std": 4.00},
+        "Slider Spin Rate (avg)": {"mean": 2191.69, "std": 277.93},
+    },
+    "D2": {
+        "height": {"mean": 73.10, "std": 2.33},
+        "weight": {"mean": 183.80, "std": 20.86},
+        "FastballVelo Range": {"mean": 82.72, "std": 3.70},
+        "FastballVelocity (max)": {"mean": 84.53, "std": 3.75},
+        "FastballSpin Rate (avg)": {"mean": 2048.72, "std": 188.77},
+        "Changeup Velo Range": {"mean": 74.95, "std": 4.07},
+        "Changeup Spin Rate (avg)": {"mean": 1650.76, "std": 257.34},
+        "Curveball Velo Range": {"mean": 70.40, "std": 3.95},
+        "Curveball Spin Rate (avg)": {"mean": 2061.99, "std": 278.57},
+        "Slider Velo Range": {"mean": 72.58, "std": 3.89},
+        "Slider Spin Rate (avg)": {"mean": 2112.39, "std": 260.86},
+    },
+    "D3": {
+        "height": {"mean": 72.47, "std": 2.35},
+        "weight": {"mean": 179.20, "std": 21.22},
+        "FastballVelo Range": {"mean": 80.20, "std": 3.86},
+        "FastballVelocity (max)": {"mean": 81.87, "std": 3.83},
+        "FastballSpin Rate (avg)": {"mean": 1988.63, "std": 188.67},
+        "Changeup Velo Range": {"mean": 72.99, "std": 4.00},
+        "Changeup Spin Rate (avg)": {"mean": 1600.67, "std": 249.39},
+        "Curveball Velo Range": {"mean": 68.44, "std": 4.04},
+        "Curveball Spin Rate (avg)": {"mean": 1999.35, "std": 266.94},
+        "Slider Velo Range": {"mean": 70.59, "std": 3.83},
+        "Slider Spin Rate (avg)": {"mean": 2036.34, "std": 254.21},
+    },
+}
+
 
 # =============================================================================
 # STAT CLASSIFICATION
@@ -315,6 +370,16 @@ STAT_TO_STRENGTH: Dict[str, str] = {
     "of_velo": "defensive",
     "c_velo": "defensive",
     "pop_time": "defensive",
+    # Pitcher stats map to defensive strength
+    "FastballVelo Range": "defensive",
+    "FastballVelocity (max)": "defensive",
+    "FastballSpin Rate (avg)": "defensive",
+    "Changeup Velo Range": "defensive",
+    "Changeup Spin Rate (avg)": "defensive",
+    "Curveball Velo Range": "defensive",
+    "Curveball Spin Rate (avg)": "defensive",
+    "Slider Velo Range": "defensive",
+    "Slider Spin Rate (avg)": "defensive",
 }
 
 # =============================================================================

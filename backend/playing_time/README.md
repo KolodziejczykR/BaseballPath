@@ -172,6 +172,24 @@ z_pos = (0.60 × max(z_c_velo, z_pop_time)) + (0.40 × min(z_c_velo, z_pop_time)
 
 This rewards catchers who excel in one area while still penalizing major weaknesses.
 
+### 2b. Pitcher Stat Handling
+
+Pitchers use a separate benchmark set (`PITCHER_DIVISION_BENCHMARKS`) and
+pitch-specific metrics. Pitcher stat z-scores are calculated from:
+
+- `FastballVelo Range`
+- `FastballVelocity (max)`
+- `FastballSpin Rate (avg)`
+- `Changeup Velo Range`
+- `Changeup Spin Rate (avg)`
+- `Curveball Velo Range`
+- `Curveball Spin Rate (avg)`
+- `Slider Velo Range`
+- `Slider Spin Rate (avg)`
+
+Missing pitch metrics are treated as division-average (z = 0), which keeps the
+playing time score stable when data is incomplete.
+
 ### 3. Scaled Team Needs Bonus
 
 The alignment bonus isn't flat — it scales with how good the player is at what the team needs:

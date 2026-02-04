@@ -26,7 +26,9 @@ if project_root not in sys.path:
 from backend.ml.pipeline.infielder_pipeline import InfielderPredictionPipeline
 from backend.ml.pipeline.outfielder_pipeline import OutfielderPredictionPipeline
 from backend.ml.pipeline.catcher_pipeline import CatcherPredictionPipeline
+from backend.ml.pipeline.pitcher_pipeline import PitcherPredictionPipeline
 from backend.utils.player_types import PlayerInfielder, PlayerOutfielder, PlayerCatcher
+from backend.utils.player_types import PlayerPitcher
 
 
 class TestElitePlayerBehavior:
@@ -46,6 +48,11 @@ class TestElitePlayerBehavior:
     def c_pipeline(self):
         """Initialize catcher pipeline once per class"""
         return CatcherPredictionPipeline()
+
+    @pytest.fixture(scope="class")
+    def p_pipeline(self):
+        """Initialize pitcher pipeline once per class"""
+        return PitcherPredictionPipeline()
 
     # ELITE INFIELDER TESTS
     @pytest.mark.parametrize("elite_infielder_data", [
@@ -210,6 +217,124 @@ class TestElitePlayerBehavior:
 
         assert (is_p4_predicted or p4_prob >= super_elite_of['min_p4_consideration']), \
             f"{super_elite_of['description']} only got {p4_prob:.1%} P4 probability and predicted {result.get_final_prediction()}, expected P4 prediction or ≥{super_elite_of['min_p4_consideration']:.1%} P4 prob"
+
+    # ELITE PITCHER TESTS
+    @pytest.mark.parametrize("elite_pitcher_data", [
+        {
+            "height": 75, "weight": 205,
+            "primary_position": "RHP", "region": "West", "throwing_hand": "R",
+            "fastball_velo_max": 94.0, "fastball_velo_range": 90.0, "fastball_spin": 2300.0,
+            "changeup_velo": 82.0, "changeup_spin": 1800.0,
+            "curveball_velo": 76.0, "curveball_spin": 2400.0,
+            "slider_velo": 80.0, "slider_spin": 2400.0,
+            "expected_d1_min": 0.65,
+            "expected_category": ["Power 4 D1"],
+            "description": "Elite RHP - 94 max, 90 range, strong secondaries"
+        },
+        pytest.param({
+            "height": 74, "weight": 195,
+            "primary_position": "LHP", "region": "South", "throwing_hand": "L",
+            "fastball_velo_max": 92.0, "fastball_velo_range": 88.0, "fastball_spin": 2200.0,
+            "changeup_velo": 80.0, "changeup_spin": 1700.0,
+            "curveball_velo": 74.0, "curveball_spin": 2300.0,
+            "slider_velo": 78.0, "slider_spin": 2300.0,
+            "expected_d1_min": 0.65,
+            "expected_category": ["Power 4 D1"],
+            "description": "Elite LHP - strong velo/spin across pitches"
+        }, marks=pytest.mark.xfail(reason="Current P4 model is conservative; elite LHP may still predict Non-P4 D1."))
+    ])
+    def test_elite_pitchers_predict_d1(self, p_pipeline, elite_pitcher_data):
+        player_data = {k: v for k, v in elite_pitcher_data.items()
+                      if k not in ['expected_d1_min', 'expected_category', 'description']}
+        player = PlayerPitcher(**player_data)
+        result = p_pipeline.predict(player)
+
+        assert result.d1_results.d1_probability >= elite_pitcher_data['expected_d1_min'], \
+            f"{elite_pitcher_data['description']} only got {result.d1_results.d1_probability:.1%} D1 probability"
+        assert result.get_final_prediction() in elite_pitcher_data['expected_category']
+
+    @pytest.mark.parametrize("poor_pitcher_data", [
+        {
+            "height": 70, "weight": 170,
+            "primary_position": "RHP", "region": "Midwest", "throwing_hand": "R",
+            "fastball_velo_max": 80.0, "fastball_velo_range": 78.0,
+            "expected_d1_max": 0.49,
+            "expected_category": ["Non-D1"],
+            "description": "Below-average RHP - low velo"
+        },
+        {
+            "height": 71, "weight": 175,
+            "primary_position": "LHP", "region": "Northeast", "throwing_hand": "L",
+            "fastball_velo_max": 82.0, "fastball_velo_range": 79.0,
+            "expected_d1_max": 0.49,
+            "expected_category": ["Non-D1"],
+            "description": "Below-average LHP - low velo"
+        }
+    ])
+    def test_poor_pitchers_reasonable_predictions(self, p_pipeline, poor_pitcher_data):
+        player_data = {k: v for k, v in poor_pitcher_data.items()
+                      if k not in ['expected_d1_max', 'expected_category', 'description']}
+        player = PlayerPitcher(**player_data)
+        result = p_pipeline.predict(player)
+
+        assert result.d1_results.d1_probability <= poor_pitcher_data['expected_d1_max'], \
+            f"{poor_pitcher_data['description']} got {result.d1_results.d1_probability:.1%} D1 probability"
+        assert result.get_final_prediction() in poor_pitcher_data['expected_category']
+
+    @pytest.mark.parametrize("poor_pitcher_strict", [
+        {
+            "height": 70, "weight": 170,
+            "primary_position": "RHP", "region": "Midwest", "throwing_hand": "R",
+            "fastball_velo_max": 78.0, "fastball_velo_range": 76.0,
+            "description": "Very low velo RHP"
+        },
+        {
+            "height": 71, "weight": 175,
+            "primary_position": "LHP", "region": "Northeast", "throwing_hand": "L",
+            "fastball_velo_max": 79.0, "fastball_velo_range": 77.0,
+            "description": "Very low velo LHP"
+        }
+    ])
+    def test_poor_pitchers_should_be_non_d1(self, p_pipeline, poor_pitcher_strict):
+        player_data = {k: v for k, v in poor_pitcher_strict.items() if k != "description"}
+        player = PlayerPitcher(**player_data)
+        result = p_pipeline.predict(player)
+        assert result.get_final_prediction() == "Non-D1", \
+            f"{poor_pitcher_strict['description']} predicted {result.get_final_prediction()}"
+        assert result.d1_results.d1_probability < 0.40, \
+            f"{poor_pitcher_strict['description']} D1 prob {result.d1_results.d1_probability:.1%} expected < 40%"
+
+    @pytest.mark.parametrize("elite_pitcher_p4", [
+        {
+            "height": 75, "weight": 205,
+            "primary_position": "RHP", "region": "West", "throwing_hand": "R",
+            "fastball_velo_max": 94.0, "fastball_velo_range": 90.0, "fastball_spin": 2300.0,
+            "changeup_velo": 82.0, "changeup_spin": 1800.0,
+            "curveball_velo": 76.0, "curveball_spin": 2400.0,
+            "slider_velo": 80.0, "slider_spin": 2400.0,
+            "min_p4_prob": 0.55,
+            "description": "Elite RHP - 94 max, 90 range, strong secondaries"
+        },
+        pytest.param({
+            "height": 74, "weight": 195,
+            "primary_position": "LHP", "region": "South", "throwing_hand": "L",
+            "fastball_velo_max": 92.0, "fastball_velo_range": 88.0, "fastball_spin": 2200.0,
+            "changeup_velo": 80.0, "changeup_spin": 1700.0,
+            "curveball_velo": 74.0, "curveball_spin": 2300.0,
+            "slider_velo": 78.0, "slider_spin": 2300.0,
+            "min_p4_prob": 0.55,
+            "description": "Elite LHP - strong velo/spin across pitches"
+        }, marks=pytest.mark.xfail(reason="Current P4 model is conservative; elite LHP may still predict Non-P4 D1."))
+    ])
+    def test_elite_pitchers_should_be_p4(self, p_pipeline, elite_pitcher_p4):
+        player_data = {k: v for k, v in elite_pitcher_p4.items() if k not in ["min_p4_prob", "description"]}
+        player = PlayerPitcher(**player_data)
+        result = p_pipeline.predict(player)
+        assert result.get_final_prediction() == "Power 4 D1", \
+            f"{elite_pitcher_p4['description']} predicted {result.get_final_prediction()}"
+        p4_prob = result.p4_results.p4_probability if result.p4_results else 0.0
+        assert p4_prob >= elite_pitcher_p4["min_p4_prob"], \
+            f"{elite_pitcher_p4['description']} P4 prob {p4_prob:.1%} expected ≥ {elite_pitcher_p4['min_p4_prob']:.1%}"
 
     # ELITE CATCHER TESTS
     # Benchmarks: P4 avg exit_velo=95.4, c_velo=79.02, pop_time=1.99

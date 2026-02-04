@@ -247,6 +247,18 @@ class PlayerStats:
     # Position
     primary_position: str = None          # IF, OF, C, etc.
 
+    # Pitching metrics (optional)
+    fb_velo_range: Optional[float] = None        # Fastball velo range (mph)
+    fb_velo_max: Optional[float] = None          # Fastball max (mph)
+    fb_spin: Optional[float] = None              # Fastball spin (rpm)
+
+    ch_velo: Optional[float] = None              # Changeup velo (mph)
+    ch_spin: Optional[float] = None              # Changeup spin (rpm)
+    cb_velo: Optional[float] = None              # Curveball velo (mph)
+    cb_spin: Optional[float] = None              # Curveball spin (rpm)
+    sl_velo: Optional[float] = None              # Slider velo (mph)
+    sl_spin: Optional[float] = None              # Slider spin (rpm)
+
     def get_position_velo(self) -> Optional[float]:
         """Get the relevant position velocity based on primary position"""
         position_upper = self.primary_position.upper()

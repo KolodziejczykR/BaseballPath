@@ -52,6 +52,7 @@ from .types import (
 # Constants (for customization)
 from .constants import (
     DIVISION_BENCHMARKS,
+    PITCHER_DIVISION_BENCHMARKS,
     PLAYING_TIME_BUCKETS,
     SCHOOL_LEVEL_BANDS,
 )
@@ -87,6 +88,7 @@ __all__ = [
     "ProgramTrend",
     # Constants
     "DIVISION_BENCHMARKS",
+    "PITCHER_DIVISION_BENCHMARKS",
     "PLAYING_TIME_BUCKETS",
     "SCHOOL_LEVEL_BANDS",
     # Mappers

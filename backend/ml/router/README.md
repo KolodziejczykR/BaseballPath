@@ -15,6 +15,7 @@ HTTP Request → Input Validation → PlayerType Object → ML Pipeline → Resp
 - **Infielders** (`infielder_router.py`): SS, 2B, 3B, 1B positions
 - **Outfielders** (`outfielder_router.py`): CF, LF, RF, OF positions
 - **Catchers** (`catcher_router.py`): C position (coming soon)
+- **Pitchers** (`pitcher_router.py`): RHP, LHP (pitch metrics)
 
 ## API Endpoints
 
@@ -98,6 +99,7 @@ Provides an example of valid input data.
 - **Infielders**: SS, 2B, 3B, 1B
 - **Outfielders**: CF, LF, RF, OF
 - **Catchers**: C
+- **Pitchers**: RHP, LHP
 
 #### Handedness
 - `R`: Right
@@ -109,6 +111,25 @@ Provides an example of valid input data.
 - `South`: Southern United States
 - `Northeast`: Northeastern United States
 - `Midwest`: Midwestern United States (infielders only)
+
+### Pitcher-Specific Features
+
+Required:
+- `height` (inches)
+- `weight` (lbs)
+- `primary_position` (RHP/LHP)
+- `player_region` (West/South/Northeast/Midwest)
+- `fastball_velo_max` (mph)
+
+Optional pitch metrics:
+- `fastball_velo_range` (mph)
+- `fastball_spin` (rpm)
+- `changeup_velo` (mph)
+- `changeup_spin` (rpm)
+- `curveball_velo` (mph)
+- `curveball_spin` (rpm)
+- `slider_velo` (mph)
+- `slider_spin` (rpm)
 
 ## ML Pipeline Details
 

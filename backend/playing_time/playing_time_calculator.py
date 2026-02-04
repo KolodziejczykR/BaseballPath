@@ -69,6 +69,7 @@ from .constants import (
     # Buckets and benchmarks
     PLAYING_TIME_BUCKETS,
     DIVISION_BENCHMARKS,
+    PITCHER_DIVISION_BENCHMARKS,
 
     # Stat classification
     STAT_TO_STRENGTH,
@@ -213,8 +214,28 @@ class PlayingTimeCalculator:
         For catchers, combines c_velo and pop_time with 60/40 weighting.
         Missing stats use division average (z-score = 0).
         """
-        benchmarks = self.benchmarks.get(division_group, self.benchmarks.get("Non-P4 D1"))
-        z_scores = []
+        is_pitcher = self._is_pitcher(player_stats)
+        if is_pitcher:
+            benchmarks = PITCHER_DIVISION_BENCHMARKS.get(division_group, PITCHER_DIVISION_BENCHMARKS.get("Non-P4 D1"))
+        else:
+            benchmarks = self.benchmarks.get(division_group, self.benchmarks.get("Non-P4 D1"))
+
+        z_scores: List[StatZScore] = []
+
+        if is_pitcher:
+            # Pitcher stat z-scores (use pitcher benchmarks)
+            z_scores.extend([
+                self._calc_single_z_score(player_stats.fb_velo_range, "FastballVelo Range", benchmarks),
+                self._calc_single_z_score(player_stats.fb_velo_max, "FastballVelocity (max)", benchmarks),
+                self._calc_single_z_score(player_stats.fb_spin, "FastballSpin Rate (avg)", benchmarks),
+                self._calc_single_z_score(player_stats.ch_velo, "Changeup Velo Range", benchmarks),
+                self._calc_single_z_score(player_stats.ch_spin, "Changeup Spin Rate (avg)", benchmarks),
+                self._calc_single_z_score(player_stats.cb_velo, "Curveball Velo Range", benchmarks),
+                self._calc_single_z_score(player_stats.cb_spin, "Curveball Spin Rate (avg)", benchmarks),
+                self._calc_single_z_score(player_stats.sl_velo, "Slider Velo Range", benchmarks),
+                self._calc_single_z_score(player_stats.sl_spin, "Slider Spin Rate (avg)", benchmarks),
+            ])
+            return z_scores
 
         # Exit velocity
         z_exit = self._calc_single_z_score(
@@ -244,6 +265,13 @@ class PlayingTimeCalculator:
         z_scores.append(z_pos)
 
         return z_scores
+
+    def _is_pitcher(self, player_stats: PlayerStats) -> bool:
+        """Determine if the player should use pitcher benchmarks."""
+        if not player_stats.primary_position:
+            return False
+        pos = player_stats.primary_position.upper()
+        return pos in ["P", "RHP", "LHP", "PITCHER"]
 
     def _calc_single_z_score(
         self,
@@ -400,7 +428,10 @@ class PlayingTimeCalculator:
         Calculate the height/weight component (15% of total).
         Uses simple average of height and weight z-scores.
         """
-        benchmarks = self.benchmarks.get(division_group, self.benchmarks.get("Non-P4 D1"))
+        if self._is_pitcher(player_stats):
+            benchmarks = PITCHER_DIVISION_BENCHMARKS.get(division_group, PITCHER_DIVISION_BENCHMARKS.get("Non-P4 D1"))
+        else:
+            benchmarks = self.benchmarks.get(division_group, self.benchmarks.get("Non-P4 D1"))
 
         z_height = self._calc_single_z_score(
             player_stats.height,
