@@ -19,6 +19,7 @@ from backend.utils.player_types import (
     PlayerInfielder,
     PlayerOutfielder,
     PlayerCatcher,
+    PlayerPitcher,
 )
 from backend.utils.prediction_types import MLPipelineResults
 
@@ -56,6 +57,18 @@ def player_type_to_stats(player: PlayerType) -> PlayerStats:
         stats.of_velo = player_info.get('of_velo')
     elif isinstance(player, PlayerInfielder):
         stats.inf_velo = player_info.get('inf_velo')
+    elif isinstance(player, PlayerPitcher):
+        # Map pitcher metrics if present
+        stats.fb_velo_range = player_info.get('FastballVelo Range') or player_info.get('fastball_velo_range')
+        stats.fb_velo_max = player_info.get('FastballVelocity (max)') or player_info.get('fastball_velo_max')
+        stats.fb_spin = player_info.get('FastballSpin Rate (avg)') or player_info.get('fastball_spin')
+
+        stats.ch_velo = player_info.get('Changeup Velo Range') or player_info.get('changeup_velo')
+        stats.ch_spin = player_info.get('Changeup Spin Rate (avg)') or player_info.get('changeup_spin')
+        stats.cb_velo = player_info.get('Curveball Velo Range') or player_info.get('curveball_velo')
+        stats.cb_spin = player_info.get('Curveball Spin Rate (avg)') or player_info.get('curveball_spin')
+        stats.sl_velo = player_info.get('Slider Velo Range') or player_info.get('slider_velo')
+        stats.sl_spin = player_info.get('Slider Spin Rate (avg)') or player_info.get('slider_spin')
 
     return stats
 

@@ -370,6 +370,16 @@ STAT_TO_STRENGTH: Dict[str, str] = {
     "of_velo": "defensive",
     "c_velo": "defensive",
     "pop_time": "defensive",
+    # Pitcher stats map to defensive strength
+    "FastballVelo Range": "defensive",
+    "FastballVelocity (max)": "defensive",
+    "FastballSpin Rate (avg)": "defensive",
+    "Changeup Velo Range": "defensive",
+    "Changeup Spin Rate (avg)": "defensive",
+    "Curveball Velo Range": "defensive",
+    "Curveball Spin Rate (avg)": "defensive",
+    "Slider Velo Range": "defensive",
+    "Slider Spin Rate (avg)": "defensive",
 }
 
 # =============================================================================
