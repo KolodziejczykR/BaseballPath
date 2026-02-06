@@ -408,20 +408,7 @@ backend/playing_time/
 
 ## Future Enhancements
 
-### TODO: Position-Specific Height/Weight Z-Scores
-
-Currently, height/weight uses division-wide benchmarks. A future enhancement could use position-specific benchmarks (e.g., 1B vs SS have different ideal heights).
-
-### TODO: Roster Depth Integration
-
-If roster data becomes available, factor in:
-- Graduating seniors at player's position
-- Existing recruits at player's position
-- Transfer portal activity
-
-### TODO: Conference-Specific Benchmarks
-
-Some conferences within the same division have different talent levels. Could add conference-level benchmarks for finer differentiation.
+Position-specific height/weight benchmarks, roster depth integration, and conference-specific benchmarks are deferred until after the core backend release.
 
 ## Troubleshooting
 

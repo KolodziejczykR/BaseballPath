@@ -151,82 +151,11 @@ async def _create_school_match():
 
 ---
 
-## 🚀 Next Steps (Optional Enhancements)
+## 🚀 Current Focus (2026-02-06)
 
-### **Option 1: Add Playing Time Filter** (Recommended)
-You have the playing_time_priority filter in athletic_filter.py but it's commented out. Now you can implement it properly!
-
-**File**: `backend/school_filtering/filters/athletic_filter.py:72-79`
-
-**Current (commented out)**:
-```python
-# if preferences.playing_time_priority:
-#     if not self._meets_playing_time_criteria(school, preferences.playing_time_priority):
-#         return False
-```
-
-**Implementation**:
-```python
-if preferences.playing_time_priority:
-    if not self._meets_playing_time_criteria(school, preferences.playing_time_priority):
-        return False
-
-def _meets_playing_time_criteria(self, school: Dict[str, Any], priorities: List[str]) -> bool:
-    """Use playing_time_factor from baseball rankings"""
-    # Get the factor if available
-    factor = school.get('playing_time_factor')
-
-    if factor is None:
-        return True  # No data, don't filter out
-
-    for priority in priorities:
-        if priority == "High":
-            # Want significant playing time - prefer rebuilding programs
-            if factor >= 1.2:  # Rebuilding/developing programs
-                return True
-        elif priority == "Medium":
-            # Balanced approach - average competition
-            if factor >= 1.0:
-                return True
-        elif priority == "Low":
-            # Don't mind limited playing time - any program
-            return True
-
-    return False
-```
-
----
-
-### **Option 2: Update Sorting Algorithm**
-Add baseball strength as a tie-breaker in the sorting logic.
-
-**File**: `backend/school_filtering/async_two_tier_pipeline.py:173-187`
-
-**Add after existing sort keys**:
-```python
-def sort_key(school_match):
-    nice_to_have_count = len(school_match.nice_to_have_matches)
-    division_priority = get_division_priority(school_match)
-    grade_value = ...
-
-    # NEW: Add baseball strength as tie-breaker
-    baseball_priority = 0
-    if school_match.has_baseball_data and school_match.baseball_strength:
-        # Prioritize programs matching playing time preference
-        if preferences.playing_time_priority:
-            factor = school_match.playing_time_factor or 1.0
-            if "High" in preferences.playing_time_priority:
-                baseball_priority = factor  # Higher factor = better for high priority
-            elif "Low" in preferences.playing_time_priority:
-                baseball_priority = 2.0 - factor  # Lower factor = better for low priority
-
-    return (nice_to_have_count, division_priority, grade_value, baseball_priority)
-```
-
----
-
-### **Option 3: Add Baseball Strength to PROs/CONs**
-Show baseball strength in the nice-to-have matching!
+- Keep playing time evaluation based on the playing time calculator output (no playing_time_priority filter).
+- Define the final recommendation response schema for frontend consumption.
+- Add LLM-based per-school reasoning on top of deterministic results.
 
 **Add to**: `backend/school_filtering/async_two_tier_pipeline.py:_score_nice_to_haves()`
 

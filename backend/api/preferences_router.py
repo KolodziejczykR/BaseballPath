@@ -16,7 +16,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from backend.school_filtering.async_two_tier_pipeline import get_school_matches_shared, count_eligible_schools_shared
-from backend.utils.preferences_types import UserPreferences
+from backend.utils.preferences_types import UserPreferences, VALID_GRADES
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
 from backend.utils.player_types import PlayerInfielder, PlayerOutfielder, PlayerCatcher
 
@@ -45,7 +45,6 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
             "party_scene_preference": ["Moderate"], # Multi-select list
             "sat": 1350,                      # Student's SAT score
             "act": 30,                        # Student's ACT score
-            "intended_major_buckets": "Engineering", # Major area
             "hs_graduation_year": "2025",     # Graduation year
             "must_have_preferences": ["max_budget", "min_academic_rating"] # Dynamic must-haves
         },
@@ -78,7 +77,9 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                 "model_version": "v1.3"
             }
         },
-        "limit": 25  # Optional - max schools to return (default: 50)
+        "limit": 25,  # Optional - max schools to return (default: 50)
+        "sort_by": "playing_time_score",  # Optional - playing_time_score | academic_grade | nice_to_have_count
+        "sort_order": "desc"  # Optional - asc | desc
     }
 
     Returns comprehensive school analysis with:
@@ -95,6 +96,8 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
         player_info = request.get("player_info", {})
         ml_data = request.get("ml_results", {})
         limit = request.get("limit", 50)
+        sort_by = request.get("sort_by")
+        sort_order = request.get("sort_order", "desc")
 
         if not user_preferences_data:
             raise HTTPException(status_code=400, detail="user_preferences is required")
@@ -189,6 +192,11 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
         # Format the response with detailed school information
         schools_data = []
         for school_match in filtering_result.school_matches:
+            playing_time_score = (school_match.playing_time_result.percentile
+                                  if school_match.playing_time_result is not None else None)
+            nice_to_have_count = len(school_match.nice_to_have_matches)
+            academic_grade = school_match.school_data.get("academics_grade")
+
             school_info = {
                 # Basic school information
                 "school_name": school_match.school_name,
@@ -242,9 +250,19 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                 },
 
                 # Playing time analysis
-                "playing_time": _format_playing_time(school_match.playing_time_result)
+                "playing_time": _format_playing_time(school_match.playing_time_result),
+
+                # Sorting signals
+                "scores": {
+                    "playing_time_score": playing_time_score,
+                    "academic_grade": academic_grade,
+                    "nice_to_have_count": nice_to_have_count,
+                }
             }
             schools_data.append(school_info)
+
+        if sort_by:
+            schools_data = _sort_schools(schools_data, sort_by, sort_order)
 
         return {
             "success": True,
@@ -256,7 +274,9 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                 "d1_probability": ml_results.d1_results.d1_probability,
                 "p4_probability": ml_results.p4_results.p4_probability if ml_results.p4_results else None,
                 "must_have_preferences": list(preferences.get_must_haves().keys()),
-                "nice_to_have_preferences": list(preferences.get_nice_to_haves().keys())
+                "nice_to_have_preferences": list(preferences.get_nice_to_haves().keys()),
+                "sort_by": sort_by,
+                "sort_order": sort_order
             },
             "schools": schools_data,
             "metadata": {
@@ -365,6 +385,46 @@ def _get_size_category(enrollment: int) -> str:
         return "Large"
     else:
         return "Very Large"
+
+
+def _academic_grade_rank(grade: Optional[str]) -> Optional[int]:
+    """Convert academic grade to a numeric rank (higher is better)."""
+    if grade not in VALID_GRADES:
+        return None
+    return len(VALID_GRADES) - 1 - VALID_GRADES.index(grade)
+
+
+def _coerce_sort_value(value: Optional[float], reverse: bool) -> float:
+    """Ensure missing values sort last."""
+    if value is None:
+        return float("-inf") if reverse else float("inf")
+    return value
+
+
+def _sort_schools(schools: List[Dict[str, Any]], sort_by: str, sort_order: str) -> List[Dict[str, Any]]:
+    """Sort schools by a supported score field."""
+    reverse = sort_order.lower() != "asc"
+    if sort_by == "playing_time_score":
+        return sorted(
+            schools,
+            key=lambda s: _coerce_sort_value(s.get("scores", {}).get("playing_time_score"), reverse),
+            reverse=reverse
+        )
+    if sort_by == "nice_to_have_count":
+        return sorted(
+            schools,
+            key=lambda s: _coerce_sort_value(s.get("scores", {}).get("nice_to_have_count"), reverse),
+            reverse=reverse
+        )
+    if sort_by == "academic_grade":
+        return sorted(
+            schools,
+            key=lambda s: _coerce_sort_value(
+                _academic_grade_rank(s.get("scores", {}).get("academic_grade")), reverse
+            ),
+            reverse=reverse
+        )
+    return schools
 
 
 def _format_playing_time(playing_time_result) -> Dict[str, Any]:

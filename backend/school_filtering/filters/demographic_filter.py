@@ -135,15 +135,7 @@ class DemographicFilter(BaseFilter):
 
     def _has_intended_major(self, school: Dict[str, Any], intended_major: str) -> bool:
         """
-        Check if school offers the intended major category
-
-        Args:
-            school: School data
-            intended_major: Intended major bucket
-
-        Returns:
-            True if school likely offers this major category
+        Intended major matching is intentionally not implemented.
+        This method is retained for potential future use.
         """
-        # TODO: Implement major matching logic
-        # TODO: think about whether LLM does this instead
         return None
