@@ -19,6 +19,40 @@ from backend.school_filtering.async_two_tier_pipeline import get_school_matches_
 from backend.utils.preferences_types import UserPreferences, VALID_GRADES
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
 from backend.utils.player_types import PlayerInfielder, PlayerOutfielder, PlayerCatcher
+from backend.utils.recommendation_types import (
+    AcademicsInfo,
+    AthleticsInfo,
+    FinancialInfo,
+    MatchAnalysis,
+    MatchMiss,
+    MatchPoint,
+    PlayingTimeInfo,
+    RecommendationSummary,
+    SchoolLocation,
+    SchoolRecommendation,
+    SchoolSize,
+    SortScores,
+    StudentLifeInfo,
+)
+try:
+    from celery.result import AsyncResult
+except Exception:  # pragma: no cover - optional dependency
+    AsyncResult = None
+
+try:
+    from backend.llm.tasks import (
+        generate_llm_reasoning,
+        compute_request_hash,
+        get_cached_reasoning,
+        get_inflight_job_id,
+        set_inflight_job_id,
+    )
+except Exception:  # pragma: no cover - optional dependency
+    generate_llm_reasoning = None
+    compute_request_hash = None
+    get_cached_reasoning = None
+    get_inflight_job_id = None
+    set_inflight_job_id = None
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -98,6 +132,7 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
         limit = request.get("limit", 50)
         sort_by = request.get("sort_by")
         sort_order = request.get("sort_order", "desc")
+        use_llm_reasoning = request.get("use_llm_reasoning", False)
 
         if not user_preferences_data:
             raise HTTPException(status_code=400, detail="user_preferences is required")
@@ -190,85 +225,86 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
             }
 
         # Format the response with detailed school information
-        schools_data = []
+        school_recommendations: List[SchoolRecommendation] = []
         for school_match in filtering_result.school_matches:
             playing_time_score = (school_match.playing_time_result.percentile
                                   if school_match.playing_time_result is not None else None)
             nice_to_have_count = len(school_match.nice_to_have_matches)
             academic_grade = school_match.school_data.get("academics_grade")
 
-            school_info = {
-                # Basic school information
-                "school_name": school_match.school_name,
-                "division_group": school_match.division_group,
-                "location": {
-                    "state": school_match.school_data.get("school_state"),
-                    "region": school_match.school_data.get("school_region")
-                },
-                "size": {
-                    "enrollment": school_match.school_data.get("undergrad_enrollment"),
-                    "category": _get_size_category(school_match.school_data.get("undergrad_enrollment", 0))
-                },
-                "academics": {
-                    "grade": school_match.school_data.get("academics_grade"),
-                    "avg_sat": school_match.school_data.get("avg_sat"),
-                    "avg_act": school_match.school_data.get("avg_act"),
-                    "admission_rate": school_match.school_data.get("admission_rate")
-                },
-                "athletics": {
-                    "grade": school_match.school_data.get("total_athletics_grade")
-                },
-                "student_life": {
-                    "grade": school_match.school_data.get("student_life_grade"),
-                    "party_scene_grade": school_match.school_data.get("party_scene_grade")
-                },
-                "financial": {
-                    "in_state_tuition": school_match.school_data.get("in_state_tuition"),
-                    "out_of_state_tuition": school_match.school_data.get("out_of_state_tuition")
-                },
-                "overall_grade": school_match.school_data.get("overall_grade"),
-
-                # Matching analysis
-                "match_analysis": {
-                    "total_nice_to_have_matches": len(school_match.nice_to_have_matches),
-                    "pros": [
-                        {
-                            "preference": match.preference_name,
-                            "description": match.description,
-                            "category": match.preference_type.value
-                        }
-                        for match in school_match.nice_to_have_matches
-                    ],
-                    "cons": [
-                        {
-                            "preference": miss.preference_name,
-                            "reason": miss.reason,
-                            "category": miss.preference_type.value
-                        }
-                        for miss in school_match.nice_to_have_misses
-                    ]
-                },
-
-                # Playing time analysis
-                "playing_time": _format_playing_time(school_match.playing_time_result),
-
-                # Sorting signals
-                "scores": {
-                    "playing_time_score": playing_time_score,
-                    "academic_grade": academic_grade,
-                    "nice_to_have_count": nice_to_have_count,
-                }
-            }
-            schools_data.append(school_info)
+            school_recommendations.append(
+                _build_school_recommendation(
+                    school_match,
+                    playing_time_score,
+                    academic_grade,
+                    nice_to_have_count,
+                )
+            )
 
         if sort_by:
-            schools_data = _sort_schools(schools_data, sort_by, sort_order)
+            school_recommendations = _sort_school_recommendations(
+                school_recommendations, sort_by, sort_order
+            )
+
+        summary = RecommendationSummary(
+            low_result_flag=len(school_recommendations) < 5,
+            llm_enabled=bool(use_llm_reasoning),
+        )
+
+        if use_llm_reasoning and school_recommendations and generate_llm_reasoning is not None:
+            try:
+                ml_summary = {
+                    "final_prediction": ml_results.get_final_prediction(),
+                    "d1_probability": ml_results.d1_results.d1_probability,
+                    "p4_probability": ml_results.p4_results.p4_probability if ml_results.p4_results else None,
+                    "confidence": ml_results.get_pipeline_confidence(),
+                }
+                preferences_payload = preferences.to_dict_with_must_haves()
+                player_payload = ml_results.get_player_info()
+
+                task_payload = {
+                    "schools": [rec.to_dict() for rec in school_recommendations],
+                    "player_info": player_payload,
+                    "ml_summary": ml_summary,
+                    "preferences": preferences_payload,
+                    "must_haves": preferences.get_must_haves(),
+                    "total_matches": len(school_recommendations),
+                    "min_threshold": 5,
+                    "include_player_summary": False,
+                }
+                request_hash = None
+                if compute_request_hash is not None:
+                    request_hash = compute_request_hash(task_payload)
+                    cached = get_cached_reasoning(request_hash) if get_cached_reasoning else None
+                    if cached is not None:
+                        summary.llm_job_id = request_hash
+                        summary.llm_status = "cached"
+                    else:
+                        inflight = get_inflight_job_id(request_hash) if get_inflight_job_id else None
+                        if inflight:
+                            summary.llm_job_id = inflight
+                            summary.llm_status = "queued"
+                        else:
+                            task_payload["request_hash"] = request_hash
+                            task = generate_llm_reasoning.delay(task_payload)
+                            summary.llm_job_id = task.id
+                            summary.llm_status = "queued"
+                            if set_inflight_job_id:
+                                set_inflight_job_id(request_hash, task.id)
+                else:
+                    task = generate_llm_reasoning.delay(task_payload)
+                    summary.llm_job_id = task.id
+                    summary.llm_status = "queued"
+            except Exception as e:
+                logger.error(f"LLM reasoning failed: {str(e)}")
+        elif use_llm_reasoning and generate_llm_reasoning is None:
+            summary.llm_status = "unavailable"
 
         return {
             "success": True,
-            "message": f"Found {len(schools_data)} schools matching your preferences",
+            "message": f"Found {len(school_recommendations)} schools matching your preferences",
             "summary": {
-                "total_matches": len(schools_data),
+                "total_matches": len(school_recommendations),
                 "must_have_count": filtering_result.must_have_count,
                 "ml_prediction": ml_results.get_final_prediction(),
                 "d1_probability": ml_results.d1_results.d1_probability,
@@ -278,7 +314,8 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                 "sort_by": sort_by,
                 "sort_order": sort_order
             },
-            "schools": schools_data,
+            "recommendation_summary": summary.to_dict(),
+            "schools": [rec.to_dict() for rec in school_recommendations],
             "metadata": {
                 "processed_at": datetime.now().isoformat(),
                 "pipeline_version": "v2.0",
@@ -401,66 +438,125 @@ def _coerce_sort_value(value: Optional[float], reverse: bool) -> float:
     return value
 
 
-def _sort_schools(schools: List[Dict[str, Any]], sort_by: str, sort_order: str) -> List[Dict[str, Any]]:
-    """Sort schools by a supported score field."""
+def _sort_school_recommendations(
+    schools: List[SchoolRecommendation], sort_by: str, sort_order: str
+) -> List[SchoolRecommendation]:
+    """Sort school recommendations by a supported score field."""
     reverse = sort_order.lower() != "asc"
     if sort_by == "playing_time_score":
         return sorted(
             schools,
-            key=lambda s: _coerce_sort_value(s.get("scores", {}).get("playing_time_score"), reverse),
+            key=lambda s: _coerce_sort_value(s.scores.playing_time_score, reverse),
             reverse=reverse
         )
     if sort_by == "nice_to_have_count":
         return sorted(
             schools,
-            key=lambda s: _coerce_sort_value(s.get("scores", {}).get("nice_to_have_count"), reverse),
+            key=lambda s: _coerce_sort_value(s.scores.nice_to_have_count, reverse),
             reverse=reverse
         )
     if sort_by == "academic_grade":
         return sorted(
             schools,
             key=lambda s: _coerce_sort_value(
-                _academic_grade_rank(s.get("scores", {}).get("academic_grade")), reverse
+                _academic_grade_rank(s.scores.academic_grade), reverse
             ),
             reverse=reverse
         )
     return schools
 
 
-def _format_playing_time(playing_time_result) -> Dict[str, Any]:
-    """
-    Format PlayingTimeResult for API response.
-
-    Args:
-        playing_time_result: PlayingTimeResult object or None
-
-    Returns:
-        Dictionary with playing time data for API response
-    """
+def _format_playing_time(playing_time_result) -> PlayingTimeInfo:
+    """Format PlayingTimeResult for SchoolRecommendation."""
     if playing_time_result is None:
-        return {
-            "available": False,
-            "message": "Playing time analysis not available for this school"
-        }
+        return PlayingTimeInfo(
+            available=False,
+            message="Playing time analysis not available for this school",
+        )
 
-    return {
-        "available": True,
-        "z_score": round(playing_time_result.final_z_score, 2),
-        "percentile": round(playing_time_result.percentile, 1),
-        "bucket": playing_time_result.bucket,
-        "bucket_description": playing_time_result.bucket_description,
-        "interpretation": playing_time_result.interpretation,
-        "breakdown": {
+    return PlayingTimeInfo(
+        available=True,
+        z_score=round(playing_time_result.final_z_score, 2),
+        percentile=round(playing_time_result.percentile, 1),
+        bucket=playing_time_result.bucket,
+        bucket_description=playing_time_result.bucket_description,
+        interpretation=playing_time_result.interpretation,
+        breakdown={
             "stats_component": round(playing_time_result.stats_breakdown.component_total, 3),
             "physical_component": round(playing_time_result.physical_breakdown.component_total, 3),
             "ml_component": round(playing_time_result.ml_breakdown.component_total, 3),
             "team_fit_bonus": round(playing_time_result.team_fit_breakdown.bonus, 3),
             "trend_bonus": round(playing_time_result.trend_breakdown.bonus, 3),
         },
-        "player_strength": playing_time_result.stats_breakdown.player_strength.value,
-        "team_needs": playing_time_result.team_fit_breakdown.team_needs.value,
-        "program_trend": playing_time_result.trend_breakdown.trend.value,
-    }
+        player_strength=playing_time_result.stats_breakdown.player_strength.value,
+        team_needs=playing_time_result.team_fit_breakdown.team_needs.value,
+        program_trend=playing_time_result.trend_breakdown.trend.value,
+    )
+
+
+def _build_school_recommendation(
+    school_match,
+    playing_time_score: Optional[float],
+    academic_grade: Optional[str],
+    nice_to_have_count: int,
+) -> SchoolRecommendation:
+    return SchoolRecommendation(
+        school_name=school_match.school_name,
+        division_group=school_match.division_group,
+        location=SchoolLocation(
+            state=school_match.school_data.get("school_state"),
+            region=school_match.school_data.get("school_region"),
+        ),
+        size=SchoolSize(
+            enrollment=school_match.school_data.get("undergrad_enrollment"),
+            category=_get_size_category(
+                school_match.school_data.get("undergrad_enrollment", 0)
+            ),
+        ),
+        academics=AcademicsInfo(
+            grade=school_match.school_data.get("academics_grade"),
+            avg_sat=school_match.school_data.get("avg_sat"),
+            avg_act=school_match.school_data.get("avg_act"),
+            admission_rate=school_match.school_data.get("admission_rate"),
+        ),
+        athletics=AthleticsInfo(
+            grade=school_match.school_data.get("total_athletics_grade")
+        ),
+        student_life=StudentLifeInfo(
+            grade=school_match.school_data.get("student_life_grade"),
+            party_scene_grade=school_match.school_data.get("party_scene_grade"),
+        ),
+        financial=FinancialInfo(
+            in_state_tuition=school_match.school_data.get("in_state_tuition"),
+            out_of_state_tuition=school_match.school_data.get("out_of_state_tuition"),
+        ),
+        overall_grade=school_match.school_data.get("overall_grade"),
+        match_analysis=MatchAnalysis(
+            total_nice_to_have_matches=len(school_match.nice_to_have_matches),
+            pros=[
+                MatchPoint(
+                    preference=match.preference_name,
+                    description=match.description,
+                    category=match.preference_type.value,
+                )
+                for match in school_match.nice_to_have_matches
+            ],
+            cons=[
+                MatchMiss(
+                    preference=miss.preference_name,
+                    reason=miss.reason,
+                    category=miss.preference_type.value,
+                )
+                for miss in school_match.nice_to_have_misses
+            ],
+        ),
+        playing_time=_format_playing_time(school_match.playing_time_result),
+        scores=SortScores(
+            playing_time_score=playing_time_score,
+            academic_grade=academic_grade,
+            nice_to_have_count=nice_to_have_count,
+        ),
+    )
 
 
 def _create_player_from_info(player_info: Dict[str, Any]):
@@ -612,6 +708,67 @@ async def get_preferences_example() -> Dict[str, Any]:
             "Limit parameter controls maximum schools returned (default: 50)",
             "/count endpoint is optimized for real-time UI updates (no playing time)"
         ]
+    }
+
+@router.get("/reasoning/{job_id}")
+async def get_llm_reasoning(job_id: str) -> Dict[str, Any]:
+    """
+    Retrieve LLM reasoning results for a queued recommendation job.
+    """
+    if AsyncResult is None:
+        raise HTTPException(status_code=503, detail="LLM queue unavailable")
+
+    cached = None
+    if get_cached_reasoning is not None:
+        cached = get_cached_reasoning(job_id)
+    if cached is not None:
+        return {
+            "success": True,
+            "job_id": job_id,
+            "status": "completed",
+            "reasoning": cached.get("reasoning", {}),
+            "player_summary": cached.get("player_summary"),
+            "relax_suggestions": cached.get("relax_suggestions", []),
+            "completed_at": cached.get("completed_at"),
+        }
+
+    inflight_id = None
+    if get_inflight_job_id is not None:
+        inflight_id = get_inflight_job_id(job_id)
+
+    result = AsyncResult(inflight_id or job_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not result.ready():
+        return {
+            "success": True,
+            "job_id": job_id,
+            "status": result.status.lower(),
+            "reasoning": None,
+            "player_summary": None,
+            "relax_suggestions": [],
+        }
+
+    if result.failed():
+        return {
+            "success": False,
+            "job_id": job_id,
+            "status": "failed",
+            "reasoning": None,
+            "player_summary": None,
+            "relax_suggestions": [],
+        }
+
+    payload = result.result or {}
+    return {
+        "success": True,
+        "job_id": job_id,
+        "status": "completed",
+        "reasoning": payload.get("reasoning", {}),
+        "player_summary": payload.get("player_summary"),
+        "relax_suggestions": payload.get("relax_suggestions", []),
+        "completed_at": payload.get("completed_at"),
     }
 
 @router.get("/health")

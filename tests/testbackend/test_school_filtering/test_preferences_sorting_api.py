@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from backend.api.main import app
 from backend.utils.school_match_types import SchoolMatch, NiceToHaveMatch, NiceToHaveType
+from backend.utils.recommendation_types import PlayingTimeInfo
 
 
 def _make_school_match(name, division_group, academic_grade, playing_time_percentile, nice_to_have_count):
@@ -101,7 +102,7 @@ def _patch_preferences_router(monkeypatch, matches):
     monkeypatch.setattr(
         pref_mod,
         "_format_playing_time",
-        lambda _: {"available": False},
+        lambda _: PlayingTimeInfo(available=False),
     )
 
 
@@ -118,6 +119,7 @@ def test_preferences_filter_sort_by_playing_time(monkeypatch):
     resp = client.post("/preferences/filter", json=_base_request("playing_time_score", "desc"))
     assert resp.status_code == 200
     schools = resp.json()["schools"]
+    assert "recommendation_summary" in resp.json()
     assert [s["school_name"] for s in schools] == ["B", "A", "C"]
     assert all("scores" in s for s in schools)
 
