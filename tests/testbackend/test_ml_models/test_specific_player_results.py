@@ -56,8 +56,6 @@ class TestElitePlayerBehavior:
 
     # ELITE INFIELDER TESTS
     @pytest.mark.parametrize("elite_infielder_data", [
-         # TODO: High elite infielders are not being recognized... after launch work through this issue
-
         # Super elite infielder - should definitely be D1
         {
             "height": 74, "weight": 210, "sixty_time": 6.7, 
@@ -103,7 +101,6 @@ class TestElitePlayerBehavior:
             f"{elite_infielder_data['description']} predicted {result.get_final_prediction()}, expected one of {elite_infielder_data['expected_category']}"
 
     @pytest.mark.parametrize("super_elite_inf", [
-        # TODO: High elite infielders are not being recognized... after launch work through this issue
         {
             "height": 75, "weight": 210, "sixty_time": 6.5,
             "exit_velo_max": 105.0, "inf_velo": 93.0,

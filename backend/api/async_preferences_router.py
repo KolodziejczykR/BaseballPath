@@ -21,7 +21,7 @@ if project_root not in sys.path:
 from backend.school_filtering.async_two_tier_pipeline import (
     get_school_matches_shared, count_eligible_schools_shared, get_global_async_pipeline
 )
-from backend.utils.preferences_types import UserPreferences
+from backend.utils.preferences_types import UserPreferences, VALID_GRADES
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
 from backend.utils.player_types import PlayerInfielder, PlayerOutfielder, PlayerCatcher
 
@@ -101,7 +101,9 @@ async def filter_schools_by_preferences_async(
                 "model_version": "v1.3"
             }
         },
-        "limit": 25  # Optional - max schools to return (default: 50)
+        "limit": 25,  # Optional - max schools to return (default: 50)
+        "sort_by": "playing_time_score",  # Optional - playing_time_score | academic_grade | nice_to_have_count
+        "sort_order": "desc"  # Optional - asc | desc
     }
 
     Returns comprehensive school analysis with enhanced performance metrics.
@@ -124,6 +126,8 @@ async def filter_schools_by_preferences_async(
         user_preferences_data = request.get("user_preferences", {})
         ml_data = request.get("ml_results", {})
         limit = request.get("limit", 50)
+        sort_by = request.get("sort_by")
+        sort_order = request.get("sort_order", "desc")
 
         if not user_preferences_data:
             raise HTTPException(status_code=400, detail="user_preferences is required")
@@ -229,16 +233,29 @@ async def filter_schools_by_preferences_async(
                     "reason": miss.reason
                 })
 
+            playing_time_score = (school_match.playing_time_result.percentile
+                                  if school_match.playing_time_result is not None else None)
+            nice_to_have_count = len(school_match.nice_to_have_matches)
+            academic_grade = school_match.school_data.get("academics_grade")
+
             school_data = {
                 "school_name": school_match.school_name,
                 "division_group": school_match.division_group,
                 "school_details": school_match.school_data,
                 "pros": pros,
                 "cons": cons,
-                "nice_to_have_score": len(school_match.nice_to_have_matches),
-                "total_preferences_evaluated": len(pros) + len(cons)
+                "nice_to_have_score": nice_to_have_count,
+                "total_preferences_evaluated": len(pros) + len(cons),
+                "scores": {
+                    "playing_time_score": playing_time_score,
+                    "academic_grade": academic_grade,
+                    "nice_to_have_count": nice_to_have_count,
+                }
             }
             school_matches_data.append(school_data)
+
+        if sort_by:
+            school_matches_data = _sort_schools(school_matches_data, sort_by, sort_order)
 
         end_time = time.time()
         processing_time = end_time - start_time
@@ -266,7 +283,9 @@ async def filter_schools_by_preferences_async(
                 "preferences_summary": {
                     "must_have_preferences": list(preferences.get_must_have_list()),
                     "nice_to_have_preferences": list(preferences.get_nice_to_haves().keys())
-                }
+                },
+                "sort_by": sort_by,
+                "sort_order": sort_order
             },
             "performance_metrics": {
                 "async_processing": True,
@@ -506,6 +525,46 @@ async def cleanup_request_tracking(request_id: str):
         del active_requests[request_id]
 
 
+def _academic_grade_rank(grade: Optional[str]) -> Optional[int]:
+    """Convert academic grade to a numeric rank (higher is better)."""
+    if grade not in VALID_GRADES:
+        return None
+    return len(VALID_GRADES) - 1 - VALID_GRADES.index(grade)
+
+
+def _coerce_sort_value(value: Optional[float], reverse: bool) -> float:
+    """Ensure missing values sort last."""
+    if value is None:
+        return float("-inf") if reverse else float("inf")
+    return value
+
+
+def _sort_schools(schools: List[Dict[str, Any]], sort_by: str, sort_order: str) -> List[Dict[str, Any]]:
+    """Sort schools by a supported score field."""
+    reverse = sort_order.lower() != "asc"
+    if sort_by == "playing_time_score":
+        return sorted(
+            schools,
+            key=lambda s: _coerce_sort_value(s.get("scores", {}).get("playing_time_score"), reverse),
+            reverse=reverse
+        )
+    if sort_by == "nice_to_have_count":
+        return sorted(
+            schools,
+            key=lambda s: _coerce_sort_value(s.get("scores", {}).get("nice_to_have_count"), reverse),
+            reverse=reverse
+        )
+    if sort_by == "academic_grade":
+        return sorted(
+            schools,
+            key=lambda s: _coerce_sort_value(
+                _academic_grade_rank(s.get("scores", {}).get("academic_grade")), reverse
+            ),
+            reverse=reverse
+        )
+    return schools
+
+
 @router.get("/example")
 async def get_example_request() -> Dict[str, Any]:
     """
@@ -551,7 +610,9 @@ async def get_example_request() -> Dict[str, Any]:
                     "model_version": "v1.3"
                 }
             },
-            "limit": 25
+            "limit": 25,
+            "sort_by": "playing_time_score",
+            "sort_order": "desc"
         },
         "async_features": {
             "connection_pooling": "Reuses database connections for better performance",
