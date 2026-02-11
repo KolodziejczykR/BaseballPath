@@ -1,11 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  webpack: (config) => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@': require('path').resolve(__dirname, 'src'),
-    };
+  distDir: ".next-local",
+  webpack: (config, { dev }) => {
+    // Stabilize local dev in environments where webpack snapshot cache fails.
+    if (dev) {
+      config.cache = false;
+    }
     return config;
   },
 };
