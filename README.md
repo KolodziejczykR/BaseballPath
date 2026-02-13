@@ -55,3 +55,64 @@ For any issues, check the backend terminal for errors and ensure all dependencie
 
 ## Setup Instructions
 - See `backend/README.md` and `frontend/README.md` for component-specific setup. 
+
+## Auth + Billing Setup (New)
+
+This repo now includes production-oriented auth, persisted evaluations, and Stripe plan handling.
+
+### Supabase SQL Migration
+
+Run:
+
+```sql
+-- In Supabase SQL editor:
+-- backend/database/migrations/20260211_auth_and_entitlements.sql
+```
+
+### Backend Environment Variables
+
+Required for protected account/evaluation APIs:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_KEY`
+- `SUPABASE_ANON_KEY` (for issuer/audience expectations and client consistency)
+
+Optional auth validation overrides:
+
+- `SUPABASE_JWT_ISSUER` (defaults to `${SUPABASE_URL}/auth/v1`)
+- `SUPABASE_JWT_AUDIENCE` (defaults to `authenticated`)
+
+Stripe billing:
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_ID_PRO`
+- `STRIPE_PRICE_ID_ELITE`
+- `APP_BASE_URL` (e.g., `http://localhost:3000` or production URL)
+
+### Frontend Environment Variables
+
+- `NEXT_PUBLIC_API_URL` (backend base URL)
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+## Detailed Documentation
+
+- Backend API overview:
+  - `backend/api/README.md`
+- Router organization:
+  - `backend/api/routers/README.md`
+- Auth dependency details:
+  - `backend/api/deps/README.md`
+- Supabase client details:
+  - `backend/api/clients/README.md`
+- Service layer details:
+  - `backend/api/services/README.md`
+- Payment plans and how to change them:
+  - `backend/api/services/PAYMENT_PLANS.md`
+- Migration instructions and verification:
+  - `backend/database/migrations/README.md`
+- Frontend auth utility docs:
+  - `frontend/src/lib/README.md`
+- Frontend route guard docs:
+  - `frontend/src/hooks/README.md`

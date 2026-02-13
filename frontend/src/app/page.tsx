@@ -68,11 +68,14 @@ export default function Home() {
             <Link href="/waitlist" className="hover:text-[var(--foreground)]">
               Waitlist
             </Link>
+            <Link href="/login" className="hover:text-[var(--foreground)]">
+              Login
+            </Link>
             <Link
-              href="/dashboard"
-              className="rounded-full bg-[var(--primary)] px-5 py-2.5 font-semibold text-white shadow-strong transition-transform duration-300 hover:-translate-y-0.5"
+              href="/signup"
+              className="rounded-full bg-[var(--accent)] px-5 py-2.5 font-semibold text-white shadow-strong transition-transform duration-300 hover:-translate-y-0.5 hover:opacity-95"
             >
-              Start Evaluation
+              Signup
             </Link>
           </nav>
         </div>

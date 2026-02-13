@@ -20,7 +20,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from backend.api.preferences_router import filter_schools_by_preferences, get_llm_reasoning
+from backend.api.routers.preferences import filter_schools_by_preferences, get_llm_reasoning
 
 
 def _sample_request(use_llm_reasoning: bool = True):

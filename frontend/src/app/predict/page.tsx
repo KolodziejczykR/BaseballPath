@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { FadeOnScroll } from "@/components/ui/fade-on-scroll";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -63,6 +64,19 @@ type PreferencesApiResponse = {
     academics?: { grade?: string | null };
     location?: { state?: string | null };
   }>;
+};
+
+type EvaluationRunApiResponse = {
+  run_id: string;
+  prediction_response: PredictionApiResponse;
+  preferences_response: PreferencesApiResponse;
+  entitlement?: {
+    plan_tier?: string;
+    monthly_eval_limit?: number | null;
+    remaining_evals?: number | null;
+    usage_before?: number;
+    usage_after?: number;
+  };
 };
 
 const validGrades = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"];
@@ -518,6 +532,7 @@ function endpointForPosition(position: PositionCode): string {
 }
 
 export default function PredictPage() {
+  const { loading: authLoading, accessToken } = useRequireAuth("/predict");
   const [step, setStep] = useState<Step>(1);
   const [fields, setFields] = useState<Record<string, string>>(initialFieldState);
   const [multiSelectValues, setMultiSelectValues] = useState<Record<string, string[]>>(initialMultiSelectState);
@@ -527,6 +542,7 @@ export default function PredictPage() {
   const [submissionError, setSubmissionError] = useState("");
   const [predictionResult, setPredictionResult] = useState<PredictionApiResponse | null>(null);
   const [preferencesResult, setPreferencesResult] = useState<PreferencesApiResponse | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
   const multiDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [identity, setIdentity] = useState({
     name: "",
@@ -724,36 +740,19 @@ export default function PredictPage() {
   }
 
   async function runEvaluation() {
-    if (!identity.primaryPosition || !preferencesComplete) return;
+    if (!identity.primaryPosition || !preferencesComplete || !accessToken) return;
 
     setSubmitting(true);
     setSubmissionError("");
     setSubmitted(false);
     setPredictionResult(null);
     setPreferencesResult(null);
+    setRunId(null);
 
     try {
       const playerRegion = mapStateToPlayerRegion(identity.state);
       const predictionPayload = buildPredictionPayload(identity.primaryPosition, playerRegion);
       const positionEndpoint = endpointForPosition(identity.primaryPosition);
-
-      const predictionResponse = await fetch(`${API_BASE_URL}/${positionEndpoint}/predict`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(predictionPayload),
-      });
-
-      const predictionData = (await predictionResponse.json()) as PredictionApiResponse | { detail?: string };
-      if (!predictionResponse.ok) {
-        const detail =
-          typeof predictionData === "object" && predictionData && "detail" in predictionData
-            ? predictionData.detail
-            : "Prediction request failed.";
-        throw new Error(detail || "Prediction request failed.");
-      }
-
-      const typedPrediction = predictionData as PredictionApiResponse;
-      setPredictionResult(typedPrediction);
 
       const userPreferencesPayload: Record<string, unknown> = {
         user_state: identity.state,
@@ -766,45 +765,66 @@ export default function PredictPage() {
         hs_graduation_year: Number(identity.graduatingClass),
       };
 
-      const preferencesPayload = {
+      const preferencesPayload: Record<string, unknown> = {
         user_preferences: userPreferencesPayload,
         player_info: buildPlayerInfoForPreferences(identity.primaryPosition, playerRegion),
-        ml_results: {
-          d1_results: {
-            d1_probability: typedPrediction.d1_details?.probability ?? typedPrediction.d1_probability ?? 0,
-            d1_prediction: typedPrediction.d1_details?.prediction ?? false,
-            confidence: typedPrediction.d1_details?.confidence ?? "Medium",
-            model_version: typedPrediction.d1_details?.model_version ?? "unknown",
-          },
-          p4_results: typedPrediction.p4_details
-            ? {
-                p4_probability: typedPrediction.p4_details.probability,
-                p4_prediction: typedPrediction.p4_details.prediction,
-                confidence: typedPrediction.p4_details.confidence,
-                is_elite: typedPrediction.p4_details.is_elite,
-                model_version: typedPrediction.p4_details.model_version,
-              }
-            : null,
-        },
         limit: 25,
       };
 
-      const preferencesResponse = await fetch(`${API_BASE_URL}/preferences/filter`, {
+      const evaluationResponse = await fetch(`${API_BASE_URL}/evaluations/run`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(preferencesPayload),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          position_endpoint: positionEndpoint,
+          identity_input: {
+            name: identity.name,
+            state: identity.state,
+            primary_position: identity.primaryPosition,
+            graduating_class: identity.graduatingClass,
+          },
+          stats_input: statsFields.reduce<Record<string, string>>((acc, field) => {
+            acc[field.id] = fields[field.id];
+            return acc;
+          }, {}),
+          preferences_input: {
+            ...fields,
+            ...multiSelectValues,
+          },
+          prediction_payload: predictionPayload,
+          preferences_payload: preferencesPayload,
+          use_llm_reasoning: false,
+        }),
       });
 
-      const preferencesData = (await preferencesResponse.json()) as PreferencesApiResponse | { detail?: string };
-      if (!preferencesResponse.ok) {
-        const detail =
-          typeof preferencesData === "object" && preferencesData && "detail" in preferencesData
-            ? preferencesData.detail
-            : "Preference filtering request failed.";
-        throw new Error(detail || "Preference filtering request failed.");
+      const evaluationData = (await evaluationResponse.json()) as
+        | EvaluationRunApiResponse
+        | { detail?: string | { error?: string; plan_tier?: string; monthly_limit?: number } };
+      if (!evaluationResponse.ok) {
+        const rawDetail =
+          typeof evaluationData === "object" && evaluationData && "detail" in evaluationData
+            ? evaluationData.detail
+            : "Evaluation request failed.";
+
+        if (typeof rawDetail === "string") {
+          throw new Error(rawDetail);
+        }
+
+        if (rawDetail && typeof rawDetail === "object" && rawDetail.error === "evaluation_quota_exceeded") {
+          const tier = rawDetail.plan_tier ?? "current";
+          const limit = rawDetail.monthly_limit ?? "?";
+          throw new Error(`Monthly evaluation limit reached for ${tier} plan (${limit}/month).`);
+        }
+
+        throw new Error("Evaluation request failed.");
       }
 
-      setPreferencesResult(preferencesData as PreferencesApiResponse);
+      const typedEvaluation = evaluationData as EvaluationRunApiResponse;
+      setRunId(typedEvaluation.run_id);
+      setPredictionResult(typedEvaluation.prediction_response);
+      setPreferencesResult(typedEvaluation.preferences_response);
       setSubmitted(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to run evaluation.";
@@ -935,6 +955,16 @@ export default function PredictPage() {
   }
 
   const topSchools = preferencesResult?.schools?.slice(0, 3) || [];
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen px-6 py-16">
+        <div className="mx-auto max-w-3xl rounded-3xl border border-[var(--stroke)] bg-white/80 p-10 text-center">
+          <p className="text-sm text-[var(--muted)]">Checking your account session...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen px-6 py-12 md:py-16">
@@ -1110,7 +1140,7 @@ export default function PredictPage() {
                   <button
                     type="button"
                     onClick={runEvaluation}
-                    disabled={!canMoveForward || submitting}
+                    disabled={!canMoveForward || submitting || !accessToken}
                     className="rounded-full bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white shadow-strong disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {submitting ? "Running..." : "Run Evaluation"}
@@ -1160,6 +1190,9 @@ export default function PredictPage() {
 
                 {predictionResult && (
                   <div className="mt-5 rounded-2xl border border-[var(--stroke)] bg-white/75 p-4">
+                    {runId && (
+                      <p className="text-xs uppercase tracking-[0.22em] text-[var(--muted)]">Run ID: {runId}</p>
+                    )}
                     <p className="text-sm font-semibold">Model prediction: {predictionResult.final_prediction}</p>
                     <p className="mt-1 text-sm text-[var(--muted)]">
                       D1 probability: {(predictionResult.d1_probability * 100).toFixed(1)}%

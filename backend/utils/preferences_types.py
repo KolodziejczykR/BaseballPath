@@ -11,7 +11,7 @@ class UserPreferences:
     admit_rate_floor: Optional[int] = None          # 0–100 (%)
     min_academic_rating: Optional[str] = None       # e.g., "B+", "A-"
 
-    preferred_school_size: Optional[List[str]] = None     # "Small" (0-2999 students), "Medium" (3000-9999 students), "Large" (10000-29999 students), "Very Large" (30000+ students)
+    preferred_school_size: Optional[List[str]] = None     # "Small" (0-5000 students), "Medium" (5000-14999 students), "Large" (15000-29999 students), "Very Large" (30000+ students)
     sat: Optional[int] = None                             # Student's SAT score (out of 1600)
     act: Optional[int] = None                             # Student's ACT score (out of 36)
     hs_graduation_year: Optional[int] = None              # e.g., 2027
@@ -22,7 +22,7 @@ class UserPreferences:
     # Geographic preferences, interactive map that you can click on states to select
     preferred_states: Optional[List[str]] = None
     preferred_regions: Optional[List[str]] = None        # e.g., "Northeast", "Midwest", "South", "West"
-    party_scene_preference: Optional[List[str]] = None   # e.g., ["Active", "Moderate"] for multi-select: "Active" (A+, A-), "Moderate" (A- through B), "Quiet" (B- and below)
+    party_scene_preference: Optional[List[str]] = None   # e.g., ["Active", "Moderate"] for multi-select: "Active" (A+, A, A-), "Moderate" (B+ through B-), "Quiet" (C+ and below)
     
     # Athletic preferences
     min_athletics_rating: Optional[str] = None           # e.g., "B", "A-"

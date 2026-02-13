@@ -597,26 +597,29 @@ class AsyncTwoTierFilteringPipeline:
 
         # Define size categories
         size_ranges = {
-            'Small': (0, 2999),
-            'Medium': (3000, 9999),
-            'Large': (10000, 29999),
+            'Small': (0, 5000),
+            'Medium': (5000, 14999),
+            'Large': (15000, 29999),
             'Very Large': (30000, float('inf'))
         }
 
-        # Determine school's size category
-        school_size = None
-        for size_name, (min_size, max_size) in size_ranges.items():
-            if min_size <= enrollment <= max_size:
-                school_size = size_name
-                break
+        # Determine all size categories this school can belong to.
+        # This supports overlapping boundaries (e.g., 5000 in Small and Medium).
+        matching_sizes = [
+            size_name
+            for size_name, (min_size, max_size) in size_ranges.items()
+            if min_size <= enrollment <= max_size
+        ]
+        matched_preferences = [size for size in pref_sizes if size in matching_sizes]
 
-        if school_size and school_size in pref_sizes:
+        if matched_preferences:
+            school_size_label = " / ".join(matching_sizes)
             return NiceToHaveMatch(
                 preference_type=NiceToHaveType.SCHOOL_CHARACTERISTICS,
                 preference_name='preferred_school_size',
                 user_value=pref_sizes,
-                school_value=f"{school_size} ({enrollment:,} students)",
-                description=f"School size matches preference: {school_size} ({enrollment:,} students)"
+                school_value=f"{school_size_label} ({enrollment:,} students)",
+                description=f"School size matches preference: {', '.join(matched_preferences)} ({enrollment:,} students)"
             )
 
         return None
@@ -851,9 +854,9 @@ class AsyncTwoTierFilteringPipeline:
 
         # Map preference to rating expectations
         pref_mapping = {
-            'Active': ['A+', 'A'],
-            'Moderate': ['A-', 'B+', 'B'],
-            'Quiet': ['B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'F']
+            'Active': ['A+', 'A', 'A-'],
+            'Moderate': ['B+', 'B', 'B-'],
+            'Quiet': ['C+', 'C', 'C-', 'D+', 'D', 'D-', 'F']
         }
 
         # Check if school matches any of the selected preferences
@@ -952,26 +955,27 @@ class AsyncTwoTierFilteringPipeline:
 
         # Define size categories
         size_ranges = {
-            'Small': (0, 2999),
-            'Medium': (3000, 9999),
-            'Large': (10000, 29999),
+            'Small': (0, 5000),
+            'Medium': (5000, 14999),
+            'Large': (15000, 29999),
             'Very Large': (30000, float('inf'))
         }
 
-        # Determine school's size category
-        school_size = None
-        for size_name, (min_size, max_size) in size_ranges.items():
-            if min_size <= enrollment <= max_size:
-                school_size = size_name
-                break
+        matching_sizes = [
+            size_name
+            for size_name, (min_size, max_size) in size_ranges.items()
+            if min_size <= enrollment <= max_size
+        ]
+        matched_preferences = [size for size in pref_sizes if size in matching_sizes]
 
-        if school_size and school_size not in pref_sizes:
+        if matching_sizes and not matched_preferences:
+            school_size_label = " / ".join(matching_sizes)
             return NiceToHaveMiss(
                 preference_type=NiceToHaveType.SCHOOL_CHARACTERISTICS,
                 preference_name='preferred_school_size',
                 user_value=pref_sizes,
-                school_value=f"{school_size} ({enrollment:,} students)",
-                reason=f"School size is {school_size} ({enrollment:,} students), not in your preferred sizes: {', '.join(pref_sizes)}"
+                school_value=f"{school_size_label} ({enrollment:,} students)",
+                reason=f"School size is {school_size_label} ({enrollment:,} students), not in your preferred sizes: {', '.join(pref_sizes)}"
             )
         return None
 
@@ -983,9 +987,9 @@ class AsyncTwoTierFilteringPipeline:
 
         # Map preference to rating expectations
         pref_mapping = {
-            'Active': ['A+', 'A'],
-            'Moderate': ['A-', 'B+', 'B'],
-            'Quiet': ['B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'F']
+            'Active': ['A+', 'A', 'A-'],
+            'Moderate': ['B+', 'B', 'B-'],
+            'Quiet': ['C+', 'C', 'C-', 'D+', 'D', 'D-', 'F']
         }
 
         # Check if school matches any of the selected preferences

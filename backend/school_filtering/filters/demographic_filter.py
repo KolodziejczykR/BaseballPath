@@ -17,9 +17,9 @@ class DemographicFilter(BaseFilter):
 
     # School size mappings
     SIZE_RANGES = {
-        "Small": (0, 2999),
-        "Medium": (3000, 9999),
-        "Large": (10000, 29999),
+        "Small": (0, 5000),
+        "Medium": (5000, 14999),
+        "Large": (15000, 29999),
         "Very Large": (30000, float('inf'))
     }
 
@@ -121,9 +121,9 @@ class DemographicFilter(BaseFilter):
 
         # Define grade ranges for each preference
         grade_ranges = {
-            "Active": ['A+', 'A'],
-            "Moderate": ['A-', 'B+', 'B'],
-            "Quiet": ['B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'F']
+            "Active": ['A+', 'A', 'A-'],
+            "Moderate": ['B+', 'B', 'B-'],
+            "Quiet": ['C+', 'C', 'C-', 'D+', 'D', 'D-', 'F']
         }
 
         # Check if school's grade matches any of the preferred categories
