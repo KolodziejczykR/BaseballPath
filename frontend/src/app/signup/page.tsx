@@ -43,6 +43,7 @@ export default function SignupPage() {
         password,
         options: {
           data: fullName.trim() ? { full_name: fullName.trim() } : undefined,
+          emailRedirectTo: `${window.location.origin}/dashboard`
         },
       });
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { FadeOnScroll } from "@/components/ui/fade-on-scroll";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -532,7 +533,7 @@ function endpointForPosition(position: PositionCode): string {
 }
 
 export default function PredictPage() {
-  const { loading: authLoading, accessToken } = useRequireAuth("/predict");
+  const { loading: authLoading, accessToken, user } = useRequireAuth("/predict");
   const [step, setStep] = useState<Step>(1);
   const [fields, setFields] = useState<Record<string, string>>(initialFieldState);
   const [multiSelectValues, setMultiSelectValues] = useState<Record<string, string[]>>(initialMultiSelectState);
@@ -967,8 +968,10 @@ export default function PredictPage() {
   }
 
   return (
-    <div className="min-h-screen px-6 py-12 md:py-16">
-      <div className="mx-auto max-w-6xl">
+    <div className="min-h-screen">
+      {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
+      <main className="px-6 py-10 md:py-12">
+        <div className="mx-auto max-w-6xl">
         <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.34em] text-[var(--muted)]">Prediction Pipeline</p>
@@ -981,10 +984,10 @@ export default function PredictPage() {
             </p>
           </div>
           <Link
-            href="/"
+            href="/dashboard"
             className="inline-flex w-fit items-center rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)]"
           >
-            Back to Home
+            Back to Dashboard
           </Link>
         </div>
 
@@ -1233,7 +1236,8 @@ export default function PredictPage() {
             </FadeOnScroll>
           </div>
         </div>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

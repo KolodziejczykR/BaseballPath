@@ -1,5 +1,9 @@
+"use client";
+
 import { FadeOnScroll } from "@/components/ui/fade-on-scroll";
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 const featureCards = [
   {
@@ -45,6 +49,36 @@ const signals = [
 ];
 
 export default function Home() {
+  const supabase = useMemo(() => {
+    try {
+      return getSupabaseBrowserClient();
+    } catch {
+      return null;
+    }
+  }, []);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setIsAuthenticated(Boolean(data.session));
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setIsAuthenticated(Boolean(session));
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
+
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 border-b border-black/10 backdrop-blur-xl">
@@ -59,24 +93,46 @@ export default function Home() {
             </div>
           </Link>
           <nav className="hidden items-center gap-6 text-sm font-medium text-[var(--muted)] md:flex">
-            <Link href="/predict" className="hover:text-[var(--foreground)]">
-              Predict
-            </Link>
-            <Link href="/plans" className="hover:text-[var(--foreground)]">
-              Plans
-            </Link>
-            <Link href="/waitlist" className="hover:text-[var(--foreground)]">
-              Waitlist
-            </Link>
-            <Link href="/login" className="hover:text-[var(--foreground)]">
-              Login
-            </Link>
-            <Link
-              href="/signup"
-              className="rounded-full bg-[var(--accent)] px-5 py-2.5 font-semibold text-white shadow-strong transition-transform duration-300 hover:-translate-y-0.5 hover:opacity-95"
-            >
-              Signup
-            </Link>
+            {isAuthenticated ? (
+              <>
+                <Link href="/dashboard" className="hover:text-[var(--foreground)]">
+                  Dashboard
+                </Link>
+                <Link href="/predict" className="hover:text-[var(--foreground)]">
+                  Predict
+                </Link>
+                <Link href="/plans" className="hover:text-[var(--foreground)]">
+                  Plans
+                </Link>
+                <Link
+                  href="/account"
+                  className="rounded-full bg-[var(--primary)] px-5 py-2.5 font-semibold text-white shadow-strong transition-transform duration-300 hover:-translate-y-0.5 hover:opacity-95"
+                >
+                  Account
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/predict" className="hover:text-[var(--foreground)]">
+                  Predict
+                </Link>
+                <Link href="/plans" className="hover:text-[var(--foreground)]">
+                  Plans
+                </Link>
+                <Link href="/waitlist" className="hover:text-[var(--foreground)]">
+                  Waitlist
+                </Link>
+                <Link href="/login" className="hover:text-[var(--foreground)]">
+                  Login
+                </Link>
+                <Link
+                  href="/signup"
+                  className="rounded-full bg-[var(--accent)] px-5 py-2.5 font-semibold text-white shadow-strong transition-transform duration-300 hover:-translate-y-0.5 hover:opacity-95"
+                >
+                  Signup
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       </header>
@@ -96,10 +152,10 @@ export default function Home() {
             </p>
             <div className="mt-9 flex flex-wrap gap-4">
               <Link
-                href="/predict"
+                href={isAuthenticated ? "/dashboard" : "/predict"}
                 className="rounded-full bg-[var(--primary)] px-7 py-3.5 text-sm font-semibold text-white shadow-strong transition-transform duration-300 hover:-translate-y-0.5"
               >
-                Launch Prediction Pipeline
+                {isAuthenticated ? "Open Recruiting Dashboard" : "Launch Prediction Pipeline"}
               </Link>
               <Link
                 href="/plans"
