@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FadeOnScroll } from "@/components/ui/fade-on-scroll";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
@@ -30,47 +31,8 @@ type FieldConfig = {
   options?: Option[];
 };
 
-type PredictionApiResponse = {
-  final_prediction: string;
-  d1_probability: number;
-  p4_probability: number | null;
-  d1_details?: {
-    probability: number;
-    prediction: boolean;
-    confidence: string;
-    model_version: string;
-  };
-  p4_details?: {
-    probability: number;
-    prediction: boolean;
-    confidence: string;
-    is_elite: boolean;
-    model_version: string;
-  } | null;
-  confidence?: string;
-  player_type?: string;
-};
-
-type PreferencesApiResponse = {
-  success?: boolean;
-  message?: string;
-  summary?: {
-    total_matches?: number;
-    ml_prediction?: string;
-  };
-  schools?: Array<{
-    school_name: string;
-    division_group?: string;
-    scores?: { playing_time_score?: number | null };
-    academics?: { grade?: string | null };
-    location?: { state?: string | null };
-  }>;
-};
-
 type EvaluationRunApiResponse = {
   run_id: string;
-  prediction_response: PredictionApiResponse;
-  preferences_response: PreferencesApiResponse;
   entitlement?: {
     plan_tier?: string;
     monthly_eval_limit?: number | null;
@@ -184,7 +146,7 @@ const preferenceFields: FieldConfig[] = [
     label: "Preferred region",
     type: "select",
     multiple: true,
-    required: true,
+    required: false,
     options: regionPreferenceOptions,
   },
   {
@@ -192,21 +154,21 @@ const preferenceFields: FieldConfig[] = [
     label: "Preferred school size",
     type: "select",
     multiple: true,
-    required: true,
+    required: false,
     options: schoolSizeOptions,
   },
   {
     id: "minAcademicRating",
     label: "Minimum academic rating",
     type: "select",
-    required: true,
+    required: false,
     options: gradeOptions,
   },
   {
     id: "minAthleticsRating",
     label: "Minimum athletics rating",
     type: "select",
-    required: true,
+    required: false,
     options: gradeOptions,
   },
   {
@@ -214,14 +176,14 @@ const preferenceFields: FieldConfig[] = [
     label: "Party scene preference",
     type: "select",
     multiple: true,
-    required: true,
+    required: false,
     options: partySceneOptions,
   },
   {
     id: "maxBudget",
     label: "Max yearly budget (USD)",
     type: "number",
-    required: true,
+    required: false,
     step: "1",
     min: 0,
     placeholder: "Example: 35000",
@@ -533,17 +495,14 @@ function endpointForPosition(position: PositionCode): string {
 }
 
 export default function PredictPage() {
+  const router = useRouter();
   const { loading: authLoading, accessToken, user } = useRequireAuth("/predict");
   const [step, setStep] = useState<Step>(1);
   const [fields, setFields] = useState<Record<string, string>>(initialFieldState);
   const [multiSelectValues, setMultiSelectValues] = useState<Record<string, string[]>>(initialMultiSelectState);
   const [openMultiSelectId, setOpenMultiSelectId] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState("");
-  const [predictionResult, setPredictionResult] = useState<PredictionApiResponse | null>(null);
-  const [preferencesResult, setPreferencesResult] = useState<PreferencesApiResponse | null>(null);
-  const [runId, setRunId] = useState<string | null>(null);
   const multiDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [identity, setIdentity] = useState({
     name: "",
@@ -568,7 +527,7 @@ export default function PredictPage() {
   const stepSummary = [
     { id: 1, title: "Identity", detail: "Name, state, position, and graduating class" },
     { id: 2, title: "Positional stats", detail: "Backend-aligned metrics for your selected position" },
-    { id: 3, title: "Preferences", detail: "Strict groups from the school filtering system" },
+    { id: 3, title: "Preferences", detail: "Optional fit signals for school matching and ranking" },
   ] as const;
 
   const identityComplete = Boolean(
@@ -741,14 +700,10 @@ export default function PredictPage() {
   }
 
   async function runEvaluation() {
-    if (!identity.primaryPosition || !preferencesComplete || !accessToken) return;
+    if (!identity.primaryPosition || !accessToken) return;
 
     setSubmitting(true);
     setSubmissionError("");
-    setSubmitted(false);
-    setPredictionResult(null);
-    setPreferencesResult(null);
-    setRunId(null);
 
     try {
       const playerRegion = mapStateToPlayerRegion(identity.state);
@@ -757,20 +712,52 @@ export default function PredictPage() {
 
       const userPreferencesPayload: Record<string, unknown> = {
         user_state: identity.state,
-        preferred_regions: multiSelectValues.preferredRegion,
-        preferred_school_size: multiSelectValues.preferredSchoolSize,
-        max_budget: toNumber(fields.maxBudget),
-        min_academic_rating: fields.minAcademicRating,
-        min_athletics_rating: fields.minAthleticsRating,
-        party_scene_preference: multiSelectValues.partyScenePreference,
         hs_graduation_year: Number(identity.graduatingClass),
       };
+      if (multiSelectValues.preferredRegion.length > 0) {
+        userPreferencesPayload.preferred_regions = multiSelectValues.preferredRegion;
+      }
+      if (multiSelectValues.preferredSchoolSize.length > 0) {
+        userPreferencesPayload.preferred_school_size = multiSelectValues.preferredSchoolSize;
+      }
+      if (multiSelectValues.partyScenePreference.length > 0) {
+        userPreferencesPayload.party_scene_preference = multiSelectValues.partyScenePreference;
+      }
+      if (fields.minAcademicRating.trim()) {
+        userPreferencesPayload.min_academic_rating = fields.minAcademicRating.trim();
+      }
+      if (fields.minAthleticsRating.trim()) {
+        userPreferencesPayload.min_athletics_rating = fields.minAthleticsRating.trim();
+      }
+      const maxBudget = numberIfPresent(fields.maxBudget);
+      if (maxBudget !== undefined) {
+        userPreferencesPayload.max_budget = maxBudget;
+      }
 
       const preferencesPayload: Record<string, unknown> = {
         user_preferences: userPreferencesPayload,
         player_info: buildPlayerInfoForPreferences(identity.primaryPosition, playerRegion),
         limit: 25,
       };
+      const preferencesInput: Record<string, unknown> = {};
+      if (multiSelectValues.preferredRegion.length > 0) {
+        preferencesInput.preferred_regions = multiSelectValues.preferredRegion;
+      }
+      if (multiSelectValues.preferredSchoolSize.length > 0) {
+        preferencesInput.preferred_school_size = multiSelectValues.preferredSchoolSize;
+      }
+      if (multiSelectValues.partyScenePreference.length > 0) {
+        preferencesInput.party_scene_preference = multiSelectValues.partyScenePreference;
+      }
+      if (fields.minAcademicRating.trim()) {
+        preferencesInput.min_academic_rating = fields.minAcademicRating.trim();
+      }
+      if (fields.minAthleticsRating.trim()) {
+        preferencesInput.min_athletics_rating = fields.minAthleticsRating.trim();
+      }
+      if (maxBudget !== undefined) {
+        preferencesInput.max_budget = maxBudget;
+      }
 
       const evaluationResponse = await fetch(`${API_BASE_URL}/evaluations/run`, {
         method: "POST",
@@ -790,10 +777,7 @@ export default function PredictPage() {
             acc[field.id] = fields[field.id];
             return acc;
           }, {}),
-          preferences_input: {
-            ...fields,
-            ...multiSelectValues,
-          },
+          preferences_input: preferencesInput,
           prediction_payload: predictionPayload,
           preferences_payload: preferencesPayload,
           use_llm_reasoning: false,
@@ -823,10 +807,7 @@ export default function PredictPage() {
       }
 
       const typedEvaluation = evaluationData as EvaluationRunApiResponse;
-      setRunId(typedEvaluation.run_id);
-      setPredictionResult(typedEvaluation.prediction_response);
-      setPreferencesResult(typedEvaluation.preferences_response);
-      setSubmitted(true);
+      router.push(`/evaluations/${typedEvaluation.run_id}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to run evaluation.";
       setSubmissionError(message);
@@ -954,8 +935,6 @@ export default function PredictPage() {
       </label>
     );
   }
-
-  const topSchools = preferencesResult?.schools?.slice(0, 3) || [];
 
   if (authLoading) {
     return (
@@ -1113,8 +1092,8 @@ export default function PredictPage() {
                 <div className="space-y-5">
                   <h2 className="text-2xl font-semibold">Preferences</h2>
                   <p className="text-sm text-[var(--muted)]">
-                    Preference inputs now use strict backend groups (grade scales, school size buckets, region groups,
-                    party-scene groups). Budget remains numeric.
+                    All preferences are optional. Add only what matters to you now and skip the rest. These are used
+                    to explain and rank school fits in your evaluation report.
                   </p>
                   <div className="grid gap-4 md:grid-cols-2">{preferenceFields.map(renderField)}</div>
                 </div>
@@ -1176,8 +1155,8 @@ export default function PredictPage() {
 
             <FadeOnScroll delayMs={120}>
               <section className="glass rounded-[30px] p-6 shadow-soft">
-                <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">Evaluation output</p>
-                <h3 className="mt-2 text-xl font-semibold">Live backend response preview</h3>
+                <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">What happens next</p>
+                <h3 className="mt-2 text-xl font-semibold">Full evaluation opens on a dedicated page</h3>
 
                 {submissionError && (
                   <div className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">
@@ -1185,52 +1164,25 @@ export default function PredictPage() {
                   </div>
                 )}
 
-                {!submitted && !submissionError && (
-                  <p className="mt-4 text-sm text-[var(--muted)]">
-                    Complete all three steps and run evaluation to see prediction + top school matches.
-                  </p>
-                )}
-
-                {predictionResult && (
-                  <div className="mt-5 rounded-2xl border border-[var(--stroke)] bg-white/75 p-4">
-                    {runId && (
-                      <p className="text-xs uppercase tracking-[0.22em] text-[var(--muted)]">Run ID: {runId}</p>
-                    )}
-                    <p className="text-sm font-semibold">Model prediction: {predictionResult.final_prediction}</p>
-                    <p className="mt-1 text-sm text-[var(--muted)]">
-                      D1 probability: {(predictionResult.d1_probability * 100).toFixed(1)}%
-                    </p>
-                    {typeof predictionResult.p4_probability === "number" && (
-                      <p className="mt-1 text-sm text-[var(--muted)]">
-                        P4 probability: {(predictionResult.p4_probability * 100).toFixed(1)}%
-                      </p>
-                    )}
+                {!submissionError && (
+                  <div className="mt-4 space-y-4 text-sm text-[var(--muted)]">
+                    <p>After you run an evaluation, you will be routed to a full report page for that run ID.</p>
+                    <p>The report includes predicted tier, school matches, playing-time analysis, and preference-hit explanations.</p>
+                    <div className="flex flex-wrap gap-3">
+                      <Link
+                        href="/evaluations"
+                        className="inline-flex rounded-full border border-[var(--stroke)] bg-white/80 px-4 py-2 text-xs font-semibold text-[var(--navy)]"
+                      >
+                        View Past Evaluations
+                      </Link>
+                      <Link
+                        href="/dashboard"
+                        className="inline-flex rounded-full border border-[var(--stroke)] bg-white/80 px-4 py-2 text-xs font-semibold text-[var(--navy)]"
+                      >
+                        Back to Dashboard
+                      </Link>
+                    </div>
                   </div>
-                )}
-
-                {topSchools.length > 0 && (
-                  <div className="mt-5 space-y-3">
-                    {topSchools.map((school) => (
-                      <article key={school.school_name} className="rounded-2xl border border-[var(--stroke)] bg-white/80 p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold">{school.school_name}</p>
-                          <span className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-xs font-semibold text-[var(--navy)]">
-                            {school.division_group || "Match"}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-[var(--muted)]">
-                          {school.location?.state ? `State: ${school.location.state} • ` : ""}
-                          {school.academics?.grade ? `Academics: ${school.academics.grade}` : "Academics: N/A"}
-                        </p>
-                      </article>
-                    ))}
-                  </div>
-                )}
-
-                {preferencesResult?.summary && (
-                  <p className="mt-4 text-xs uppercase tracking-[0.24em] text-[var(--muted)]">
-                    Total matches: {preferencesResult.summary.total_matches ?? 0}
-                  </p>
                 )}
               </section>
             </FadeOnScroll>

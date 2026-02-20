@@ -26,6 +26,7 @@ type AuthenticatedTopBarProps = {
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/predict", label: "Predict" },
+  { href: "/evaluations", label: "Evaluations" },
   { href: "/plans", label: "Plans" },
   { href: "/account", label: "Account" },
 ];
@@ -147,6 +148,13 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
                 </div>
 
                 <div className="mt-3 grid gap-2 text-sm">
+                  <Link
+                    href="/evaluations"
+                    className="rounded-xl border border-[var(--stroke)] px-3 py-2 font-semibold text-[var(--navy)] hover:bg-[var(--sand)]/45"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    Past Evaluations
+                  </Link>
                   <Link
                     href="/account"
                     className="rounded-xl border border-[var(--stroke)] px-3 py-2 font-semibold text-[var(--navy)] hover:bg-[var(--sand)]/45"

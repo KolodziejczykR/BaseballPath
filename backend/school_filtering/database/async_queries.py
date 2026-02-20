@@ -18,7 +18,7 @@ from supabase import Client
 
 from .async_connection import AsyncSupabaseConnection
 from ..exceptions import SchoolDataError
-from backend.utils.school_group_constants import NON_D1
+from backend.utils.school_group_constants import NON_D1, NON_P4_D1, POWER_4_D1
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,36 @@ class AsyncSchoolDataQueries:
         self._division_group_cache: Dict[str, str] = {}
         self._cache_loaded = False
 
+    @staticmethod
+    def _normalize_school_name(name: str) -> str:
+        if not isinstance(name, str):
+            return ""
+        return " ".join(name.strip().lower().split())
+
+    @staticmethod
+    def _normalize_division_group(value: Any) -> str:
+        if not value:
+            return NON_D1
+        normalized = str(value).strip()
+        lowered = normalized.lower()
+
+        if lowered in {"power 4 d1", "power4 d1", "p4", "power 4"}:
+            return POWER_4_D1
+        if lowered in {"non-p4 d1", "non p4 d1"}:
+            return NON_P4_D1
+        if lowered in {"non-d1", "non d1", "d2", "d3"}:
+            return NON_D1
+        if lowered in {"d1", "division 1", "division i"}:
+            return NON_P4_D1
+        if "power" in lowered and "4" in lowered:
+            return POWER_4_D1
+        if "non-p4" in lowered or "non p4" in lowered:
+            return NON_P4_D1
+        if "non-d1" in lowered or "non d1" in lowered:
+            return NON_D1
+
+        return normalized
+
     async def _load_division_group_cache(self) -> None:
         """Load division_group mappings from baseball_rankings_data via name mapping"""
         if self._cache_loaded:
@@ -46,40 +76,89 @@ class AsyncSchoolDataQueries:
             logger.info("Loading division_group cache from database...")
             result_cache: Dict[str, str] = {}
 
-            # Get verified name mappings (school_name → team_name)
-            mapping_response = client.table('school_baseball_ranking_name_mapping')\
-                .select('school_name, team_name')\
-                .eq('verified', True)\
-                .not_.is_('team_name', 'null')\
+            # Prefer verified mappings, then gracefully fall back if a project has not marked them.
+            mapping_response = (
+                client.table("school_baseball_ranking_name_mapping")
+                .select("school_name, team_name, verified")
+                .eq("verified", True)
+                .not_.is_("team_name", "null")
                 .execute()
+            )
+            mapping_rows = mapping_response.data or []
 
-            if not mapping_response.data:
-                logger.warning("No verified name mappings found")
+            if not mapping_rows:
+                logger.warning("No verified mappings found; falling back to non-false mappings")
+                fallback_response = (
+                    client.table("school_baseball_ranking_name_mapping")
+                    .select("school_name, team_name, verified")
+                    .neq("verified", False)
+                    .not_.is_("team_name", "null")
+                    .execute()
+                )
+                mapping_rows = fallback_response.data or []
+
+            if not mapping_rows:
+                logger.warning("No non-false mappings found; falling back to any non-null team_name mapping")
+                fallback_any_response = (
+                    client.table("school_baseball_ranking_name_mapping")
+                    .select("school_name, team_name, verified")
+                    .not_.is_("team_name", "null")
+                    .execute()
+                )
+                mapping_rows = fallback_any_response.data or []
+
+            if not mapping_rows:
+                logger.warning("No name mappings found in school_baseball_ranking_name_mapping")
                 return result_cache
 
             # Create team_name → school_name reverse mapping
-            team_to_school = {row['team_name']: row['school_name'] for row in mapping_response.data}
+            team_to_school = {}
+            for row in mapping_rows:
+                team_name = (row.get("team_name") or "").strip()
+                school_name = (row.get("school_name") or "").strip()
+                if not team_name or not school_name:
+                    continue
+                team_to_school[team_name] = school_name
+
+            if not team_to_school:
+                logger.warning("Name mapping query returned rows, but none had usable team_name + school_name")
+                return result_cache
+
             team_names = list(team_to_school.keys())
 
-            # Get division_group for each team (most recent year's data)
-            rankings_response = client.table('baseball_rankings_data')\
-                .select('team_name, division_group')\
-                .in_('team_name', team_names)\
-                .order('year', desc=True)\
-                .execute()
+            # Get division_group for each team (prefer latest by year when available).
+            try:
+                rankings_response = (
+                    client.table("baseball_rankings_data")
+                    .select("team_name, division_group")
+                    .in_("team_name", team_names)
+                    .order("year", desc=True)
+                    .execute()
+                )
+            except Exception as e:
+                logger.warning(f"Failed ordering rankings by year; retrying without order: {e}")
+                rankings_response = (
+                    client.table("baseball_rankings_data")
+                    .select("team_name, division_group")
+                    .in_("team_name", team_names)
+                    .execute()
+                )
 
             if rankings_response.data:
                 # Use first occurrence for each team (most recent year)
                 seen_teams = set()
                 for row in rankings_response.data:
-                    team_name = row['team_name']
-                    division_group = row.get('division_group')
+                    team_name = row.get("team_name")
+                    division_group = self._normalize_division_group(row.get("division_group"))
 
                     if team_name not in seen_teams and division_group:
                         seen_teams.add(team_name)
                         school_name = team_to_school.get(team_name)
                         if school_name:
                             result_cache[school_name] = division_group
+                            normalized_key = self._normalize_school_name(school_name)
+                            if normalized_key:
+                                result_cache[normalized_key] = division_group
 
             logger.info(f"Loaded {len(result_cache)} division_group mappings into cache")
             return result_cache
@@ -99,7 +178,12 @@ class AsyncSchoolDataQueries:
             school_name = school.get('school_name')
             if school_name:
                 division_group = self._division_group_cache.get(school_name)
-                school['division_group'] = division_group or NON_D1  # Default to Non-D1 if not found
+                if not division_group:
+                    normalized_key = self._normalize_school_name(school_name)
+                    division_group = self._division_group_cache.get(normalized_key)
+                school['division_group'] = self._normalize_division_group(division_group)  # Default handled in normalize
+            else:
+                school['division_group'] = NON_D1
 
         return schools
 

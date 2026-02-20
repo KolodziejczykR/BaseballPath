@@ -52,7 +52,7 @@ const gettingStartedSteps = [
   {
     title: "Review and compare past runs",
     desc: "Track how school matches change as your inputs and priorities evolve.",
-    href: "#history",
+    href: "/evaluations",
     cta: "See history",
   },
 ];
@@ -234,9 +234,17 @@ export default function DashboardPage() {
             <div id="history" className="glass rounded-2xl p-6 shadow-soft">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Past evaluations</p>
-                <span className="rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">
-                  {account?.usage?.eval_count ?? 0} this month
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">
+                    {account?.usage?.eval_count ?? 0} this month
+                  </span>
+                  <Link
+                    href="/evaluations"
+                    className="rounded-full border border-[var(--stroke)] bg-white/80 px-3 py-1 text-xs font-semibold text-[var(--navy)]"
+                  >
+                    View all
+                  </Link>
+                </div>
               </div>
 
               {evaluations.length === 0 ? (
@@ -257,7 +265,11 @@ export default function DashboardPage() {
                   {evaluations.map((run) => {
                     const topSchool = run.top_schools_snapshot?.[0]?.school_name;
                     return (
-                      <article key={run.id} className="rounded-2xl border border-[var(--stroke)] bg-white/75 p-4">
+                      <Link
+                        key={run.id}
+                        href={`/evaluations/${run.id}`}
+                        className="block rounded-2xl border border-[var(--stroke)] bg-white/75 p-4 transition hover:-translate-y-0.5"
+                      >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="text-sm font-semibold">
                             {run.prediction_response?.final_prediction || "Evaluation complete"}
@@ -269,8 +281,8 @@ export default function DashboardPage() {
                         <p className="mt-1 text-sm text-[var(--muted)]">
                           {topSchool ? `Top match: ${topSchool}` : "No school snapshot attached to this run."}
                         </p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Run ID: {run.id}</p>
-                      </article>
+                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Open run ID: {run.id}</p>
+                      </Link>
                     );
                   })}
                 </div>
