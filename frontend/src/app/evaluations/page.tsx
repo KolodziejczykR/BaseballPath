@@ -10,6 +10,9 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 type EvaluationListItem = {
   id: string;
   created_at?: string;
+  position_track?: string;
+  identity_input?: Record<string, unknown>;
+  preferences_input?: Record<string, unknown>;
   prediction_response?: {
     final_prediction?: string;
   };
@@ -25,6 +28,55 @@ type EvaluationListResponse = {
   items: EvaluationListItem[];
   total?: number;
 };
+
+const preferenceLabelMap: Record<string, string> = {
+  preferred_regions: "Region",
+  preferred_school_size: "Size",
+  min_academic_rating: "Academics",
+  min_athletics_rating: "Athletics",
+  party_scene_preference: "Social",
+  max_budget: "Budget",
+};
+
+function toDisplayValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    const items = value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
+    return items.join(", ");
+  }
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number") return Number.isFinite(value) ? value.toLocaleString() : "";
+  return String(value).trim();
+}
+
+function getPlayerName(run: EvaluationListItem): string {
+  const raw = run.identity_input?.name;
+  const value = toDisplayValue(raw);
+  return value || "Saved Evaluation";
+}
+
+function getPositionLabel(run: EvaluationListItem): string {
+  const primaryPosition = toDisplayValue(run.identity_input?.primary_position);
+  if (primaryPosition) return primaryPosition;
+
+  const track = toDisplayValue(run.position_track).toLowerCase();
+  if (!track) return "Position unavailable";
+  return `${track.charAt(0).toUpperCase()}${track.slice(1)}`;
+}
+
+function getPreferenceHighlights(run: EvaluationListItem, maxItems = 3): string[] {
+  const input = run.preferences_input;
+  if (!input) return [];
+
+  const highlights: string[] = [];
+  for (const key of Object.keys(preferenceLabelMap)) {
+    const label = preferenceLabelMap[key];
+    const value = toDisplayValue(input[key]);
+    if (!value) continue;
+    highlights.push(`${label}: ${value}`);
+    if (highlights.length >= maxItems) break;
+  }
+  return highlights;
+}
 
 export default function EvaluationsPage() {
   const { loading: authLoading, accessToken, user } = useRequireAuth("/evaluations");
@@ -90,7 +142,7 @@ export default function EvaluationsPage() {
               <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Past Evaluations</p>
               <h1 className="display-font mt-3 text-4xl md:text-5xl">Your saved evaluation history.</h1>
               <p className="mt-3 max-w-2xl text-[var(--muted)]">
-                Open any run ID to view the full report, preference hits, and playing-time breakdown.
+                Open any evaluation to review classification, preferences, and school-fit details.
               </p>
             </div>
             <Link
@@ -117,6 +169,10 @@ export default function EvaluationsPage() {
               {items.map((run) => {
                 const topSchool = run.top_schools_snapshot?.[0]?.school_name;
                 const totalMatches = run.preferences_response?.summary?.total_matches;
+                const playerName = getPlayerName(run);
+                const positionLabel = getPositionLabel(run);
+                const preferenceHighlights = getPreferenceHighlights(run);
+                const classification = run.prediction_response?.final_prediction || "Classification unavailable";
                 return (
                   <Link
                     key={run.id}
@@ -124,16 +180,24 @@ export default function EvaluationsPage() {
                     className="block rounded-2xl border border-[var(--stroke)] bg-white/80 p-4 shadow-soft transition hover:-translate-y-0.5"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">{run.prediction_response?.final_prediction || "Evaluation complete"}</p>
+                      <p className="text-sm font-semibold">{playerName}</p>
                       <span className="text-xs text-[var(--muted)]">
                         {run.created_at ? new Date(run.created_at).toLocaleString() : "Timestamp unavailable"}
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-[var(--muted)]">
+                      {classification} · {positionLabel}
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--muted)]">
                       {topSchool ? `Top match: ${topSchool}` : "No top-school snapshot available"}
                     </p>
                     <p className="mt-1 text-xs text-[var(--muted)]">
-                      {typeof totalMatches === "number" ? `${totalMatches} matches` : "Matches unavailable"} · Run ID: {run.id}
+                      {preferenceHighlights.length > 0
+                        ? `Preferences: ${preferenceHighlights.join(" · ")}`
+                        : "Preferences: none selected"}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      {typeof totalMatches === "number" ? `${totalMatches} matches` : "Matches unavailable"}
                     </p>
                   </Link>
                 );

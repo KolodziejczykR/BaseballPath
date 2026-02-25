@@ -189,13 +189,17 @@ export default function Home() {
                   </span>
                 </div>
                 <div className="mt-6 space-y-4">
-                  {["UC Irvine", "Cal State Fullerton", "Arizona State"].map((school, index) => (
+                  {[
+                    { school: "UC Irvine", tier: "Non-P4 D1" },
+                    { school: "Cal State Fullerton", tier: "Non-P4 D1" },
+                    { school: "Arizona State", tier: "Power 4 D1" },
+                  ].map(({ school, tier }, index) => (
                     <FadeOnScroll key={school} delayMs={index * 80}>
                       <article className="rounded-2xl border border-[var(--stroke)] bg-white/78 p-4">
                         <div className="flex items-center justify-between">
                           <p className="font-semibold">{school}</p>
                           <span className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-xs font-semibold text-[var(--navy)]">
-                            Non-P4 D1
+                            {tier}
                           </span>
                         </div>
                         <p className="mt-2 text-sm text-[var(--muted)]">

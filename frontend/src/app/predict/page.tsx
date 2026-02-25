@@ -737,7 +737,8 @@ export default function PredictPage() {
       const preferencesPayload: Record<string, unknown> = {
         user_preferences: userPreferencesPayload,
         player_info: buildPlayerInfoForPreferences(identity.primaryPosition, playerRegion),
-        limit: 25,
+        // 0 means "no limit" in the backend two-tier pipeline.
+        limit: 0,
       };
       const preferencesInput: Record<string, unknown> = {};
       if (multiSelectValues.preferredRegion.length > 0) {
@@ -780,7 +781,7 @@ export default function PredictPage() {
           preferences_input: preferencesInput,
           prediction_payload: predictionPayload,
           preferences_payload: preferencesPayload,
-          use_llm_reasoning: false,
+          use_llm_reasoning: true,
         }),
       });
 
