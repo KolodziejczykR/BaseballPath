@@ -4,6 +4,7 @@ Plan and usage helpers for entitlements and billing state.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional
@@ -30,6 +31,17 @@ PLAN_LLM_ENABLED = {
     PLAN_PRO: False,
     PLAN_ELITE: True,
 }
+
+
+def _is_all_access_override_enabled() -> bool:
+    """
+    Global override for product-building/dev:
+    - Forces all users to effective `elite`
+    - Enables LLM reasoning
+    - Removes evaluation limits
+    """
+    value = os.getenv("ENTITLEMENTS_ALL_ACCESS", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 @dataclass
@@ -126,6 +138,18 @@ def get_subscription_row(user_id: str) -> Optional[Dict[str, Any]]:
 
 def get_effective_plan(user_id: str) -> EffectivePlan:
     subscription = get_subscription_row(user_id)
+
+    # Highest-priority override: all users get top-tier access.
+    # This keeps Stripe integration intact while removing gating in app behavior.
+    if _is_all_access_override_enabled():
+        return EffectivePlan(
+            plan_tier=PLAN_ELITE,
+            status="override",
+            subscription=subscription,
+            monthly_eval_limit=PLAN_EVAL_LIMITS[PLAN_ELITE],
+            llm_enabled=PLAN_LLM_ENABLED[PLAN_ELITE],
+        )
+
     if subscription is None:
         plan_tier = PLAN_STARTER
         status_value = "none"

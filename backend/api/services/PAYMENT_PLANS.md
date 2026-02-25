@@ -22,6 +22,11 @@ Plan fallback:
 - If user has no subscription row, plan defaults to `starter`.
 - If subscription status is not active/trialing/past_due, effective plan falls back to `starter`.
 
+All-access override (for internal testing/building):
+- Env var: `ENTITLEMENTS_ALL_ACCESS=true`
+- Behavior: every user is treated as `elite` (LLM on, unlimited evaluations), regardless of Stripe/subscription rows.
+- Stripe endpoints remain available; this only affects entitlement checks.
+
 ## Stripe Mapping
 
 Defined in:
@@ -59,6 +64,18 @@ If you only want to change monthly limits or LLM access:
 3. Restart backend.
 
 No DB migration needed for this specific change.
+
+## How To Force Top-Tier Access For Everyone (No Stripe Changes)
+
+Set this env var for the backend process:
+
+```bash
+ENTITLEMENTS_ALL_ACCESS=true
+```
+
+Then restart backend.
+
+This is the fastest way to build/test full-feature v1 before finalizing tier boundaries.
 
 ## How To Change Stripe Prices (same tiers)
 
@@ -131,4 +148,3 @@ You must update all of the following:
    - `plan.monthly_eval_limit`
    - `plan.llm_enabled`
 6. Run evaluations to verify quota behavior (`429` when expected).
-

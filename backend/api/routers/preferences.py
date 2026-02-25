@@ -35,6 +35,10 @@ from backend.utils.recommendation_types import (
     StudentLifeInfo,
 )
 try:
+    from backend.llm.recommendation_reasoning import RecommendationReasoningGenerator
+except Exception:  # pragma: no cover - optional dependency in some envs
+    RecommendationReasoningGenerator = None
+try:
     from celery.result import AsyncResult
 except Exception:  # pragma: no cover - optional dependency
     AsyncResult = None
@@ -56,6 +60,52 @@ except Exception:  # pragma: no cover - optional dependency
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _safe_cache_call(fn, *args):
+    """Best-effort wrapper around optional cache helpers."""
+    if fn is None:
+        return None
+    try:
+        return fn(*args)
+    except Exception as exc:
+        logger.warning(f"LLM cache helper failed ({getattr(fn, '__name__', 'callable')}): {exc}")
+        return None
+
+
+def _try_inline_llm_reasoning(
+    school_recommendations: List[SchoolRecommendation],
+    player_payload: Dict[str, Any],
+    ml_summary: Dict[str, Any],
+    preferences_payload: Dict[str, Any],
+) -> bool:
+    """
+    Fallback path when background queueing is unavailable.
+    Generates school reasoning synchronously and mutates recommendations in place.
+    """
+    if RecommendationReasoningGenerator is None:
+        return False
+    try:
+        generator = RecommendationReasoningGenerator()
+        reasoning_map = generator.generate_school_reasoning(
+            school_recommendations,
+            player_info=player_payload,
+            ml_summary=ml_summary,
+            preferences=preferences_payload,
+            batch_size=5,
+        )
+        if not reasoning_map:
+            return False
+
+        for rec in school_recommendations:
+            reasoning = reasoning_map.get(rec.school_name)
+            if reasoning is not None:
+                rec.llm_reasoning = reasoning
+        return True
+    except Exception as exc:
+        logger.error(f"Inline LLM reasoning fallback failed: {exc}")
+        return False
+
 
 @router.post("/filter")
 async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -252,16 +302,16 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
         )
 
         if use_llm_reasoning and school_recommendations and generate_llm_reasoning is not None:
-            try:
-                ml_summary = {
-                    "final_prediction": ml_results.get_final_prediction(),
-                    "d1_probability": ml_results.d1_results.d1_probability,
-                    "p4_probability": ml_results.p4_results.p4_probability if ml_results.p4_results else None,
-                    "confidence": ml_results.get_pipeline_confidence(),
-                }
-                preferences_payload = preferences.to_dict_with_must_haves()
-                player_payload = ml_results.get_player_info()
+            ml_summary = {
+                "final_prediction": ml_results.get_final_prediction(),
+                "d1_probability": ml_results.d1_results.d1_probability,
+                "p4_probability": ml_results.p4_results.p4_probability if ml_results.p4_results else None,
+                "confidence": ml_results.get_pipeline_confidence(),
+            }
+            preferences_payload = preferences.to_dict_with_must_haves()
+            player_payload = ml_results.get_player_info()
 
+            try:
                 task_payload = {
                     "schools": [rec.to_dict() for rec in school_recommendations],
                     "player_info": player_payload,
@@ -275,12 +325,12 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                 request_hash = None
                 if compute_request_hash is not None:
                     request_hash = compute_request_hash(task_payload)
-                    cached = get_cached_reasoning(request_hash) if get_cached_reasoning else None
+                    cached = _safe_cache_call(get_cached_reasoning, request_hash)
                     if cached is not None:
                         summary.llm_job_id = request_hash
                         summary.llm_status = "cached"
                     else:
-                        inflight = get_inflight_job_id(request_hash) if get_inflight_job_id else None
+                        inflight = _safe_cache_call(get_inflight_job_id, request_hash)
                         if inflight:
                             summary.llm_job_id = inflight
                             summary.llm_status = "queued"
@@ -290,15 +340,40 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                             summary.llm_job_id = task.id
                             summary.llm_status = "queued"
                             if set_inflight_job_id:
-                                set_inflight_job_id(request_hash, task.id)
+                                _safe_cache_call(set_inflight_job_id, request_hash, task.id)
                 else:
                     task = generate_llm_reasoning.delay(task_payload)
                     summary.llm_job_id = task.id
                     summary.llm_status = "queued"
             except Exception as e:
                 logger.error(f"LLM reasoning failed: {str(e)}")
+                if _try_inline_llm_reasoning(
+                    school_recommendations=school_recommendations,
+                    player_payload=player_payload,
+                    ml_summary=ml_summary,
+                    preferences_payload=preferences_payload,
+                ):
+                    summary.llm_status = "completed_inline"
+                else:
+                    summary.llm_status = "failed"
         elif use_llm_reasoning and generate_llm_reasoning is None:
-            summary.llm_status = "unavailable"
+            ml_summary = {
+                "final_prediction": ml_results.get_final_prediction(),
+                "d1_probability": ml_results.d1_results.d1_probability,
+                "p4_probability": ml_results.p4_results.p4_probability if ml_results.p4_results else None,
+                "confidence": ml_results.get_pipeline_confidence(),
+            }
+            preferences_payload = preferences.to_dict_with_must_haves()
+            player_payload = ml_results.get_player_info()
+            if _try_inline_llm_reasoning(
+                school_recommendations=school_recommendations,
+                player_payload=player_payload,
+                ml_summary=ml_summary,
+                preferences_payload=preferences_payload,
+            ):
+                summary.llm_status = "completed_inline"
+            else:
+                summary.llm_status = "unavailable"
 
         return {
             "success": True,
@@ -743,7 +818,7 @@ async def get_llm_reasoning(job_id: str) -> Dict[str, Any]:
 
     cached = None
     if get_cached_reasoning is not None:
-        cached = get_cached_reasoning(job_id)
+        cached = _safe_cache_call(get_cached_reasoning, job_id)
     if cached is not None:
         return {
             "success": True,
@@ -757,7 +832,7 @@ async def get_llm_reasoning(job_id: str) -> Dict[str, Any]:
 
     inflight_id = None
     if get_inflight_job_id is not None:
-        inflight_id = get_inflight_job_id(job_id)
+        inflight_id = _safe_cache_call(get_inflight_job_id, job_id)
 
     result = AsyncResult(inflight_id or job_id)
     if result is None:
