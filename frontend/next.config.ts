@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  distDir: ".next-local",
+  // Only use custom distDir in local environment, let Vercel use default '.next'
+  distDir: process.env.VERCEL ? undefined : ".next-local",
   webpack: (config, { dev }) => {
     // Stabilize local dev in environments where webpack snapshot cache fails.
     if (dev) {
