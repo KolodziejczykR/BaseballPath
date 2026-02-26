@@ -106,3 +106,5 @@ CLAUDE_CONTEXT.md
 CLAUDE_TEMPLATE.md
 
 .next-local
+
+.claude/superpowers/

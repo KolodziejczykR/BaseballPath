@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Read(//Users/ryankolodziejczyk/Documents/**)",
+      "Bash(cd:*)",
+      "Bash(cat:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(ls:*)"
+    ],
+    "deny": []
+  },
+  "env": {                                                                                                                                                       
+      "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"                                                                                                                  
+  }
+}
