@@ -106,7 +106,7 @@ class RecommendationReasoningGenerator:
         )
 
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.2",
             messages=[
                 {
                     "role": "system",
@@ -152,7 +152,7 @@ class RecommendationReasoningGenerator:
                 response = await asyncio.wait_for(
                     asyncio.to_thread(
                         self.client.chat.completions.create,
-                        model="gpt-4o-mini",
+                        model="gpt-5.2",
                         messages=[
                             {
                                 "role": "system",
@@ -233,7 +233,7 @@ class RecommendationReasoningGenerator:
         )
 
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.2",
             messages=[
                 {
                     "role": "system",
@@ -266,7 +266,7 @@ class RecommendationReasoningGenerator:
             response = await asyncio.wait_for(
                 asyncio.to_thread(
                     self.client.chat.completions.create,
-                    model="gpt-4o-mini",
+                    model="gpt-5.2",
                     messages=[
                         {
                             "role": "system",
@@ -330,7 +330,7 @@ class RecommendationReasoningGenerator:
 
         prompt = self._build_relax_suggestions_prompt(must_haves, total_matches)
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.2",
             messages=[
                 {
                     "role": "system",
@@ -377,7 +377,7 @@ class RecommendationReasoningGenerator:
             response = await asyncio.wait_for(
                 asyncio.to_thread(
                     self.client.chat.completions.create,
-                    model="gpt-4o-mini",
+                    model="gpt-5.2",
                     messages=[
                         {
                             "role": "system",
