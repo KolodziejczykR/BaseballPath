@@ -97,6 +97,60 @@ class LLMReasoning:
 
 
 @dataclass
+class RelaxSuggestion:
+    preference: str
+    suggestion: str
+    reason: str
+
+
+@dataclass
+class RecommendationSummary:
+    player_summary: Optional[str] = None
+    relax_suggestions: List[RelaxSuggestion] = field(default_factory=list)
+    low_result_flag: bool = False
+    llm_enabled: bool = False
+    llm_job_id: Optional[str] = None
+    llm_status: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+def school_recommendation_from_dict(data: Dict[str, Any]) -> "SchoolRecommendation":
+    return SchoolRecommendation(
+        school_name=data.get("school_name"),
+        division_group=data.get("division_group"),
+        location=SchoolLocation(**(data.get("location") or {})),
+        size=SchoolSize(**(data.get("size") or {})),
+        academics=AcademicsInfo(**(data.get("academics") or {})),
+        athletics=AthleticsInfo(**(data.get("athletics") or {})),
+        student_life=StudentLifeInfo(**(data.get("student_life") or {})),
+        financial=FinancialInfo(**(data.get("financial") or {})),
+        overall_grade=data.get("overall_grade"),
+        match_analysis=MatchAnalysis(
+            total_nice_to_have_matches=(data.get("match_analysis") or {}).get(
+                "total_nice_to_have_matches", 0
+            ),
+            pros=[
+                MatchPoint(**item)
+                for item in (data.get("match_analysis") or {}).get("pros", [])
+            ],
+            cons=[
+                MatchMiss(**item)
+                for item in (data.get("match_analysis") or {}).get("cons", [])
+            ],
+        ),
+        playing_time=PlayingTimeInfo(**(data.get("playing_time") or {"available": False})),
+        scores=SortScores(**(data.get("scores") or {})),
+        llm_reasoning=(
+            LLMReasoning(**data["llm_reasoning"])
+            if data.get("llm_reasoning") is not None
+            else None
+        ),
+    )
+
+
+@dataclass
 class SchoolRecommendation:
     school_name: str
     division_group: Optional[str] = None

@@ -40,3 +40,10 @@ selenium>=4.15.0
 
 # Async support
 httpx>=0.25.0
+
+# Background jobs / queue
+celery>=5.3.0
+redis>=5.0.0
+
+# Billing
+stripe>=11.0.0

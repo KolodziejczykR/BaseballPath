@@ -40,31 +40,57 @@ class SchoolNameResolver:
         self._reverse_cache = {}  # Cache for team_name -> school_name
         self._cache_loaded = False
 
+    @staticmethod
+    def _normalize_name(name: Optional[str]) -> str:
+        if not isinstance(name, str):
+            return ""
+        return " ".join(name.strip().lower().split())
+
     def _load_cache(self):
-        """Load all verified mappings into cache"""
+        """Load mappings into cache, preferring verified rows and falling back when needed."""
         if self._cache_loaded:
             return
 
         try:
             logger.info("Loading school name mappings into cache...")
 
-            # Get all verified mappings (verified = true)
             response = self.supabase.table('school_baseball_ranking_name_mapping')\
                 .select('school_name, team_name')\
                 .eq('verified', True)\
                 .not_.is_('team_name', 'null')\
                 .execute()
+            mapping_rows = response.data or []
 
-            if response.data:
-                for row in response.data:
+            if not mapping_rows:
+                logger.warning("No verified mappings found; falling back to non-false mappings")
+                fallback_response = self.supabase.table('school_baseball_ranking_name_mapping')\
+                    .select('school_name, team_name')\
+                    .neq('verified', False)\
+                    .not_.is_('team_name', 'null')\
+                    .execute()
+                mapping_rows = fallback_response.data or []
+
+            if not mapping_rows:
+                logger.warning("No non-false mappings found; falling back to any non-null team_name mapping")
+                fallback_any_response = self.supabase.table('school_baseball_ranking_name_mapping')\
+                    .select('school_name, team_name')\
+                    .not_.is_('team_name', 'null')\
+                    .execute()
+                mapping_rows = fallback_any_response.data or []
+
+            if mapping_rows:
+                for row in mapping_rows:
                     school_name = row['school_name']
                     team_name = row['team_name']
                     self._mapping_cache[school_name] = team_name
+                    normalized_name = self._normalize_name(school_name)
+                    if normalized_name:
+                        self._mapping_cache[normalized_name] = team_name
                     self._reverse_cache[team_name] = school_name
 
-                logger.info(f"✅ Loaded {len(self._mapping_cache)} verified mappings into cache")
+                logger.info(f"✅ Loaded {len(mapping_rows)} mappings into cache")
             else:
-                logger.warning("No verified mappings found in database")
+                logger.warning("No school/team mappings found in database")
 
             self._cache_loaded = True
 
@@ -90,6 +116,10 @@ class SchoolNameResolver:
         # Check cache first
         if school_name in self._mapping_cache:
             return self._mapping_cache[school_name]
+
+        normalized_name = self._normalize_name(school_name)
+        if normalized_name in self._mapping_cache:
+            return self._mapping_cache[normalized_name]
 
         # If not in cache and we want verified only, return None
         if verified_only:
@@ -190,7 +220,7 @@ class SchoolNameResolver:
         Returns:
             True if team_name mapping exists, False otherwise
         """
-        team_name = self.get_team_name(school_name, verified_only=True)
+        team_name = self.get_team_name(school_name, verified_only=False)
         return team_name is not None
 
     def reload_cache(self):

@@ -15,8 +15,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -104,3 +104,7 @@ sql_scripts/
 CLAUDE.md
 CLAUDE_CONTEXT.md
 CLAUDE_TEMPLATE.md
+
+.next-local
+
+.claude/superpowers/

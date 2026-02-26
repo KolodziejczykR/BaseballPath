@@ -57,7 +57,7 @@ class BaseballRankingsIntegration:
 
         try:
             # Resolve school_name to team_name
-            team_name = self.name_resolver.get_team_name(school_name, verified_only=True)
+            team_name = self.name_resolver.get_team_name(school_name, verified_only=False)
 
             if not team_name:
                 logger.debug(f"No baseball rankings mapping found for: {school_name}")
@@ -112,6 +112,18 @@ class BaseballRankingsIntegration:
                 "has_data": True,
                 "current_division": recent_data['division'] if recent_data else None,
                 "most_recent_year": recent_data['year'] if recent_data else None,
+                "division_group": recent_data.get('division_group') if recent_data else None,
+                "division_percentile": division_percentile,
+                "offensive_rating": (
+                    weighted_metrics.get('weighted_offensive_rating')
+                    if weighted_metrics
+                    else (recent_data.get('offensive_rating') if recent_data else None)
+                ),
+                "defensive_rating": (
+                    weighted_metrics.get('weighted_defensive_rating')
+                    if weighted_metrics
+                    else (recent_data.get('defensive_rating') if recent_data else None)
+                ),
 
                 # Current season metrics
                 "current_season": {
@@ -119,8 +131,11 @@ class BaseballRankingsIntegration:
                     "record": recent_data['record'],
                     "overall_rating": recent_data['overall_rating'],
                     "power_rating": recent_data['power_rating'],
+                    "offensive_rating": recent_data.get('offensive_rating'),
+                    "defensive_rating": recent_data.get('defensive_rating'),
                     "win_percentage": recent_data['win_percentage'],
-                    "division_percentile": division_percentile
+                    "division_percentile": division_percentile,
+                    "division_group": recent_data.get('division_group'),
                 } if recent_data else None,
 
                 # Multi-year analysis
@@ -205,6 +220,7 @@ class BaseballRankingsIntegration:
         return {
             "trend": trend,
             "change": round(change, 2),
+            "rating_change": round(change, 2),
             "years_span": f"{sorted_data[0]['year']}-{sorted_data[-1]['year']}"
         }
 

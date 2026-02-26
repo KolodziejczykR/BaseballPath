@@ -1,26 +1,156 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f3eee2;
+  --foreground: #0f1823;
+  --primary: #0f8d63;
+  --primary-dark: #0a6748;
+  --accent: #ef6f2e;
+  --navy: #18365a;
+  --sand: #ece1c5;
+  --muted: #516071;
+  --card: #fff9ec;
+  --stroke: #dccfb0;
+  --surface: rgba(255, 250, 237, 0.78);
+  --page-bg:
+    radial-gradient(980px 620px at 8% -8%, rgba(246, 171, 94, 0.35) 0%, transparent 60%),
+    radial-gradient(860px 540px at 96% 0%, rgba(57, 126, 204, 0.23) 0%, transparent 58%),
+    linear-gradient(180deg, #f8f3e6 0%, #f0e7d7 100%);
+  --page-bg-mobile:
+    radial-gradient(780px 460px at 5% -5%, rgba(246, 171, 94, 0.28) 0%, transparent 58%),
+    radial-gradient(640px 420px at 95% -8%, rgba(57, 126, 204, 0.2) 0%, transparent 56%),
+    linear-gradient(180deg, #f8f2e5 0%, #efe4d2 100%);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sora, "Avenir Next");
+  --font-display: var(--font-fraunces, "Iowan Old Style");
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  min-height: 100%;
+  overscroll-behavior-y: none;
+}
+
+html {
+  background: var(--page-bg);
+  background-color: #f0e7d7;
 }
 
 body {
-  background: var(--background);
+  min-height: 100vh;
+  margin: 0;
+  background: transparent;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sora, "Avenir Next"), system-ui, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+}
+
+::selection {
+  background: rgba(15, 141, 99, 0.25);
+  color: var(--foreground);
+}
+
+.display-font {
+  font-family: var(--font-fraunces, "Iowan Old Style"), ui-serif, Georgia, serif;
+}
+
+.glass {
+  background: linear-gradient(168deg, rgba(255, 250, 239, 0.86) 0%, rgba(255, 247, 227, 0.7) 100%);
+  border: 1px solid color-mix(in srgb, var(--stroke) 86%, white 14%);
+  backdrop-filter: blur(14px);
+}
+
+.shadow-soft {
+  box-shadow: 0 24px 48px rgba(12, 17, 24, 0.11);
+}
+
+.shadow-strong {
+  box-shadow: 0 34px 90px rgba(12, 17, 24, 0.2);
+}
+
+.form-control {
+  width: 100%;
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--stroke) 83%, white 17%);
+  background: var(--surface);
+  padding: 0.75rem 0.95rem;
+  font-size: 0.95rem;
+  color: var(--foreground);
+  outline: none;
+  transition: border-color 220ms ease, box-shadow 220ms ease, background-color 220ms ease;
+}
+
+.form-control::placeholder {
+  color: color-mix(in srgb, var(--muted) 80%, white 20%);
+}
+
+.form-control:focus {
+  border-color: color-mix(in srgb, var(--primary) 74%, white 26%);
+  box-shadow: 0 0 0 3px rgba(15, 141, 99, 0.16);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+select:not([multiple]) {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 2.75rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='currentColor' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.95rem center;
+  background-size: 1rem;
+}
+
+select:not([multiple])::-ms-expand {
+  display: none;
+}
+
+.scroll-fade {
+  transition: opacity 540ms ease, transform 540ms cubic-bezier(0.2, 0.8, 0.22, 1);
+  will-change: opacity, transform;
+}
+
+.scroll-fade-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.scroll-fade-hidden {
+  opacity: 0.2;
+  transform: translateY(22px) scale(0.985);
+}
+
+@media (max-width: 860px) {
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+
+  html {
+    background: var(--page-bg-mobile);
+    background-color: #efe4d2;
+  }
+
+  body {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-fade {
+    transition: none !important;
+  }
+
+  .scroll-fade-hidden {
+    opacity: 1;
+    transform: none;
+  }
 }

@@ -1,146 +1,267 @@
-"use client"
+"use client";
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { FadeOnScroll } from "@/components/ui/fade-on-scroll";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+
+const featureCards = [
+  {
+    title: "Division Projection",
+    desc: "Forecast D1 versus non-D1 and Power 4 upside from the profile coaches care about most.",
+  },
+  {
+    title: "School Fit Ranking",
+    desc: "Sort schools by academics, roster opportunity, region, and budget in one report.",
+  },
+  {
+    title: "Playing-Time Signal",
+    desc: "Convert roster context into a clear playing-time estimate so decisions are concrete.",
+  },
+  {
+    title: "AI Reasoning Layer",
+    desc: "Get concise context for why each school matches your specific profile and goals.",
+  },
+];
+
+const processCards = [
+  {
+    label: "01",
+    title: "Profile intake",
+    desc: "Name, state, graduating class, and position establish your recruiting context.",
+  },
+  {
+    label: "02",
+    title: "Position metrics",
+    desc: "We only ask for the stat set that matches your primary position.",
+  },
+  {
+    label: "03",
+    title: "Preference filter",
+    desc: "Campus, academic, and cost preferences shape your final school ranking.",
+  },
+];
+
+const signals = [
+  { value: "1200+", label: "NCAA programs considered" },
+  { value: "3-step", label: "Guided prediction workflow" },
+  { value: "< 2 min", label: "Typical profile completion time" },
+];
 
 export default function Home() {
-  const router = useRouter()
+  const supabase = useMemo(() => {
+    try {
+      return getSupabaseBrowserClient();
+    } catch {
+      return null;
+    }
+  }, []);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Redirect to waitlist page immediately
-    router.push("/waitlist")
-  }, [router])
+    if (!supabase) return;
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setIsAuthenticated(Boolean(data.session));
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setIsAuthenticated(Boolean(session));
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   return (
-    <div className="min-h-screen relative overflow-hidden font-sans flex items-center justify-center" style={{ backgroundColor: '#03032d', fontFamily: 'var(--font-manrope)' }}>
-      {/* Subtle gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-blue-950/5"></div>
-      
-      {/* Background logo - animated fade in/out at different spots */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <img 
-          src="/background-logo.png"
-          alt=""
-          className="absolute w-[1200%] h-auto"
-          style={{ 
-            animation: 'logoSpots 18s ease-in-out infinite',
-            opacity: 0,
-            left: '0%',
-            top: '15%'
-          }}
-        />
-      </div>
-      
-      <style jsx>{`
-        @keyframes logoSpots {
-          0%, 18% {
-            opacity: 0;
-            left: 0%;
-            top: 15%;
-          }
-          4%, 14% {
-            opacity: 0.1;
-            left: 0%;
-            top: 15%;
-          }
-          20%, 38% {
-            opacity: 0;
-            left: -15%;
-            top: 0%;
-          }
-          24%, 34% {
-            opacity: 0.1;
-            left: -15%;
-            top: 0%;
-          }
-          40%, 58% {
-            opacity: 0;
-            left: 60%;
-            top: -15%;
-          }
-          44%, 54% {
-            opacity: 0.1;
-            left: 60%;
-            top: -15%;
-          }
-          60%, 78% {
-            opacity: 0;
-            left: 5%;
-            top: 28%;
-          }
-          64%, 74% {
-            opacity: 0.1;
-            left: 5%;
-            top: 28%;
-          }
-          80%, 98% {
-            opacity: 0;
-            left: 50%;
-            top: 32%;
-          }
-          84%, 94% {
-            opacity: 0.1;
-            left: 50%;
-            top: 32%;
-          }
-          100% {
-            opacity: 0;
-            left: 0%;
-            top: 15%;
-          }
-        }
-      `}</style>
-
-      {/* Header */}
-      <header className="absolute top-0 left-0 right-0 z-10 w-full">
-        <div className="px-6 lg:px-8 py-8">
-          <div className="flex items-center">
-            <img 
-              src="/logo-header.png"
-              alt="BaseballPath"
-              className="h-12 w-auto"
-            />
-          </div>
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-40 border-b border-black/10 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <Link href="/" className="flex items-center gap-3">
+            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[var(--navy)] text-sm font-bold tracking-wide text-white">
+              BP
+            </div>
+            <div className="leading-tight">
+              <p className="text-xs uppercase tracking-[0.34em] text-[var(--muted)]">BaseballPath</p>
+              <p className="text-base font-semibold">Recruiting Intelligence</p>
+            </div>
+          </Link>
+          <nav className="hidden items-center gap-6 text-sm font-medium text-[var(--muted)] md:flex">
+            {isAuthenticated ? (
+              <>
+                <Link href="/dashboard" className="hover:text-[var(--foreground)]">
+                  Dashboard
+                </Link>
+                <Link href="/predict" className="hover:text-[var(--foreground)]">
+                  Predict
+                </Link>
+                <Link href="/plans" className="hover:text-[var(--foreground)]">
+                  Plans
+                </Link>
+                <Link
+                  href="/account"
+                  className="rounded-full bg-[var(--primary)] px-5 py-2.5 font-semibold text-white shadow-strong transition-transform duration-300 hover:-translate-y-0.5 hover:opacity-95"
+                >
+                  Account
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/predict" className="hover:text-[var(--foreground)]">
+                  Predict
+                </Link>
+                <Link href="/plans" className="hover:text-[var(--foreground)]">
+                  Plans
+                </Link>
+                <Link href="/waitlist" className="hover:text-[var(--foreground)]">
+                  Waitlist
+                </Link>
+                <Link href="/login" className="hover:text-[var(--foreground)]">
+                  Login
+                </Link>
+                <Link
+                  href="/signup"
+                  className="rounded-full bg-[var(--accent)] px-5 py-2.5 font-semibold text-white shadow-strong transition-transform duration-300 hover:-translate-y-0.5 hover:opacity-95"
+                >
+                  Signup
+                </Link>
+              </>
+            )}
+          </nav>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="relative z-10 text-center max-w-4xl mx-auto px-6">
-        <div className="mb-8">
-          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-6 mx-auto" 
-               style={{ 
-                 backgroundColor: '#6b7ff2',
-                 boxShadow: '0 4px 20px rgba(107, 127, 242, 0.4)'
-               }}>
-            <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
+      <main className="relative overflow-hidden px-6 pb-24 pt-12">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[540px] bg-[radial-gradient(900px_420px_at_20%_0%,rgba(241,115,36,0.22),transparent_60%),radial-gradient(800px_360px_at_95%_5%,rgba(15,74,129,0.2),transparent_55%)]" />
+
+        <section className="relative mx-auto grid max-w-6xl gap-12 md:grid-cols-[1.1fr_0.9fr]">
+          <div>
+            <p className="text-xs uppercase tracking-[0.42em] text-[var(--muted)]">AI Baseball Recruiting</p>
+            <h1 className="display-font mt-5 max-w-2xl text-5xl leading-[1.02] md:text-7xl">
+              Build a recruiting plan that feels clear before your first call.
+            </h1>
+            <p className="mt-6 max-w-xl text-lg text-[var(--muted)]">
+              BaseballPath transforms profile metrics into division projection, school fit, and playing-time
+              opportunity so players and families can move with confidence.
+            </p>
+            <div className="mt-9 flex flex-wrap gap-4">
+              <Link
+                href={isAuthenticated ? "/dashboard" : "/predict"}
+                className="rounded-full bg-[var(--primary)] px-7 py-3.5 text-sm font-semibold text-white shadow-strong transition-transform duration-300 hover:-translate-y-0.5"
+              >
+                {isAuthenticated ? "Open Recruiting Dashboard" : "Launch Prediction Pipeline"}
+              </Link>
+              <Link
+                href="/plans"
+                className="rounded-full border border-[var(--stroke)] bg-white/70 px-7 py-3.5 text-sm font-semibold text-[var(--navy)]"
+              >
+                Compare Plans
+              </Link>
+            </div>
+            <div className="mt-10 grid gap-4 sm:grid-cols-3">
+              {signals.map((signal, index) => (
+                <FadeOnScroll key={signal.label} delayMs={index * 80}>
+                  <div className="glass rounded-2xl p-4 shadow-soft">
+                    <p className="text-2xl font-bold text-[var(--navy)]">{signal.value}</p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">{signal.label}</p>
+                  </div>
+                </FadeOnScroll>
+              ))}
+            </div>
           </div>
-          
-          <h1 className="text-5xl sm:text-6xl font-bold text-white mb-4 leading-tight">
-            The AI That{" "}
-            <span style={{ 
-              background: 'linear-gradient(135deg, #6b7ff2 0%, #10b981 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text'
-            }}>
-              Gets You Recruited
-            </span>
-          </h1>
-          
-          <p className="text-xl text-white/70 mb-2">
-            Loading BaseballPATH waitlist...
-          </p>
-          
-          <div className="flex justify-center items-center space-x-2">
-            <div className="w-2 h-2 bg-white/60 rounded-full animate-pulse"></div>
-            <div className="w-2 h-2 bg-white/60 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-            <div className="w-2 h-2 bg-white/60 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+
+          <FadeOnScroll className="h-fit">
+            <div className="glass relative overflow-hidden rounded-[30px] p-7 shadow-strong">
+              <div className="absolute -right-16 -top-14 h-44 w-44 rounded-full bg-[var(--accent)]/25 blur-2xl" />
+              <div className="absolute -bottom-20 -left-8 h-52 w-52 rounded-full bg-[var(--primary)]/20 blur-2xl" />
+
+              <div className="relative">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">Sample Recommendation</p>
+                  <span className="rounded-full bg-[var(--navy)]/10 px-3 py-1 text-xs font-semibold text-[var(--navy)]">
+                    Live-style Preview
+                  </span>
+                </div>
+                <div className="mt-6 space-y-4">
+                  {[
+                    { school: "UC Irvine", tier: "Non-P4 D1" },
+                    { school: "Cal State Fullerton", tier: "Non-P4 D1" },
+                    { school: "Arizona State", tier: "Power 4 D1" },
+                  ].map(({ school, tier }, index) => (
+                    <FadeOnScroll key={school} delayMs={index * 80}>
+                      <article className="rounded-2xl border border-[var(--stroke)] bg-white/78 p-4">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold">{school}</p>
+                          <span className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-xs font-semibold text-[var(--navy)]">
+                            {tier}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm text-[var(--muted)]">
+                          Strong roster opportunity, balanced academics, and a strong geographic fit.
+                        </p>
+                      </article>
+                    </FadeOnScroll>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </FadeOnScroll>
+        </section>
+
+        <section className="relative mx-auto mt-20 max-w-6xl">
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            {featureCards.map((card, index) => (
+              <FadeOnScroll key={card.title} delayMs={index * 70}>
+                <div className="glass h-full rounded-3xl p-6 shadow-soft">
+                  <p className="text-lg font-semibold">{card.title}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">{card.desc}</p>
+                </div>
+              </FadeOnScroll>
+            ))}
           </div>
-        </div>
-      </div>
+        </section>
+
+        <section className="relative mx-auto mt-20 grid max-w-6xl gap-8 md:grid-cols-[0.92fr_1.08fr]">
+          <FadeOnScroll>
+            <div className="relative overflow-hidden rounded-[34px] bg-[var(--navy)] p-8 text-white shadow-strong md:p-10">
+              <div className="absolute right-0 top-0 h-36 w-36 rounded-bl-[80px] bg-white/8" />
+              <p className="text-xs uppercase tracking-[0.36em] text-white/60">How It Works</p>
+              <h2 className="display-font mt-4 text-4xl leading-tight md:text-5xl">
+                A recruiting workflow that follows coach logic.
+              </h2>
+              <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/75">
+                We guide athletes through the right sequence: identity first, position data second, then preference
+                filters for final school fit.
+              </p>
+              <Link
+                href="/predict"
+                className="mt-7 inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold !text-[var(--navy)]"
+                style={{ color: "var(--navy)" }}
+              >
+                Open Prediction Pipeline
+              </Link>
+            </div>
+          </FadeOnScroll>
+
+          <div className="grid gap-5">
+            {processCards.map((card, index) => (
+              <FadeOnScroll key={card.label} delayMs={index * 90}>
+                <article className="glass rounded-2xl p-6 shadow-soft">
+                  <p className="text-xs uppercase tracking-[0.32em] text-[var(--muted)]">Step {card.label}</p>
+                  <p className="mt-2 text-xl font-semibold">{card.title}</p>
+                  <p className="mt-2 text-sm text-[var(--muted)]">{card.desc}</p>
+                </article>
+              </FadeOnScroll>
+            ))}
+          </div>
+        </section>
+      </main>
     </div>
-  )
+  );
 }

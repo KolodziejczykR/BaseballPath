@@ -13,12 +13,12 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../../../'))
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from supabase import Client
 
 from .async_connection import AsyncSupabaseConnection
 from ..exceptions import SchoolDataError
-from backend.utils.school_group_constants import NON_D1
+from backend.utils.school_group_constants import NON_D1, NON_P4_D1, POWER_4_D1
 
 logger = logging.getLogger(__name__)
 
@@ -33,55 +33,275 @@ class AsyncSchoolDataQueries:
     def __init__(self, connection: Optional[AsyncSupabaseConnection] = None):
         self.connection = connection or AsyncSupabaseConnection()
 
-        # Cache for division_group mappings (school_name → division_group)
-        self._division_group_cache: Dict[str, str] = {}
+        # Cache for baseball enrichment mappings (school_name → enrichment payload)
+        self._division_group_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_loaded = False
 
+    @staticmethod
+    def _normalize_school_name(name: str) -> str:
+        if not isinstance(name, str):
+            return ""
+        return " ".join(name.strip().lower().split())
+
+    @staticmethod
+    def _normalize_division_group(value: Any) -> str:
+        if not value:
+            return NON_D1
+        normalized = str(value).strip()
+        lowered = normalized.lower()
+
+        if lowered in {"power 4 d1", "power4 d1", "p4", "power 4"}:
+            return POWER_4_D1
+        if lowered in {"non-p4 d1", "non p4 d1"}:
+            return NON_P4_D1
+        if lowered in {"non-d1", "non d1", "d2", "d3"}:
+            return NON_D1
+        if lowered in {"d1", "division 1", "division i"}:
+            return NON_P4_D1
+        if "power" in lowered and "4" in lowered:
+            return POWER_4_D1
+        if "non-p4" in lowered or "non p4" in lowered:
+            return NON_P4_D1
+        if "non-d1" in lowered or "non d1" in lowered:
+            return NON_D1
+
+        return normalized
+
+    @staticmethod
+    def _chunk_list(items: List[str], chunk_size: int = 500) -> List[List[str]]:
+        """Split a list into deterministic chunks for large .in_ queries."""
+        if not items:
+            return []
+        return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+    @staticmethod
+    def _coerce_division_number(value: Any) -> Optional[int]:
+        """Coerce a division value into 1/2/3 when possible."""
+        if value is None:
+            return None
+
+        try:
+            as_int = int(value)
+            if as_int in (1, 2, 3):
+                return as_int
+        except (TypeError, ValueError):
+            pass
+
+        text = str(value).strip().lower()
+        if not text:
+            return None
+
+        if any(token in text for token in ("d1", "division 1", "division i", "ncaa i")):
+            return 1
+        if any(token in text for token in ("d2", "division 2", "division ii", "ncaa ii")):
+            return 2
+        if any(token in text for token in ("d3", "division 3", "division iii", "ncaa iii")):
+            return 3
+
+        return None
+
+    def _derive_division_group(self, division_group: Any, division: Any) -> str:
+        """
+        Normalize division_group with division fallback.
+        If division_group is missing but division=1, default to Non-P4 D1 (never Non-D1).
+        """
+        if division_group:
+            return self._normalize_division_group(division_group)
+
+        division_num = self._coerce_division_number(division)
+        if division_num == 1:
+            return NON_P4_D1
+        if division_num in (2, 3):
+            return NON_D1
+        return NON_D1
+
+    @staticmethod
+    def _calculate_division_percentile(overall_rating: Optional[float], ratings: List[float]) -> Optional[float]:
+        """
+        Calculate percentile where higher is better.
+        For Massey-style ratings (lower is better), percentile is based on teams with worse ratings.
+        """
+        if overall_rating is None or not ratings:
+            return None
+
+        try:
+            position = sum(1 for rating in ratings if rating > overall_rating)
+            return round((position / len(ratings)) * 100, 1)
+        except Exception:
+            return None
+
     async def _load_division_group_cache(self) -> None:
-        """Load division_group mappings from baseball_rankings_data via name mapping"""
+        """Load baseball enrichment mappings from baseball_rankings_data via name mapping."""
         if self._cache_loaded:
             return
 
-        async def _load_cache_query(client: Client) -> Dict[str, str]:
-            logger.info("Loading division_group cache from database...")
-            result_cache: Dict[str, str] = {}
+        async def _load_cache_query(client: Client) -> Dict[str, Dict[str, Any]]:
+            logger.info("Loading division_group + baseball metrics cache from database...")
+            result_cache: Dict[str, Dict[str, Any]] = {}
 
-            # Get verified name mappings (school_name → team_name)
-            mapping_response = client.table('school_baseball_ranking_name_mapping')\
-                .select('school_name, team_name')\
-                .eq('verified', True)\
-                .not_.is_('team_name', 'null')\
+            # Prefer verified mappings, then gracefully fall back if a project has not marked them.
+            mapping_response = (
+                client.table("school_baseball_ranking_name_mapping")
+                .select("school_name, team_name, verified")
+                .eq("verified", True)
+                .not_.is_("team_name", "null")
                 .execute()
+            )
+            mapping_rows = mapping_response.data or []
 
-            if not mapping_response.data:
-                logger.warning("No verified name mappings found")
+            if not mapping_rows:
+                logger.warning("No verified mappings found; falling back to non-false mappings")
+                fallback_response = (
+                    client.table("school_baseball_ranking_name_mapping")
+                    .select("school_name, team_name, verified")
+                    .neq("verified", False)
+                    .not_.is_("team_name", "null")
+                    .execute()
+                )
+                mapping_rows = fallback_response.data or []
+
+            if not mapping_rows:
+                logger.warning("No non-false mappings found; falling back to any non-null team_name mapping")
+                fallback_any_response = (
+                    client.table("school_baseball_ranking_name_mapping")
+                    .select("school_name, team_name, verified")
+                    .not_.is_("team_name", "null")
+                    .execute()
+                )
+                mapping_rows = fallback_any_response.data or []
+
+            if not mapping_rows:
+                logger.warning("No name mappings found in school_baseball_ranking_name_mapping")
                 return result_cache
 
-            # Create team_name → school_name reverse mapping
-            team_to_school = {row['team_name']: row['school_name'] for row in mapping_response.data}
+            # Create team_name → [school_name, ...] reverse mapping
+            team_to_school: Dict[str, List[str]] = {}
+            for row in mapping_rows:
+                team_name = (row.get("team_name") or "").strip()
+                school_name = (row.get("school_name") or "").strip()
+                if not team_name or not school_name:
+                    continue
+                if team_name not in team_to_school:
+                    team_to_school[team_name] = []
+                team_to_school[team_name].append(school_name)
+
+            if not team_to_school:
+                logger.warning("Name mapping query returned rows, but none had usable team_name + school_name")
+                return result_cache
+
             team_names = list(team_to_school.keys())
+            latest_by_team: Dict[str, Dict[str, Any]] = {}
 
-            # Get division_group for each team (most recent year's data)
-            rankings_response = client.table('baseball_rankings_data')\
-                .select('team_name, division_group')\
-                .in_('team_name', team_names)\
-                .order('year', desc=True)\
-                .execute()
+            for team_chunk in self._chunk_list(team_names):
+                try:
+                    rankings_response = (
+                        client.table("baseball_rankings_data")
+                        .select(
+                            "team_name, year, division, division_group, "
+                            "overall_rating, offensive_rating, defensive_rating"
+                        )
+                        .in_("team_name", team_chunk)
+                        .order("year", desc=True)
+                        .execute()
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed ordering rankings by year for chunk; retrying without order: {e}")
+                    rankings_response = (
+                        client.table("baseball_rankings_data")
+                        .select(
+                            "team_name, year, division, division_group, "
+                            "overall_rating, offensive_rating, defensive_rating"
+                        )
+                        .in_("team_name", team_chunk)
+                        .execute()
+                    )
 
-            if rankings_response.data:
-                # Use first occurrence for each team (most recent year)
-                seen_teams = set()
-                for row in rankings_response.data:
-                    team_name = row['team_name']
-                    division_group = row.get('division_group')
+                for row in rankings_response.data or []:
+                    team_name = (row.get("team_name") or "").strip()
+                    if not team_name:
+                        continue
 
-                    if team_name not in seen_teams and division_group:
-                        seen_teams.add(team_name)
-                        school_name = team_to_school.get(team_name)
-                        if school_name:
-                            result_cache[school_name] = division_group
+                    existing = latest_by_team.get(team_name)
+                    if existing is None:
+                        latest_by_team[team_name] = row
+                        continue
 
-            logger.info(f"Loaded {len(result_cache)} division_group mappings into cache")
+                    new_year = row.get("year") or 0
+                    existing_year = existing.get("year") or 0
+                    if new_year > existing_year:
+                        latest_by_team[team_name] = row
+                        continue
+
+                    if (
+                        new_year == existing_year
+                        and not existing.get("division_group")
+                        and row.get("division_group")
+                    ):
+                        latest_by_team[team_name] = row
+
+            if not latest_by_team:
+                logger.warning("No rankings rows found for mapped team names")
+                return result_cache
+
+            # Preload rating distributions for percentile calculation.
+            year_div_pairs = {
+                (row.get("year"), row.get("division"))
+                for row in latest_by_team.values()
+                if row.get("year") is not None and row.get("division") is not None
+            }
+            ratings_by_year_div: Dict[Tuple[int, int], List[float]] = {}
+
+            for year, division in year_div_pairs:
+                response = (
+                    client.table("baseball_rankings_data")
+                    .select("overall_rating")
+                    .eq("year", year)
+                    .eq("division", division)
+                    .not_.is_("overall_rating", "null")
+                    .execute()
+                )
+                ratings = sorted(
+                    [
+                        record.get("overall_rating")
+                        for record in (response.data or [])
+                        if record.get("overall_rating") is not None
+                    ]
+                )
+                ratings_by_year_div[(year, division)] = ratings
+
+            for team_name, row in latest_by_team.items():
+                schools = team_to_school.get(team_name) or []
+                if not schools:
+                    continue
+
+                division_group = self._derive_division_group(
+                    row.get("division_group"),
+                    row.get("division")
+                )
+                year = row.get("year")
+                division = self._coerce_division_number(row.get("division"))
+                overall_rating = row.get("overall_rating")
+                ratings = ratings_by_year_div.get((year, row.get("division")), [])
+                division_percentile = self._calculate_division_percentile(overall_rating, ratings)
+
+                enrichment_payload = {
+                    "division_group": division_group,
+                    "baseball_team_name": team_name,
+                    "baseball_rankings_year": year,
+                    "baseball_division": division,
+                    "baseball_overall_rating": overall_rating,
+                    "baseball_offensive_rating": row.get("offensive_rating"),
+                    "baseball_defensive_rating": row.get("defensive_rating"),
+                    "baseball_division_percentile": division_percentile,
+                }
+
+                for school_name in schools:
+                    result_cache[school_name] = enrichment_payload
+                    normalized_key = self._normalize_school_name(school_name)
+                    if normalized_key:
+                        result_cache[normalized_key] = enrichment_payload
+
+            logger.info(f"Loaded {len(result_cache)} school enrichment mappings into cache")
             return result_cache
 
         try:
@@ -89,17 +309,38 @@ class AsyncSchoolDataQueries:
             self._cache_loaded = True
         except Exception as e:
             logger.error(f"Error loading division_group cache: {e}")
-            self._cache_loaded = True  # Mark as loaded to prevent repeated failures
+            # Keep cache unloadable state so future calls can retry.
+            self._cache_loaded = False
 
     async def _enrich_schools_with_division_group(self, schools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Enrich school data with division_group from cache"""
+        """Enrich school data with division_group and baseball metrics from cache."""
         await self._load_division_group_cache()
 
         for school in schools:
             school_name = school.get('school_name')
+            existing_division_group = school.get('division_group')
+
+            enrichment_payload: Optional[Dict[str, Any]] = None
             if school_name:
-                division_group = self._division_group_cache.get(school_name)
-                school['division_group'] = division_group or NON_D1  # Default to Non-D1 if not found
+                enrichment_payload = self._division_group_cache.get(school_name)
+                if not enrichment_payload:
+                    normalized_key = self._normalize_school_name(school_name)
+                    enrichment_payload = self._division_group_cache.get(normalized_key)
+
+            if enrichment_payload:
+                school['division_group'] = self._normalize_division_group(
+                    enrichment_payload.get("division_group")
+                )
+                for key, value in enrichment_payload.items():
+                    if key == "division_group":
+                        continue
+                    if value is not None:
+                        school[key] = value
+            elif existing_division_group:
+                school['division_group'] = self._normalize_division_group(existing_division_group)
+            else:
+                # Preserve old fallback behavior when neither cache nor source column has a value.
+                school['division_group'] = NON_D1
 
         return schools
 

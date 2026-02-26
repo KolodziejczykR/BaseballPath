@@ -1,11 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  webpack: (config) => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@': require('path').resolve(__dirname, 'src'),
-    };
+  // Only use custom distDir in local environment, let Vercel use default '.next'
+  distDir: process.env.VERCEL ? undefined : ".next-local",
+  webpack: (config, { dev }) => {
+    // Stabilize local dev in environments where webpack snapshot cache fails.
+    if (dev) {
+      config.cache = false;
+    }
     return config;
   },
 };

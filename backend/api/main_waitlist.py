@@ -6,7 +6,7 @@ import os
 # Add the backend directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api.waitlist_router import router as waitlist_router
+from api.routers.waitlist import router as waitlist_router
 
 app = FastAPI(title="BaseballPATH Backend")
 

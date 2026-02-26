@@ -11,9 +11,11 @@ from ml.router.infielder_router import router as infielder_router
 from ml.router.outfielder_router import router as outfielder_router
 from ml.router.catcher_router import router as catcher_router
 from ml.router.pitcher_router import router as pitcher_router
-from api.preferences_router import router as preferences_router
-from api.college_selection_router import router as college_selection_router
-from api.waitlist_router import router as waitlist_router
+from api.routers.preferences import router as preferences_router
+from api.routers.waitlist import router as waitlist_router
+from api.routers.account import router as account_router
+from api.routers.evaluations import router as evaluations_router
+from api.routers.billing import router as billing_router
 
 app = FastAPI(title="BaseballPATH Backend")
 
@@ -38,8 +40,10 @@ app.include_router(outfielder_router, prefix="/outfielder")
 app.include_router(catcher_router, prefix="/catcher")
 app.include_router(pitcher_router, prefix="/pitcher")
 app.include_router(preferences_router, prefix="/preferences")
-app.include_router(college_selection_router, prefix="/college-selection")
 app.include_router(waitlist_router, prefix="/waitlist")
+app.include_router(account_router, prefix="/account")
+app.include_router(evaluations_router, prefix="/evaluations")
+app.include_router(billing_router, prefix="/billing")
 
 @app.get("/")
 def read_root():

@@ -1,12 +1,30 @@
 from types import SimpleNamespace
 
 import importlib
+import sys
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+# Ensure project root is importable when running this file in isolation.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from backend.api.main import app
 from backend.utils.school_match_types import SchoolMatch, NiceToHaveMatch, NiceToHaveType
+from backend.utils.recommendation_types import PlayingTimeInfo
+
+
+def _get_preferences_module():
+    """Import the live preferences router module used by the FastAPI app."""
+    for module_name in ("api.routers.preferences", "backend.api.routers.preferences"):
+        try:
+            return importlib.import_module(module_name)
+        except ModuleNotFoundError:
+            continue
+    raise ModuleNotFoundError("Could not import preferences router module")
 
 
 def _make_school_match(name, division_group, academic_grade, playing_time_percentile, nice_to_have_count):
@@ -88,7 +106,7 @@ def _base_request(sort_by=None, sort_order="desc"):
 
 
 def _patch_preferences_router(monkeypatch, matches):
-    pref_mod = importlib.import_module("api.preferences_router")
+    pref_mod = _get_preferences_module()
 
     async def _mock_get_school_matches_shared(preferences, ml_results, limit):
         return _mock_filtering_result(matches)
@@ -101,7 +119,7 @@ def _patch_preferences_router(monkeypatch, matches):
     monkeypatch.setattr(
         pref_mod,
         "_format_playing_time",
-        lambda _: {"available": False},
+        lambda _: PlayingTimeInfo(available=False),
     )
 
 
@@ -118,6 +136,7 @@ def test_preferences_filter_sort_by_playing_time(monkeypatch):
     resp = client.post("/preferences/filter", json=_base_request("playing_time_score", "desc"))
     assert resp.status_code == 200
     schools = resp.json()["schools"]
+    assert "recommendation_summary" in resp.json()
     assert [s["school_name"] for s in schools] == ["B", "A", "C"]
     assert all("scores" in s for s in schools)
 
