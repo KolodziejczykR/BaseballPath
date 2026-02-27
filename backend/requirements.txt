@@ -7,6 +7,8 @@ python-multipart>=0.0.6
 # Database dependencies
 supabase>=2.0.0
 python-dotenv>=1.0.0
+nanoid>=2.0.0
+Pillow>=10.0.0
 
 # ML dependencies
 pandas>=1.5.0
