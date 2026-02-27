@@ -27,6 +27,8 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/predict", label: "Predict" },
   { href: "/evaluations", label: "Evaluations" },
+  { href: "/card", label: "Player Card" },
+  { href: "/goals", label: "Goals" },
   { href: "/plans", label: "Plans" },
   { href: "/account", label: "Account" },
 ];

@@ -483,6 +483,18 @@ export default function EvaluationDetailPage() {
               >
                 Run new evaluation
               </Link>
+              <Link
+                href={`/card?from_eval=${runId}`}
+                className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)]"
+              >
+                Create Card
+              </Link>
+              <Link
+                href={`/goals/create?from_eval=${runId}`}
+                className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)]"
+              >
+                Set Goals
+              </Link>
             </div>
           </div>
 
