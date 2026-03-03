@@ -12,21 +12,21 @@ type CardBackProps = {
 
 function ProbabilityBar({ label, value }: { label: string; value: number }) {
   const pct = Math.max(0, Math.min(100, value * 100));
+  const colorClass = pct >= 60 ? "bg-[var(--sage-green)]" : pct >= 30 ? "bg-[var(--golden-sand)]" : "bg-[var(--burnt-sienna)]";
   return (
     <div>
       <div className="flex items-center justify-between text-xs text-white/85">
-        <span>{label}</span>
-        <span className="font-semibold">{pct.toFixed(1)}%</span>
+        <span className="text-sm font-semibold text-white">{label}</span>
+        <span className="font-mono text-sm font-bold text-white">{pct.toFixed(1)}%</span>
       </div>
-      <div className="mt-1 h-2 rounded-full bg-white/15">
-        <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: `${pct}%` }} />
+      <div className="mt-1 h-2.5 rounded-full bg-white/10">
+        <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
 }
 
 export function PlayerCardBack({
-  predictionLevel,
   d1Probability,
   p4Probability,
   videoLinks,
@@ -35,19 +35,15 @@ export function PlayerCardBack({
   shareUrl,
 }: CardBackProps) {
   return (
-    <div className="flex h-full flex-col bg-[#10233d] p-4 text-white">
-      <div className="rounded-xl border border-white/15 bg-white/10 p-3 text-center">
-        <p className="text-[10px] uppercase tracking-[0.28em] text-white/75">Projection</p>
-        <p className="mt-1 text-xl font-bold text-[#ece1c5]">{predictionLevel || "Prospect"}</p>
-      </div>
-
-      <div className="mt-4 space-y-3 rounded-xl border border-white/15 bg-white/8 p-3">
+    <div className="flex h-full flex-col bg-[#1A0F08] p-4 text-white hover:bg-[#1A0F08]">
+      <div className="mt-0 space-y-3 rounded-xl p-0">
+        <p className="text-xs uppercase tracking-[0.2em] text-[#D4A843] mb-3">Projection</p>
         <ProbabilityBar label="D1" value={d1Probability || 0} />
         {typeof p4Probability === "number" ? <ProbabilityBar label="Power 4" value={p4Probability} /> : null}
       </div>
 
-      <div className="mt-4">
-        <p className="text-[10px] uppercase tracking-[0.22em] text-white/70">Video Links</p>
+      <div className="mt-3">
+        <p className="text-xs uppercase tracking-[0.2em] text-[#D4A843] mb-2">Film</p>
         <div className="mt-2 space-y-2">
           {videoLinks.length === 0 ? <p className="text-xs text-white/65">No videos added.</p> : null}
           {videoLinks.slice(0, 3).map((link) => (
@@ -64,8 +60,8 @@ export function PlayerCardBack({
         </div>
       </div>
 
-      <div className="mt-4 flex-1 overflow-hidden">
-        <p className="text-[10px] uppercase tracking-[0.22em] text-white/70">Visible Preferences</p>
+      <div className="mt-3 flex-1 overflow-hidden">
+        <p className="text-xs uppercase tracking-[0.2em] text-[#D4A843] mb-2">Preferences</p>
         <div className="mt-2 space-y-1">
           {Object.entries(visiblePreferences).length === 0 ? <p className="text-xs text-white/65">No preferences shown.</p> : null}
           {Object.entries(visiblePreferences)
@@ -84,7 +80,7 @@ export function PlayerCardBack({
             View Full Profile
           </a>
         ) : null}
-        {shareUrl ? <p className="truncate text-center text-[11px] text-white/65">{shareUrl}</p> : null}
+        {shareUrl ? <p className="truncate text-center text-[11px] text-white/50 border-t border-white/10 pt-2">{shareUrl}</p> : null}
       </div>
     </div>
   );

@@ -93,10 +93,10 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-black/10 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-[var(--stroke)]/30 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link href="/dashboard" className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[var(--navy)] text-sm font-bold tracking-wide text-white">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[var(--navy)] text-sm font-bold tracking-wide text-[var(--warm-cream)]">
             BP
           </div>
           <div className="leading-tight">
@@ -113,7 +113,7 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`transition-colors ${active ? "text-[var(--foreground)]" : "hover:text-[var(--foreground)]"}`}
+                  className={`transition-colors py-4 border-b-2 ${active ? "text-[var(--foreground)] border-[var(--primary)]" : "text-[var(--muted)] hover:text-[var(--foreground)] border-transparent"}`}
                 >
                   {item.label}
                 </Link>
@@ -137,7 +137,7 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-[var(--stroke)] bg-white p-3 shadow-strong">
+              <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-[var(--stroke)] bg-[var(--parchment)] p-3 shadow-strong">
                 <div className="rounded-xl border border-[var(--stroke)] bg-[var(--sand)]/45 p-3">
                   <p className="text-sm font-semibold text-[var(--navy)]">{fullName || "My Account"}</p>
                   <p className="mt-0.5 text-xs text-[var(--muted)]">{displayEmail}</p>

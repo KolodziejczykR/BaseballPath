@@ -3,12 +3,19 @@
 export function HolographicEffect() {
   return (
     <div
-      className="pointer-events-none absolute inset-0 rounded-[inherit] opacity-50 mix-blend-color-dodge transition-transform duration-100 ease-out motion-reduce:opacity-0"
+      className="pointer-events-none absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-400 group-hover:opacity-[0.35]"
       style={{
-        background:
-          "conic-gradient(from calc(var(--holo-angle, 0) * 1deg), hsl(0, 80%, 70%), hsl(60, 80%, 70%), hsl(120, 80%, 70%), hsl(180, 80%, 70%), hsl(240, 80%, 70%), hsl(300, 80%, 70%), hsl(360, 80%, 70%))",
-        transform:
-          "translate(calc((var(--holo-x, 0.5) - 0.5) * 20px), calc((var(--holo-y, 0.5) - 0.5) * 20px))",
+        background: `conic-gradient(
+          from calc(var(--holo-angle, 0) * 1deg) at var(--holo-x, 50%) var(--holo-y, 50%),
+          hsl(35, 80%, 65%) 0deg,
+          hsl(45, 75%, 60%) 60deg,
+          hsl(25, 70%, 55%) 120deg,
+          hsl(100, 30%, 55%) 180deg,
+          hsl(30, 85%, 60%) 240deg,
+          hsl(40, 80%, 65%) 300deg,
+          hsl(35, 80%, 65%) 360deg
+        )`,
+        mixBlendMode: 'color-dodge',
       }}
     />
   );

@@ -42,7 +42,7 @@ export function PlayerCardContainer({ front, back, className = "", onMouseMove }
   return (
     <div
       ref={rootRef}
-      className={`relative h-[490px] w-[350px] select-none [perspective:1000px] ${className}`}
+      className={`group relative h-[490px] w-[350px] select-none [perspective:1000px] ${className}`}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onClick={() => setFlipped((prev) => !prev)}

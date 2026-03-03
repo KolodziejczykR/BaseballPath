@@ -1,25 +1,38 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f3eee2;
-  --foreground: #0f1823;
-  --primary: #0f8d63;
-  --primary-dark: #0a6748;
-  --accent: #ef6f2e;
-  --navy: #18365a;
-  --sand: #ece1c5;
-  --muted: #516071;
-  --card: #fff9ec;
-  --stroke: #dccfb0;
-  --surface: rgba(255, 250, 237, 0.78);
+  --background: #F5EFE0;
+  --foreground: #2C1810;
+  --primary: #A0522D;
+  --primary-dark: #7A3E22;
+  --accent: #D4A843;
+  --navy: #3B2718;
+  --sand: #E8DCC8;
+  --muted: #7A6B5D;
+  --card: #FAF6EE;
+  --stroke: #D4C4A8;
+  --surface: rgba(250, 246, 238, 0.78);
+
+  /* Desert Diamond Explicit Name Tokens used in components */
+  --burnt-sienna: #A0522D;
+  --golden-sand: #D4A843;
+  --walnut: #3B2718;
+  --warm-cream: #F5EFE0;
+  --espresso: #2C1810;
+  --sage-green: #6B8F5E;
+  --copper: #B87333;
+  --parchment: #FAF6EE;
+  --clay-mist: #E8DCC8;
   --page-bg:
-    radial-gradient(980px 620px at 8% -8%, rgba(246, 171, 94, 0.35) 0%, transparent 60%),
-    radial-gradient(860px 540px at 96% 0%, rgba(57, 126, 204, 0.23) 0%, transparent 58%),
-    linear-gradient(180deg, #f8f3e6 0%, #f0e7d7 100%);
+    radial-gradient(980px 620px at 8% -8%, rgba(160, 82, 45, 0.18) 0%, transparent 70%),
+    radial-gradient(860px 540px at 96% 0%, rgba(212, 168, 67, 0.14) 0%, transparent 70%),
+    radial-gradient(600px 600px at 50% 80%, rgba(107, 143, 94, 0.08) 0%, transparent 70%),
+    linear-gradient(180deg, #FAF6EE 0%, #F5EFE0 100%);
   --page-bg-mobile:
-    radial-gradient(780px 460px at 5% -5%, rgba(246, 171, 94, 0.28) 0%, transparent 58%),
-    radial-gradient(640px 420px at 95% -8%, rgba(57, 126, 204, 0.2) 0%, transparent 56%),
-    linear-gradient(180deg, #f8f2e5 0%, #efe4d2 100%);
+    radial-gradient(780px 460px at 5% -5%, rgba(160, 82, 45, 0.18) 0%, transparent 70%),
+    radial-gradient(640px 420px at 95% -8%, rgba(212, 168, 67, 0.14) 0%, transparent 70%),
+    radial-gradient(400px 400px at 50% 80%, rgba(107, 143, 94, 0.08) 0%, transparent 70%),
+    linear-gradient(180deg, #FAF6EE 0%, #F5EFE0 100%);
 }
 
 @theme inline {
@@ -37,7 +50,7 @@ body {
 
 html {
   background: var(--page-bg);
-  background-color: #f0e7d7;
+  background-color: var(--background);
 }
 
 body {
@@ -45,8 +58,21 @@ body {
   margin: 0;
   background: transparent;
   color: var(--foreground);
-  font-family: var(--font-sora, "Avenir Next"), system-ui, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   text-rendering: optimizeLegibility;
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' fill='%23A0522D' opacity='0.1'/%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  z-index: 50;
 }
 
 a {
@@ -54,7 +80,7 @@ a {
 }
 
 ::selection {
-  background: rgba(15, 141, 99, 0.25);
+  background: rgba(160, 82, 45, 0.25);
   color: var(--foreground);
 }
 
@@ -63,9 +89,12 @@ a {
 }
 
 .glass {
-  background: linear-gradient(168deg, rgba(255, 250, 239, 0.86) 0%, rgba(255, 247, 227, 0.7) 100%);
-  border: 1px solid color-mix(in srgb, var(--stroke) 86%, white 14%);
+  background: linear-gradient(135deg,
+      rgba(250, 246, 238, 0.72) 0%,
+      rgba(245, 239, 224, 0.48) 100%);
+  border: 1px solid rgba(212, 168, 67, 0.18);
   backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .shadow-soft {
@@ -94,7 +123,7 @@ a {
 
 .form-control:focus {
   border-color: color-mix(in srgb, var(--primary) 74%, white 26%);
-  box-shadow: 0 0 0 3px rgba(15, 141, 99, 0.16);
+  box-shadow: 0 0 0 3px rgba(160, 82, 45, 0.16);
   background: rgba(255, 255, 255, 0.96);
 }
 
@@ -129,6 +158,7 @@ select:not([multiple])::-ms-expand {
 }
 
 @media (max-width: 860px) {
+
   html,
   body {
     overscroll-behavior-y: none;
@@ -136,7 +166,7 @@ select:not([multiple])::-ms-expand {
 
   html {
     background: var(--page-bg-mobile);
-    background-color: #efe4d2;
+    background-color: var(--background);
   }
 
   body {
