@@ -14,16 +14,16 @@ export default function nextConfig(phase: string): NextConfig {
           destination: "/prelaunch",
           permanent: false,
         },
-        {
-          source: "/waitlist",
+        ...['/account', '/dashboard', '/evaluations', '/goals', '/login', '/plans', '/predict', '/signup', '/waitlist'].map((path) => ({
+          source: path,
           destination: "/prelaunch",
-          permanent: true,
-        },
-        {
-          source: "/waitlist/:path+",
+          permanent: false,
+        })),
+        ...['/account/:path*', '/dashboard/:path*', '/evaluations/:path*', '/goals/:path*', '/waitlist/:path*'].map((path) => ({
+          source: path,
           destination: "/prelaunch",
-          permanent: true,
-        },
+          permanent: false,
+        })),
       ];
     },
     experimental: {
