@@ -299,9 +299,9 @@ export default function Home() {
         <section className="py-32 px-6 bg-[var(--walnut)] relative overflow-hidden">
           <div className="max-w-4xl mx-auto text-center relative z-10">
             <FadeOnScroll>
-              <p className="text-lg text-[var(--warm-cream)]/60 mb-6 font-medium">Most recruiting tools focus on: <strong className="text-white">exposure. Showcases. Hype.</strong></p>
+              <p className="text-lg text-[var(--warm-cream)]/60 mb-6 font-medium">Most recruiting tools focus on: <strong className="text-white">Exposure. Showcases. Hype.</strong></p>
               <h2 className="display-font text-3xl md:text-5xl text-white font-bold leading-tight">
-                We focus on: <span className="text-[var(--golden-sand)] italic font-medium">clarity.</span><br />
+                We focus on: <span className="text-[var(--golden-sand)] italic font-medium">Speed. Clarity.</span><br />
                 A real projection. A plan that makes sense.
               </h2>
               <p className="text-xl text-[var(--warm-cream)]/80 italic mt-12 font-medium relative inline-block">

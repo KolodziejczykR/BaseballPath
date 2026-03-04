@@ -73,9 +73,10 @@ export default function WaitlistPage() {
 
       <main className="mx-auto max-w-5xl px-6 pt-6 pb-12 md:pb-20">
         {/* Hero — Value Prop */}
-        <div className="text-center max-w-2xl mx-auto mb-12 md:mb-16">
+        <div className="text-center max-w-4xl mx-auto mb-12 md:mb-16">
           <h1 className="display-font text-4xl md:text-5xl lg:text-6xl leading-tight font-bold text-[var(--espresso)]">
-            Stop guessing. Know your best-fit schools.
+            Stop guessing.<br />
+            <span className="text-[var(--burnt-sienna)] italic font-semibold">Know your best-fit schools.</span>
           </h1>
           <p className="mt-5 text-md text-[var(--muted)] max-w-xl mx-auto leading-relaxed">
             Coaches recruit with data. Families usually recruit with guesswork.
@@ -101,7 +102,7 @@ export default function WaitlistPage() {
               </p>
             </div>
             <a
-              href="https://www.surveymonkey.com/r/S55JWJM"
+              href="https://forms.gle/dHKBJCTcMPzAAk3J8"
               target="_blank"
               rel="noopener noreferrer"
               className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-[var(--primary)] px-8 py-3.5 text-base font-semibold text-white shadow-strong transition-all duration-200 hover:scale-[1.03] hover:brightness-110 active:scale-[0.98]"
@@ -120,7 +121,7 @@ export default function WaitlistPage() {
                 Join the waitlist
               </h2>
               <p className="mt-2 text-[var(--muted)]">
-                Be first in line when we launch in May 2026.
+                Be first in line when we launch in May!
               </p>
               <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[var(--accent)]/15 border border-[var(--accent)]/25 px-4 py-2">
                 <svg className="w-4 h-4 text-[var(--accent)]" fill="currentColor" viewBox="0 0 24 24">

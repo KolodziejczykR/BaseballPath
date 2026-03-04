@@ -10,6 +10,11 @@ export default function nextConfig(phase: string): NextConfig {
     async redirects() {
       return [
         {
+          source: "/",
+          destination: "/prelaunch",
+          permanent: false,
+        },
+        {
           source: "/waitlist",
           destination: "/prelaunch",
           permanent: true,

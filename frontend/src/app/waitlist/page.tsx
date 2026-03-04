@@ -120,7 +120,7 @@ export default function WaitlistPage() {
                 Join the waitlist
               </h2>
               <p className="mt-2 text-[var(--muted)]">
-                Be first in line when we launch in May 2026.
+                Be first in line when we launch before Summer 2026!
               </p>
               <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[var(--accent)]/15 border border-[var(--accent)]/25 px-4 py-2">
                 <svg className="w-4 h-4 text-[var(--accent)]" fill="currentColor" viewBox="0 0 24 24">
