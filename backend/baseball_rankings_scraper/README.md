@@ -1,6 +1,6 @@
 # Baseball Rankings Scraper
 
-A comprehensive scraping system for college baseball rankings from Massey Ratings, designed to enhance school strength analysis and playing time calculations in the BaseballPATH platform.
+A comprehensive scraping system for college baseball rankings from Massey Ratings, designed to enhance school strength analysis and playing time calculations in the BaseballPath platform.
 
 ## Overview
 
@@ -309,4 +309,4 @@ scraper = MasseyBaseballScraper(delay=5.0)  # Slower for debugging
 
 ---
 
-**Note**: This scraper is designed for educational and research purposes as part of the BaseballPATH platform. Please respect the source website's terms of service and rate limits.
+**Note**: This scraper is designed for educational and research purposes as part of the BaseballPath platform. Please respect the source website's terms of service and rate limits.

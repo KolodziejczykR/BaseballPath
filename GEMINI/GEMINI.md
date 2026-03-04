@@ -1,4 +1,4 @@
-# BaseballPATH — Landing Page & Marketing Pages Builder
+# BaseballPath — Landing Page & Marketing Pages Builder
 
 ## Role
 
@@ -8,7 +8,7 @@ Act as a World-Class Senior Creative Technologist and Lead Frontend Engineer. Yo
 
 ## Brand Identity
 
-**BaseballPATH** — AI-powered recruiting projections that show high school baseball players exactly where they fit at the college level.
+**BaseballPath** — AI-powered recruiting projections that show high school baseball players exactly where they fit at the college level.
 
 - **Tagline:** "Stop guessing. Know your best-fit schools."
 - **Voice:** Confident, honest, no fluff. Not opinions — outcomes.
@@ -121,7 +121,7 @@ The existing `.glass` utility rethemed for warm tones:
 
 ---
 
-## Component Architecture — BaseballPATH Landing Page
+## Component Architecture — BaseballPath Landing Page
 
 ### A. NAVBAR — "The Floating Island"
 
@@ -130,7 +130,7 @@ A `fixed` pill-shaped container, horizontally centered.
 **Morphing Logic:** Transparent with warm cream text at hero top. Transitions to `bg-[var(--warm-cream)]/60 backdrop-blur-xl` with espresso-colored text and a subtle `border border-[var(--clay-mist)]` when scrolled past the hero. Use `IntersectionObserver` or `ScrollTrigger`.
 
 **Contents:**
-- Logo: BaseballPATH wordmark (Sora, `text-sm uppercase tracking-[0.3em]`)
+- Logo: BaseballPath wordmark (Sora, `text-sm uppercase tracking-[0.3em]`)
 - Nav links: How It Works, Features, Pricing
 - CTA button: "Get Your Projection" — `bg-[var(--burnt-sienna)] text-white rounded-full`
 
@@ -149,7 +149,7 @@ A `fixed` pill-shaped container, horizontally centered.
 - Headline (Fraunces serif, `text-5xl md:text-7xl font-bold text-[var(--espresso)]`):
   > "Stop guessing. Know your best-fit schools."
 - Subheadline (`text-lg text-[var(--muted)] max-w-md mt-4`):
-  > "BaseballPATH uses real D1–D3 player data to project where you'd compete — and what to improve to get there."
+  > "BaseballPath uses real D1–D3 player data to project where you'd compete — and what to improve to get there."
 - Three bullet proof points (`mt-6 space-y-3`), each with a sage green checkmark icon:
   > - "Division-level projections grounded in 49,000+ college profiles"
   > - "Personalized improvement goals based on your biggest leverage stats"
@@ -231,7 +231,7 @@ Full-width section with `bg-[var(--walnut)]` background. Warm noise texture over
 Two-column section on warm cream background.
 
 **Left — Origin story snippet:**
-> "BaseballPATH was built by a former recruit who went through the process — and saw how broken it was. No clear projections. No data. Just opinions."
+> "BaseballPath was built by a former recruit who went through the process — and saw how broken it was. No clear projections. No data. Just opinions."
 
 **Right — Data credibility metrics** in a 2×2 grid, each in a `glass rounded-2xl` card:
 - "49,000+" — "College player profiles in our dataset"
@@ -275,19 +275,19 @@ Full-width warm section with subtle radial gradient.
 - Headline (Fraunces): "Your projection is waiting."
 - Subtext: "Two minutes. Real data. No credit card."
 - CTA: "Check my projection →" — large `bg-[var(--burnt-sienna)] text-white rounded-full` button
-- Below CTA: "Join 200+ recruits already using BaseballPATH" in muted text
+- Below CTA: "Join 200+ recruits already using BaseballPath" in muted text
 
 ### I. FOOTER
 
 `bg-[var(--espresso)] rounded-t-[4rem]` with warm cream text.
 
 **Grid layout:**
-- Column 1: BaseballPATH wordmark + tagline "AI-powered recruiting clarity."
+- Column 1: BaseballPath wordmark + tagline "AI-powered recruiting clarity."
 - Column 2: Product links — How It Works, Features, Pricing, Player Card
 - Column 3: Company — About, Privacy, Terms
 - Column 4: Connect — Twitter/X, Instagram
 
-**Bottom bar:** "© 2026 BaseballPATH. All rights reserved." + "System Operational" status indicator with pulsing sage green dot and monospace label.
+**Bottom bar:** "© 2026 BaseballPath. All rights reserved." + "System Operational" status indicator with pulsing sage green dot and monospace label.
 
 ---
 
@@ -303,7 +303,7 @@ Use these plug-and-play statements throughout the landing page and marketing mat
 - "Everything a recruit actually needs."
 
 ### Subheadlines / Supporting
-- "BaseballPATH uses real D1–D3 player data to project where you'd compete — and what to improve to get there."
+- "BaseballPath uses real D1–D3 player data to project where you'd compete — and what to improve to get there."
 - "Not opinions. Not rankings. Outcomes."
 - "Built by a recruit who went through the process — and saw how broken it was."
 - "Two minutes. Real data. No credit card."

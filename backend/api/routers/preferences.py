@@ -1,5 +1,5 @@
 """
-School Preferences and Filtering Router for BaseballPATH
+School Preferences and Filtering Router for BaseballPath
 API endpoints for user preference-based school filtering with two-tier system
 """
 

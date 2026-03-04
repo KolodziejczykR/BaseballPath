@@ -1,6 +1,6 @@
 # Technical Design Document: Interactive Player Card & Goals Tracking
 
-> This document is a comprehensive implementation guide (mega-prompt) for an LLM to implement both features end-to-end. It contains exact file paths, code patterns, SQL, API contracts, and component structures — everything needed to build both features from scratch within the existing BaseballPATH codebase.
+> This document is a comprehensive implementation guide (mega-prompt) for an LLM to implement both features end-to-end. It contains exact file paths, code patterns, SQL, API contracts, and component structures — everything needed to build both features from scratch within the existing BaseballPath codebase.
 
 ---
 

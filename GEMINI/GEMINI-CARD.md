@@ -1,20 +1,20 @@
-# BaseballPATH — Player Card Component Builder
+# BaseballPath — Player Card Component Builder
 
 ## Role
 
-Act as a World-Class Senior Creative Technologist specializing in **collectible card UI**. You build Player Cards that feel like physical artifacts — tactile, weighted, and worth sharing. The card is the most viral piece of BaseballPATH: it's what gets texted to coaches, posted on Instagram, and pinned to Twitter bios. Every pixel must earn its place.
+Act as a World-Class Senior Creative Technologist specializing in **collectible card UI**. You build Player Cards that feel like physical artifacts — tactile, weighted, and worth sharing. The card is the most viral piece of BaseballPath: it's what gets texted to coaches, posted on Instagram, and pinned to Twitter bios. Every pixel must earn its place.
 
 ---
 
 ## Design System Reference
 
-This file extends the BaseballPATH design system defined in `GEMINI.md`. All color tokens and typography from that file apply here.
+This file extends the BaseballPath design system defined in `GEMINI.md`. All color tokens and typography from that file apply here.
 
 ---
 
 ## Visual Direction — "Hybrid Matte + Holo"
 
-The BaseballPATH Player Card uses a **warm matte base** with a **subtle holographic shimmer on hover**. This is NOT a flashy rainbow card — it's a premium, confident artifact that catches light when you interact with it.
+The BaseballPath Player Card uses a **warm matte base** with a **subtle holographic shimmer on hover**. This is NOT a flashy rainbow card — it's a premium, confident artifact that catches light when you interact with it.
 
 ### Matte Base
 
@@ -113,7 +113,7 @@ The front is the "at a glance" face — photo, name, position, key stats.
 │  │ STAT  VAL│  │ STAT  VAL│        │
 │  └──────────┘  └──────────┘        │
 │                                     │
-│  ─── BaseballPATH ───               │  ← Bottom branding
+│  ─── BaseballPath ───               │  ← Bottom branding
 └─────────────────────────────────────┘
 ```
 
@@ -149,7 +149,7 @@ The front is the "at a glance" face — photo, name, position, key stats.
 
 **Branding Footer:**
 - `text-[10px] uppercase tracking-[0.34em] text-[var(--golden-sand)]/50`
-- Centered at bottom: "BaseballPATH"
+- Centered at bottom: "BaseballPath"
 
 **Border Treatment:**
 - Outer border: `border border-[var(--copper)]/25`
@@ -183,7 +183,7 @@ The back is the "deep dive" face — projection, video links, preferences, share
 │  ─────────────────────────────────  │
 │  baseballpath.com/p/jsmith26        │  ← Share URL
 │                                     │
-│  ─── BaseballPATH ───               │  ← Bottom branding
+│  ─── BaseballPath ───               │  ← Bottom branding
 └─────────────────────────────────────┘
 ```
 
@@ -295,7 +295,7 @@ The card can be exported as a static PNG for sharing on social media.
 - Output: 1200 × 675px PNG
 - Card rendered at ~60% height, vertically centered
 - Background: `#2C1810` with subtle radial gradient warmth
-- Optional: BaseballPATH watermark in bottom-right corner (`text-[10px] text-white/20`)
+- Optional: BaseballPath watermark in bottom-right corner (`text-[10px] text-white/20`)
 
 **Export behavior:**
 - Holographic effect is **OFF** in exports (static matte only)
@@ -307,10 +307,10 @@ The card can be exported as a static PNG for sharing on social media.
 For social media link previews when sharing `/p/[slug]` URLs:
 
 - **Dimensions:** 1200 × 630px (standard OG image)
-- **Layout:** Card front rendered at ~70% height on left, player name + division + "View on BaseballPATH" text on right
+- **Layout:** Card front rendered at ~70% height on left, player name + division + "View on BaseballPath" text on right
 - **Background:** Deep espresso with warm radial gradient
 - **Format:** PNG, generated server-side or via edge function
-- **Meta tags:** Set `og:image`, `og:title` (player name + position), `og:description` ("View {name}'s recruiting projection on BaseballPATH")
+- **Meta tags:** Set `og:image`, `og:title` (player name + position), `og:description` ("View {name}'s recruiting projection on BaseballPath")
 
 ---
 
@@ -327,9 +327,9 @@ When a shared card link is opened:
     #1A0F08;
   ```
 - Card: `PlayerCardContainer` centered, interactive (tilt + holo + flip all active)
-- Below card: "Build your own Player Card on BaseballPATH" CTA
+- Below card: "Build your own Player Card on BaseballPath" CTA
   - `rounded-full bg-[var(--burnt-sienna)] text-white px-6 py-3 mt-8`
-- Bottom: BaseballPATH wordmark in `text-[var(--golden-sand)]/30`
+- Bottom: BaseballPath wordmark in `text-[var(--golden-sand)]/30`
 
 **Click tracking:** Fire-and-forget `POST /p/{slug}/click` on page load with platform detection.
 

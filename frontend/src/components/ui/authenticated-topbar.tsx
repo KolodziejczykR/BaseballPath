@@ -27,7 +27,6 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/predict", label: "Predict" },
   { href: "/evaluations", label: "Evaluations" },
-  { href: "/card", label: "Player Card" },
   { href: "/goals", label: "Goals" },
   { href: "/plans", label: "Plans" },
   { href: "/account", label: "Account" },
@@ -96,9 +95,7 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
     <header className="sticky top-0 z-40 border-b border-[var(--stroke)]/30 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link href="/dashboard" className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[var(--navy)] text-sm font-bold tracking-wide text-[var(--warm-cream)]">
-            BP
-          </div>
+          <img src="/BP-brown-logo-circle.png" alt="BaseballPath" className="h-11 w-11" />
           <div className="leading-tight">
             <p className="text-xs uppercase tracking-[0.34em] text-[var(--muted)]">BaseballPath</p>
             <p className="text-base font-semibold">Recruiting Console</p>

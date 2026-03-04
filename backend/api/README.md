@@ -61,6 +61,21 @@ This folder now contains production auth, billing, and persisted evaluation orch
 For detailed billing/plan configuration changes, read:
 - `services/PAYMENT_PLANS.md`
 
+### Waitlist (Current)
+
+- Router: `routers/waitlist.py`
+- Endpoints:
+  - `POST /waitlist/join`
+  - `GET /waitlist/health`
+
+Current waitlist logic is intentionally simple:
+1. Check if `email` already exists.
+2. Insert a new record into `public.waitlist`.
+3. Return success with inserted `id`.
+
+Frontend remains on `/prelaunch` and shows success inline after `POST /waitlist/join`.
+There is no in-house multi-step verification/survey flow in the current implementation.
+
 ## How It Works End-to-End
 
 1. Frontend user signs in via Supabase Auth.

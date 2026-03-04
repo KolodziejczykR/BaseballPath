@@ -133,6 +133,34 @@ def _extract_top_schools(preferences_response: Dict[str, Any], limit: int = 3) -
     return schools[:limit]
 
 
+def _resolve_identity_input(
+    *,
+    incoming_identity: Dict[str, Any],
+    profile: Dict[str, Any],
+    fallback_email: Optional[str],
+) -> Dict[str, Any]:
+    resolved = dict(incoming_identity or {})
+
+    full_name = profile.get("full_name") or resolved.get("name")
+    if not full_name and fallback_email:
+        full_name = fallback_email.split("@")[0]
+
+    state = profile.get("state") or resolved.get("state")
+    primary_position = profile.get("primary_position") or resolved.get("primary_position")
+    graduating_class = profile.get("grad_year") or resolved.get("graduating_class")
+
+    if full_name:
+        resolved["name"] = str(full_name)
+    if state:
+        resolved["state"] = str(state).upper()
+    if primary_position:
+        resolved["primary_position"] = str(primary_position).upper()
+    if graduating_class is not None:
+        resolved["graduating_class"] = graduating_class
+
+    return resolved
+
+
 def _persist_evaluation_run(
     *,
     user_id: str,
@@ -183,7 +211,12 @@ async def run_evaluation(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Dict[str, Any]:
     # Ensure profile exists for every authenticated user
-    _ = get_profile(current_user.user_id, current_user.email)
+    profile = get_profile(current_user.user_id, current_user.email)
+    payload.identity_input = _resolve_identity_input(
+        incoming_identity=payload.identity_input,
+        profile=profile,
+        fallback_email=current_user.email,
+    )
 
     effective_plan = get_effective_plan(current_user.user_id)
     usage_before = enforce_evaluation_quota(current_user.user_id, effective_plan)
@@ -200,6 +233,17 @@ async def run_evaluation(
     prediction_response = _run_prediction(payload.position_endpoint, payload.prediction_payload)
 
     preferences_payload = dict(payload.preferences_payload)
+    user_preferences = dict(preferences_payload.get("user_preferences") or {})
+    state_value = payload.identity_input.get("state")
+    graduating_class = payload.identity_input.get("graduating_class")
+    if state_value:
+        user_preferences["user_state"] = state_value
+    if graduating_class not in (None, ""):
+        try:
+            user_preferences["hs_graduation_year"] = int(graduating_class)
+        except (TypeError, ValueError):
+            pass
+    preferences_payload["user_preferences"] = user_preferences
     preferences_payload["ml_results"] = _ml_results_from_prediction(prediction_response)
     if payload.use_llm_reasoning:
         preferences_payload["use_llm_reasoning"] = True

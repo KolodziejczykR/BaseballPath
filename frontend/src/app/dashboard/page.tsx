@@ -36,14 +36,6 @@ type EvaluationListResponse = {
   items: EvaluationRecord[];
 };
 
-type CardSummary = {
-  display_name?: string;
-  primary_position?: string;
-  prediction_level?: string;
-  d1_probability?: number | null;
-  photo_url?: string | null;
-};
-
 type GoalSummary = {
   id: string;
   summary?: {
@@ -84,7 +76,6 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [account, setAccount] = useState<AccountResponse | null>(null);
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>([]);
-  const [card, setCard] = useState<CardSummary | null>(null);
   const [goals, setGoals] = useState<GoalSummary[]>([]);
 
   useEffect(() => {
@@ -100,10 +91,9 @@ export default function DashboardPage() {
           Authorization: `Bearer ${accessToken}`,
         };
 
-        const [accountResp, evaluationsResp, cardResp, goalsResp] = await Promise.all([
+        const [accountResp, evaluationsResp, goalsResp] = await Promise.all([
           fetch(`${API_BASE_URL}/account/me`, { headers }),
           fetch(`${API_BASE_URL}/evaluations?limit=10&offset=0`, { headers }),
-          fetch(`${API_BASE_URL}/cards/me`, { headers }),
           fetch(`${API_BASE_URL}/goals`, { headers }),
         ]);
 
@@ -133,20 +123,9 @@ export default function DashboardPage() {
           );
         }
 
-        let cardData: CardSummary | null = null;
-        if (cardResp.ok) {
-          cardData = (await cardResp.json()) as CardSummary;
-        } else {
-          const fallback = (await cardResp.json()) as { detail?: string };
-          if (cardResp.status !== 404) {
-            throw new Error(fallback.detail || "Failed to load player card.");
-          }
-        }
-
         if (!mounted) return;
         setAccount(accountData as AccountResponse);
         setEvaluations(((evaluationsData as EvaluationListResponse).items || []) as EvaluationRecord[]);
-        setCard(cardData);
         setGoals((goalsData as GoalsListResponse).items || []);
       } catch (loadError) {
         if (!mounted) return;
@@ -335,48 +314,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <section className="mt-8 grid gap-6 md:grid-cols-2">
-            <div className="glass rounded-2xl p-6 shadow-soft">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Player card preview</p>
-                <Link
-                  href="/card"
-                  className="rounded-full border border-[var(--stroke)] bg-white/80 px-3 py-1 text-xs font-semibold text-[var(--navy)]"
-                >
-                  {card ? "Share your card" : "Create card"}
-                </Link>
-              </div>
-
-              {card ? (
-                <div className="mt-4 rounded-2xl border border-[var(--stroke)] bg-white/75 p-4">
-                  <div className="flex items-center gap-3">
-                    {card.photo_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={card.photo_url} alt={card.display_name || "Player card"} className="h-16 w-16 rounded-xl object-cover" />
-                    ) : (
-                      <div className="grid h-16 w-16 place-items-center rounded-xl bg-[var(--sand)] text-xs font-semibold text-[var(--navy)]">
-                        BP
-                      </div>
-                    )}
-                    <div>
-                      <p className="text-sm font-semibold text-[var(--navy)]">{card.display_name || "Player Card"}</p>
-                      <p className="text-xs text-[var(--muted)]">
-                        {card.primary_position || "Position"} · {card.prediction_level || "Prospect"}
-                      </p>
-                      <p className="text-xs text-[var(--muted)]">
-                        D1 probability: {typeof card.d1_probability === "number" ? `${(card.d1_probability * 100).toFixed(1)}%` : "n/a"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4 rounded-2xl border border-[var(--stroke)] bg-white/75 p-4">
-                  <p className="text-sm font-semibold text-[var(--navy)]">No player card yet.</p>
-                  <p className="mt-1 text-sm text-[var(--muted)]">Create your shareable card from your latest evaluation.</p>
-                </div>
-              )}
-            </div>
-
+          <section className="mt-8">
             <div className="glass rounded-2xl p-6 shadow-soft">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Goals snapshot</p>

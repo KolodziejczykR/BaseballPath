@@ -1,5 +1,5 @@
 """
-College Scoreboard API Retrieval for BaseballPATH
+College Scoreboard API Retrieval for BaseballPath
 Retrieves school statistics from the U.S. Department of Education's College Scorecard API
 """
 

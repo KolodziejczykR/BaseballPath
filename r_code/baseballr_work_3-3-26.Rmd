@@ -1,0 +1,57 @@
+---
+title: "BaseballR Roster Implememntation"
+author: "Ryan Kolodziejczyk"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+install.packages('baseballr')
+library('baseballr')
+```
+
+## Roster Implementation
+
+I will be trying to gather roster data for all teams in the NCAA D1-3.I will be using the baseballr package.
+
+```{r loading all teams}
+df = try(load_ncaa_baseball_teams())
+```
+
+Looking into which teams we get per division
+
+```{r team distribution + infomration}
+# Get all unique team names
+unique_team_names <- unique(df$team_name)
+
+# Number of unique team names
+num_unique_team_names <- length(unique_team_names)
+
+# Number of unique team names per division
+unique_team_names_per_division <- aggregate(team_name ~ division, data = df, FUN = function(x) length(unique(x)))
+
+# Show results
+unique_team_names
+num_unique_team_names
+unique_team_names_per_division
+```
+
+Testing out getting a specific roster with the function, see if it works as it didn't on browser
+```{r roster method test}
+# testing getting Union(NY)'s roster from last year
+# Find Union (NY)'s team value (team_id)
+union_ny_row <- df[df$team_name == "Union (NY)", ]
+union_ny_team_id <- union_ny_row$team_id
+
+# Display the team_id
+union_id = unique(union_ny_team_id)
+union_id
+
+ncaa_roster(team_id = union_id, year = 2025)
+
+# trying Duke, a bigger school which may have roster data?
+ncaa_roster(team_id = 821, year = 2025)
+```
+

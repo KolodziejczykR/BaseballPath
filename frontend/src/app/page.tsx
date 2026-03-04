@@ -8,8 +8,6 @@ import {
   CheckCircle2,
   BarChart3,
   Target,
-  Share2,
-  MousePointer2,
   Menu,
   X
 } from "lucide-react";
@@ -143,7 +141,7 @@ export default function Home() {
         <section ref={heroRef} className="min-h-[100dvh] flex items-center relative pt-32 pb-16 px-6">
           <div className="max-w-6xl mx-auto w-full grid md:grid-cols-[1.1fr_0.9fr] gap-12 items-center">
             <div>
-              <p className="hero-stagger text-xs uppercase tracking-[0.2em] text-[var(--burnt-sienna)] font-semibold">AI-Powered Recruiting Projections</p>
+              <p className="hero-stagger text-xs uppercase tracking-[0.2em] text-[var(--burnt-sienna)] font-semibold">Your AI Recruitment Assistant</p>
               <h1 className="hero-stagger display-font text-5xl md:text-7xl font-bold text-[var(--espresso)] mt-4 leading-[1.05]">
                 Stop guessing.<br />
                 <span className="text-[var(--burnt-sienna)] italic font-semibold">Know your best-fit schools.</span>
@@ -154,8 +152,7 @@ export default function Home() {
               <ul className="hero-stagger mt-8 space-y-3">
                 {[
                   <span key="1"><strong className="text-[var(--espresso)] font-bold">Division-level projections</strong> grounded in 49,000+ college profiles</span>,
-                  <span key="2"><strong className="text-[var(--espresso)] font-bold">Personalized improvement goals</strong> based on your biggest leverage stats</span>,
-                  <span key="3">A shareable <strong className="text-[var(--espresso)] font-bold">Player Card</strong> that puts your projection in coaches&apos; hands</span>
+                  <span key="2"><strong className="text-[var(--espresso)] font-bold">Personalized improvement goals</strong> based on your biggest leverage stats</span>
                 ].map((pt, i) => (
                   <li key={i} className="flex gap-3 items-start text-[var(--espresso)]/80 text-sm md:text-base font-medium">
                     <CheckCircle2 className="w-5 h-5 text-[var(--sage-green)] shrink-0 mt-0.5" />
@@ -185,7 +182,7 @@ export default function Home() {
 
               <div>
                 <div className="flex justify-between items-start mb-6">
-                  <div className="w-12 h-12 rounded-2xl bg-[var(--walnut)] flex items-center justify-center text-[var(--warm-cream)] text-sm font-bold shadow-md">BP</div>
+                  <img src="/BP-brown-logo-circle.png" alt="BaseballPath" className="w-12 h-12" />
                   <div className="bg-[var(--sage-green)]/10 text-[var(--sage-green)] px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider backdrop-blur-md">Projected</div>
                 </div>
 
@@ -220,10 +217,10 @@ export default function Home() {
         <section id="how-it-works" className="py-24 px-6 max-w-6xl mx-auto">
           <FadeOnScroll>
             <h2 className="display-font text-3xl md:text-4xl text-center text-[var(--espresso)] font-bold mb-16">
-              From first stat to first call &mdash; <span className="text-[var(--burnt-sienna)] italic">in four steps.</span>
+              From first stat to first call &mdash; <span className="text-[var(--burnt-sienna)] italic">in three steps.</span>
             </h2>
           </FadeOnScroll>
-          <div className="grid md:grid-cols-4 gap-6">
+          <div className="grid md:grid-cols-3 gap-6">
             {[
               {
                 num: "01",
@@ -242,12 +239,6 @@ export default function Home() {
                 icon: CheckCircle2,
                 title: "Follow your goals",
                 desc: "See which stats give you the most leverage — and track your progress toward them."
-              },
-              {
-                num: "04",
-                icon: Share2,
-                title: "Share your card",
-                desc: "Generate a Player Card with your projection, stats, and video links. Send it to coaches."
               }
             ].map((step, i) => (
               <FadeOnScroll key={i} delayMs={i * 150}>
@@ -271,7 +262,7 @@ export default function Home() {
               Everything a recruit actually needs.
             </h2>
           </FadeOnScroll>
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 gap-6">
 
             <FadeOnScroll delayMs={0}>
               <div className="glass rounded-[2rem] p-6 shadow-soft h-full flex flex-col justify-between">
@@ -301,20 +292,6 @@ export default function Home() {
               </div>
             </FadeOnScroll>
 
-            <FadeOnScroll delayMs={300}>
-              <div className="glass rounded-[2rem] p-6 shadow-soft h-full flex flex-col justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-[var(--espresso)] mb-2">Get Seen by Coaches</h3>
-                  <p className="text-sm text-[var(--muted)] leading-relaxed mb-8">
-                    One link. Your projection, your stats, your video. Built to send to coaches — not sit in a spreadsheet.
-                  </p>
-                </div>
-                <div className="bg-[var(--clay-mist)]/30 rounded-2xl p-4 border border-[var(--stroke)] h-44 relative overflow-hidden flex items-center justify-center">
-                  <CursorProtocol />
-                </div>
-              </div>
-            </FadeOnScroll>
-
           </div>
         </section>
 
@@ -322,11 +299,10 @@ export default function Home() {
         <section className="py-32 px-6 bg-[var(--walnut)] relative overflow-hidden">
           <div className="max-w-4xl mx-auto text-center relative z-10">
             <FadeOnScroll>
-              <p className="text-lg text-[var(--warm-cream)]/60 mb-6 font-medium">Most recruiting tools focus on: <strong className="text-white">exposure. Showcases. Hype.</strong></p>
+              <p className="text-lg text-[var(--warm-cream)]/60 mb-6 font-medium">Most recruiting tools focus on: <strong className="text-white">Exposure. Showcases. Hype.</strong></p>
               <h2 className="display-font text-3xl md:text-5xl text-white font-bold leading-tight">
-                We focus on: <span className="text-[var(--golden-sand)] italic font-medium">clarity.</span><br />
-                A real projection. A plan that makes sense. <br className="hidden md:block" />
-                <span className="text-[var(--golden-sand)] italic text-4xl md:text-5xl mt-2 inline-block">A card that speaks for itself.</span>
+                We focus on: <span className="text-[var(--golden-sand)] italic font-medium">Speed. Clarity.</span><br />
+                A real projection. A plan that makes sense.
               </h2>
               <p className="text-xl text-[var(--warm-cream)]/80 italic mt-12 font-medium relative inline-block">
                 <span className="absolute -left-4 top-0 text-[var(--golden-sand)] text-3xl opacity-40">&quot;</span>
@@ -403,7 +379,6 @@ export default function Home() {
                     <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Unlimited evaluations</li>
                     <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Full school rankings</li>
                     <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Leverage-based goals</li>
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Player Card</li>
                   </ul>
                 </div>
                 <Link href="/signup?plan=pro" className="block w-full text-center bg-[var(--burnt-sienna)] text-white rounded-full px-6 py-3 font-semibold shadow-soft hover:scale-[1.03] transition-transform mt-auto">Go Pro</Link>
@@ -469,7 +444,6 @@ export default function Home() {
               <li><Link href="#how-it-works" className="hover:text-white transition-colors">How It Works</Link></li>
               <li><Link href="#features" className="hover:text-white transition-colors">Features</Link></li>
               <li><Link href="#pricing" className="hover:text-white transition-colors">Pricing</Link></li>
-              <li><Link href="/card" className="hover:text-white transition-colors">Player Card</Link></li>
             </ul>
           </div>
           <div>
@@ -580,61 +554,6 @@ function TelemetryTypewriter() {
         {TELEMETRY_MESSAGES[msgIdx].slice(0, charIdx)}
         <span className="inline-block w-2 bg-[var(--burnt-sienna)] h-3 ml-1 animate-pulse align-middle"></span>
       </div>
-    </div>
-  );
-}
-
-function CursorProtocol() {
-  const [phase, setPhase] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setPhase((p) => (p + 1) % 4);
-    }, 2000);
-    return () => clearInterval(timer);
-  }, []);
-
-  return (
-    <div className="relative w-full h-full flex items-center justify-center pointer-events-none">
-      <div className="relative w-40 h-24" style={{ perspective: "1000px" }}>
-        <div
-          className="w-full h-full relative"
-          style={{
-            transformStyle: "preserve-3d",
-            transform: phase === 2 || phase === 3 ? "rotateY(180deg)" : "rotateY(0deg)",
-            transition: "transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)"
-          }}
-        >
-          <div className="absolute inset-0 bg-white rounded-xl shadow-sm border border-[var(--stroke)] flex flex-col justify-center items-center" style={{ backfaceVisibility: "hidden" }}>
-            <div className={`bg-[var(--burnt-sienna)] text-white px-4 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 transition-transform ${phase === 1 ? "scale-95" : "scale-100"}`}>
-              <Share2 size={12} /> Share
-            </div>
-          </div>
-
-          <div className="absolute inset-0 bg-[var(--walnut)] rounded-xl shadow-sm border border-[var(--golden-sand)]/30 p-2" style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
-            <div className="flex gap-2 h-full">
-              <div className="w-8 h-full bg-gradient-to-b from-white/10 to-transparent rounded"></div>
-              <div className="flex-1 space-y-1.5 py-1">
-                <div className="h-2 bg-white/20 rounded-full w-full"></div>
-                <div className="h-2 bg-[var(--golden-sand)]/50 rounded-full w-2/3"></div>
-                {phase === 3 && (
-                  <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--sage-green)] text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap opacity-100 transition-opacity">Link copied!</div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <MousePointer2
-        className="absolute text-[var(--burnt-sienna)] drop-shadow-md w-6 h-6 z-10"
-        style={{
-          transform: phase === 0 ? "translate(30px, 30px)" : "translate(0px, 5px)",
-          opacity: phase >= 2 ? 0 : 1,
-          transition: "all 0.5s ease-out"
-        }}
-        fill="white"
-      />
     </div>
   );
 }

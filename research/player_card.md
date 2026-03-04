@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Interactive Player Card is a shareable, Topps-style baseball card with holographic effects that players can customize, download, and share on social media with trackable links back to their BaseballPATH profile. Each user gets one auto-updating card that reflects their latest evaluation data.
+The Interactive Player Card is a shareable, Topps-style baseball card with holographic effects that players can customize, download, and share on social media with trackable links back to their BaseballPath profile. Each user gets one auto-updating card that reflects their latest evaluation data.
 
 ## User Stories
 
@@ -38,7 +38,7 @@ The Interactive Player Card is a shareable, Topps-style baseball card with holog
   - **Hitter (Infielder)**: Exit Velo, Throw Velo (inf_velo), 60 Time, Height, Weight
   - **Hitter (Outfielder)**: Exit Velo, Throw Velo (of_velo), 60 Time, Height, Weight
   - **Hitter (Catcher)**: Exit Velo, Throw Velo (c_velo), Pop Time, 60 Time, Height, Weight
-- **BaseballPATH watermark**: Small "BP" logo at card bottom edge
+- **BaseballPath watermark**: Small "BP" logo at card bottom edge
 
 ### Back Face (Top to Bottom)
 - **Prediction badge**: Large centered badge ("D1 PROSPECT", "POWER 4 D1", or "NON-D1")
@@ -197,7 +197,7 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS video_links JSONB DEFAULT '[]'::js
 - Renders the card DOM to PNG at 3x resolution
 - Sizes: 1080x1512px (portrait/Instagram), 1200x675px (landscape/Twitter)
 - Holographic effect captured as static gradient (no animation)
-- Includes BaseballPATH watermark
+- Includes BaseballPath watermark
 
 ### Server-Side (OG Images)
 - Generated when a share link is created

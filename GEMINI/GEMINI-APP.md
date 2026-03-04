@@ -1,4 +1,4 @@
-# BaseballPATH — Authenticated App Pages Builder
+# BaseballPath — Authenticated App Pages Builder
 
 ## Role
 
@@ -8,7 +8,7 @@ Act as a World-Class Senior Creative Technologist and Lead Frontend Engineer spe
 
 ## Design System Reference
 
-This file extends the BaseballPATH design system defined in `GEMINI.md`. All color tokens, typography, glass morphism, and animation patterns from that file apply here.
+This file extends the BaseballPath design system defined in `GEMINI.md`. All color tokens, typography, glass morphism, and animation patterns from that file apply here.
 
 ### Quick Reference — Desert Diamond Palette
 
@@ -46,7 +46,7 @@ The app uses a sticky top navigation bar (`frontend/src/components/ui/authentica
 
 - **Position:** `sticky top-0 z-40` with `backdrop-blur-xl` and `border-b border-[var(--stroke)]/30`
 - **Logo:** `h-11 w-11 rounded-2xl bg-[var(--navy)]` pill with "BP" initials in warm cream
-- **Brand text:** "BaseballPATH" in `text-xs uppercase tracking-[0.34em] text-[var(--muted)]`, subtitle "Recruiting Console"
+- **Brand text:** "BaseballPath" in `text-xs uppercase tracking-[0.34em] text-[var(--muted)]`, subtitle "Recruiting Console"
 - **Nav items:** Dashboard, Predict, Evaluations, Player Card, Goals, Plans, Account
 - **Active state:** `text-[var(--foreground)]` with `border-b-2 border-[var(--primary)]`
 - **Inactive state:** `text-[var(--muted)]` with hover `text-[var(--foreground)]`
@@ -331,8 +331,8 @@ Public-facing, unauthenticated page showing a shared Player Card.
 **Layout:**
 - Full-screen centered, `bg-[var(--espresso)]` dark background
 - `PlayerCardContainer` centered on screen
-- "Build your own Player Card on BaseballPATH" CTA below card — `rounded-full bg-[var(--primary)] text-white`
-- BaseballPATH wordmark at bottom in warm cream
+- "Build your own Player Card on BaseballPath" CTA below card — `rounded-full bg-[var(--primary)] text-white`
+- BaseballPath wordmark at bottom in warm cream
 
 ### 10. Plans (`/plans`)
 
