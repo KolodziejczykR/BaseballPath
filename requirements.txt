@@ -23,3 +23,5 @@ psutil
 aiopg
 asyncpg
 stripe
+nanoid
+Pillow
