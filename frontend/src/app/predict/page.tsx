@@ -9,7 +9,7 @@ import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2;
 type PositionCode = "LHP" | "RHP" | "1B" | "2B" | "SS" | "3B" | "OF";
 type PositionTrack = "Pitcher" | "Infielder" | "Outfielder";
 
@@ -42,60 +42,16 @@ type EvaluationRunApiResponse = {
   };
 };
 
-const validGrades = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"];
+type AccountProfileResponse = {
+  profile?: {
+    full_name?: string | null;
+    state?: string | null;
+    grad_year?: number | null;
+    primary_position?: string | null;
+  };
+};
 
-const states = [
-  "AL",
-  "AK",
-  "AZ",
-  "AR",
-  "CA",
-  "CO",
-  "CT",
-  "DE",
-  "FL",
-  "GA",
-  "HI",
-  "ID",
-  "IL",
-  "IN",
-  "IA",
-  "KS",
-  "KY",
-  "LA",
-  "ME",
-  "MD",
-  "MA",
-  "MI",
-  "MN",
-  "MS",
-  "MO",
-  "MT",
-  "NE",
-  "NV",
-  "NH",
-  "NJ",
-  "NM",
-  "NY",
-  "NC",
-  "ND",
-  "OH",
-  "OK",
-  "OR",
-  "PA",
-  "RI",
-  "SC",
-  "SD",
-  "TN",
-  "TX",
-  "UT",
-  "VT",
-  "VA",
-  "WA",
-  "WV",
-  "WI",
-  "WY",
-];
+const validGrades = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"];
 
 const battingHandOptions: Option[] = [
   { label: "Right", value: "R" },
@@ -106,16 +62,6 @@ const battingHandOptions: Option[] = [
 const throwingHandOptions: Option[] = [
   { label: "Right", value: "R" },
   { label: "Left", value: "L" },
-];
-
-const primaryPositionOptions: Option[] = [
-  { label: "LHP", value: "LHP" },
-  { label: "RHP", value: "RHP" },
-  { label: "1B", value: "1B" },
-  { label: "2B", value: "2B" },
-  { label: "SS", value: "SS" },
-  { label: "3B", value: "3B" },
-  { label: "OF", value: "OF" },
 ];
 
 const regionPreferenceOptions: Option[] = [
@@ -494,6 +440,15 @@ function endpointForPosition(position: PositionCode): string {
   return "infielder";
 }
 
+function normalizePositionCode(value: string | null | undefined): PositionCode | "" {
+  if (!value) return "";
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "LHP" || normalized === "RHP" || normalized === "1B" || normalized === "2B" || normalized === "SS" || normalized === "3B" || normalized === "OF") {
+    return normalized;
+  }
+  return "";
+}
+
 export default function PredictPage() {
   const router = useRouter();
   const { loading: authLoading, accessToken, user } = useRequireAuth("/predict");
@@ -510,9 +465,9 @@ export default function PredictPage() {
     primaryPosition: "" as PositionCode | "",
     graduatingClass: "",
   });
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState("");
 
-  const currentYear = new Date().getFullYear();
-  const graduatingClasses = Array.from({ length: 9 }, (_, index) => String(currentYear + index));
   const positionTrack = getPositionTrack(identity.primaryPosition);
   const statsFields = useMemo(() => pickStatsFields(identity.primaryPosition), [identity.primaryPosition]);
   const pitcherRequiredFields = useMemo(
@@ -525,17 +480,19 @@ export default function PredictPage() {
   );
 
   const stepSummary = [
-    { id: 1, title: "Identity", detail: "Name, state, position, and graduating class" },
-    { id: 2, title: "Positional stats", detail: "Backend-aligned metrics for your selected position" },
-    { id: 3, title: "Preferences", detail: "Optional fit signals for school matching and ranking" },
+    { id: 1, title: "Performance stats", detail: "Enter your current measurements and on-field numbers." },
+    { id: 2, title: "School preferences", detail: "Tell us what matters most so we can personalize your results." },
   ] as const;
 
-  const identityComplete = Boolean(
-    identity.name.trim() &&
-      identity.state.trim() &&
-      identity.primaryPosition &&
-      identity.graduatingClass.trim(),
-  );
+  const missingProfileFields = useMemo(() => {
+    const missing: string[] = [];
+    if (!identity.state.trim()) missing.push("State");
+    if (!identity.primaryPosition) missing.push("Primary position");
+    if (!identity.graduatingClass.trim()) missing.push("Graduating class");
+    return missing;
+  }, [identity.state, identity.primaryPosition, identity.graduatingClass]);
+
+  const accountProfileComplete = missingProfileFields.length === 0;
 
   const statsComplete = statsFields
     .filter((field) => field.required)
@@ -547,7 +504,7 @@ export default function PredictPage() {
       field.multiple ? (multiSelectValues[field.id] || []).length > 0 : fields[field.id].trim() !== "",
     );
 
-  const canMoveForward = step === 1 ? identityComplete : step === 2 ? statsComplete : preferencesComplete;
+  const canMoveForward = step === 1 ? statsComplete : preferencesComplete;
 
   function setFieldValue(fieldId: string, value: string) {
     setFields((prev) => ({ ...prev, [fieldId]: value }));
@@ -571,8 +528,57 @@ export default function PredictPage() {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [openMultiSelectId]);
 
+  useEffect(() => {
+    if (!accessToken) return;
+    let mounted = true;
+
+    async function loadIdentityFromAccount() {
+      setProfileLoading(true);
+      setProfileError("");
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/account/me`, {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        const data = (await response.json()) as AccountProfileResponse | { detail?: string };
+        if (!response.ok) {
+          const detail =
+            typeof data === "object" && data && "detail" in data ? data.detail : "Unable to load account profile.";
+          throw new Error(detail || "Unable to load account profile.");
+        }
+
+        if (!mounted) return;
+        const profile = (data as AccountProfileResponse).profile || {};
+        const fallbackName = user?.email?.split("@")[0] || "";
+
+        setIdentity({
+          name: (profile.full_name || fallbackName).trim(),
+          state: (profile.state || "").toUpperCase(),
+          primaryPosition: normalizePositionCode(profile.primary_position),
+          graduatingClass: profile.grad_year ? String(profile.grad_year) : "",
+        });
+      } catch (error) {
+        if (!mounted) return;
+        const message = error instanceof Error ? error.message : "Unable to load account profile.";
+        setProfileError(message);
+      } finally {
+        if (!mounted) return;
+        setProfileLoading(false);
+      }
+    }
+
+    loadIdentityFromAccount();
+
+    return () => {
+      mounted = false;
+    };
+  }, [accessToken, user?.email]);
+
   function nextStep() {
-    if (!canMoveForward || step === 3) return;
+    if (!canMoveForward || step === stepSummary.length) return;
     setStep((prev) => (prev + 1) as Step);
   }
 
@@ -700,6 +706,10 @@ export default function PredictPage() {
   }
 
   async function runEvaluation() {
+    if (!accountProfileComplete) {
+      setSubmissionError("Please complete your account profile (state, graduating class, and primary position) before continuing.");
+      return;
+    }
     if (!identity.primaryPosition || !accessToken) return;
 
     setSubmitting(true);
@@ -937,11 +947,11 @@ export default function PredictPage() {
     );
   }
 
-  if (authLoading) {
+  if (authLoading || (Boolean(accessToken) && profileLoading)) {
     return (
       <div className="min-h-screen px-6 py-16">
         <div className="mx-auto max-w-3xl rounded-3xl border border-[var(--stroke)] bg-white/80 p-10 text-center">
-          <p className="text-sm text-[var(--muted)]">Checking your account session...</p>
+          <p className="text-sm text-[var(--muted)]">Loading account profile and prediction workspace...</p>
         </div>
       </div>
     );
@@ -956,11 +966,10 @@ export default function PredictPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.34em] text-[var(--muted)]">Prediction Pipeline</p>
             <h1 className="display-font mt-4 text-4xl leading-tight md:text-6xl">
-              Backend-aligned evaluation flow for real model input.
+              Find your best-fit schools in two quick steps.
             </h1>
             <p className="mt-3 max-w-2xl text-[var(--muted)]">
-              Sequence is fixed: identity, positional metrics, then grouped preferences mapped directly to the
-              prediction and filtering APIs.
+              We use your saved profile details, then guide you through your performance stats and school preferences.
             </p>
           </div>
           <Link
@@ -976,167 +985,148 @@ export default function PredictPage() {
             <section className="glass rounded-[30px] p-6 shadow-soft md:p-8">
               <div className="mb-8 rounded-2xl border border-[var(--stroke)] bg-white/70 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">Step {step} of 3</p>
+                  <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">
+                    Step {step} of {stepSummary.length}
+                  </p>
                   <p className="text-sm font-semibold text-[var(--navy)]">{stepSummary[step - 1].title}</p>
                 </div>
                 <div className="mt-3 h-2 rounded-full bg-[var(--sand)]">
                   <div
                     className="h-2 rounded-full bg-[var(--primary)] transition-all duration-500"
-                    style={{ width: `${(step / 3) * 100}%` }}
+                    style={{ width: `${(step / stepSummary.length) * 100}%` }}
                   />
                 </div>
               </div>
 
-              {step === 1 && (
-                <div className="space-y-5">
-                  <h2 className="text-2xl font-semibold">Player identity</h2>
-                  <p className="text-sm text-[var(--muted)]">
-                    Required first stage: name, state, primary position, and graduating class.
-                  </p>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium">
-                      Name
-                      <input
-                        value={identity.name}
-                        onChange={(event) => setIdentity((prev) => ({ ...prev, name: event.target.value }))}
-                        type="text"
-                        placeholder="First and last name"
-                        className="form-control"
-                      />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium">
-                      State
-                      <select
-                        value={identity.state}
-                        onChange={(event) => setIdentity((prev) => ({ ...prev, state: event.target.value }))}
-                        className="form-control"
-                      >
-                        <option value="">Select state</option>
-                        {states.map((state) => (
-                          <option key={state} value={state}>
-                            {state}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium">
-                      Primary position
-                      <select
-                        value={identity.primaryPosition}
-                        onChange={(event) =>
-                          setIdentity((prev) => ({
-                            ...prev,
-                            primaryPosition: event.target.value as PositionCode,
-                          }))
-                        }
-                        className="form-control"
-                      >
-                        <option value="">Select position</option>
-                        {primaryPositionOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium">
-                      Graduating class
-                      <select
-                        value={identity.graduatingClass}
-                        onChange={(event) =>
-                          setIdentity((prev) => ({ ...prev, graduatingClass: event.target.value }))
-                        }
-                        className="form-control"
-                      >
-                        <option value="">Select year</option>
-                        {graduatingClasses.map((year) => (
-                          <option key={year} value={year}>
-                            {year}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+              <div className="mb-6 rounded-2xl border border-[var(--stroke)] bg-white/70 p-4">
+                <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">Saved Profile Details</p>
+                <p className="mt-2 text-sm text-[var(--muted)]">
+                  These fields are pulled from your account settings and applied to every prediction automatically.
+                </p>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-[var(--stroke)] bg-white/90 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Name</p>
+                    <p className="mt-1 font-semibold text-[var(--navy)]">{identity.name || "Not set"}</p>
+                  </div>
+                  <div className="rounded-xl border border-[var(--stroke)] bg-white/90 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">State</p>
+                    <p className="mt-1 font-semibold text-[var(--navy)]">{identity.state || "Not set"}</p>
+                  </div>
+                  <div className="rounded-xl border border-[var(--stroke)] bg-white/90 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Primary position</p>
+                    <p className="mt-1 font-semibold text-[var(--navy)]">{identity.primaryPosition || "Not set"}</p>
+                  </div>
+                  <div className="rounded-xl border border-[var(--stroke)] bg-white/90 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Graduating class</p>
+                    <p className="mt-1 font-semibold text-[var(--navy)]">{identity.graduatingClass || "Not set"}</p>
                   </div>
                 </div>
-              )}
-
-              {step === 2 && (
-                <div className="space-y-5">
-                  <h2 className="text-2xl font-semibold">Positional stats</h2>
-                  <p className="text-sm text-[var(--muted)]">
-                    Position selected:{" "}
-                    <span className="font-semibold text-[var(--navy)]">{identity.primaryPosition || "Not set"}</span>.
-                    Inputs below follow backend router schemas.
-                  </p>
-                  {positionTrack === "Pitcher" ? (
-                    <div className="space-y-6">
-                      <div>
-                        <p className="mb-3 text-sm font-semibold text-[var(--navy)]">Required</p>
-                        <div className="grid gap-4 md:grid-cols-2">{pitcherRequiredFields.map(renderField)}</div>
-                      </div>
-                      <div className="rounded-2xl border border-[var(--stroke)] bg-white/60 p-4">
-                        <p className="text-sm font-semibold text-[var(--navy)]">Optional pitch metrics</p>
-                        <p className="mt-1 text-sm text-[var(--muted)]">
-                          Fill in only the pitches and stats you have access to. If you do not have this information,
-                          leave it blank.
-                        </p>
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">{pitcherOptionalFields.map(renderField)}</div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid gap-4 md:grid-cols-2">{statsFields.map(renderField)}</div>
-                  )}
-                </div>
-              )}
-
-              {step === 3 && (
-                <div className="space-y-5">
-                  <h2 className="text-2xl font-semibold">Preferences</h2>
-                  <p className="text-sm text-[var(--muted)]">
-                    All preferences are optional. Add only what matters to you now and skip the rest. These are used
-                    to explain and rank school fits in your evaluation report.
-                  </p>
-                  <div className="grid gap-4 md:grid-cols-2">{preferenceFields.map(renderField)}</div>
-                </div>
-              )}
-
-              <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={prevStep}
-                  disabled={step === 1 || submitting}
-                  className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Back
-                </button>
-
-                {step < 3 ? (
-                  <button
-                    type="button"
-                    onClick={nextStep}
-                    disabled={!canMoveForward || submitting}
-                    className="rounded-full bg-[var(--primary)] px-6 py-2.5 text-sm font-semibold text-white shadow-strong disabled:cursor-not-allowed disabled:opacity-50"
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <Link
+                    href="/account"
+                    className="inline-flex rounded-full border border-[var(--stroke)] bg-white/80 px-4 py-2 text-xs font-semibold text-[var(--navy)]"
                   >
-                    Continue
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={runEvaluation}
-                    disabled={!canMoveForward || submitting || !accessToken}
-                    className="rounded-full bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white shadow-strong disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {submitting ? "Running..." : "Run Evaluation"}
-                  </button>
-                )}
+                    Edit in Account Settings
+                  </Link>
+                  {profileError && <p className="text-xs text-red-700">{profileError}</p>}
+                </div>
               </div>
+
+              {!accountProfileComplete ? (
+                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+                  <h2 className="text-xl font-semibold text-amber-900">Finish your account details to continue</h2>
+                  <p className="mt-2 text-sm text-amber-800">
+                    Missing profile fields: {missingProfileFields.join(", ")}.
+                  </p>
+                  <p className="mt-1 text-sm text-amber-800">
+                    Add these once in account settings, and we&apos;ll use them for every future prediction.
+                  </p>
+                  <Link
+                    href="/account"
+                    className="mt-4 inline-flex rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white"
+                  >
+                    Open Account Settings
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  {step === 1 && (
+                    <div className="space-y-5">
+                      <h2 className="text-2xl font-semibold">Performance stats</h2>
+                      <p className="text-sm text-[var(--muted)]">
+                        Using your saved position:{" "}
+                        <span className="font-semibold text-[var(--navy)]">{identity.primaryPosition || "Not set"}</span>.
+                        Add your current numbers below.
+                      </p>
+                      {positionTrack === "Pitcher" ? (
+                        <div className="space-y-6">
+                          <div>
+                            <p className="mb-3 text-sm font-semibold text-[var(--navy)]">Core numbers</p>
+                            <div className="grid gap-4 md:grid-cols-2">{pitcherRequiredFields.map(renderField)}</div>
+                          </div>
+                          <div className="rounded-2xl border border-[var(--stroke)] bg-white/60 p-4">
+                            <p className="text-sm font-semibold text-[var(--navy)]">Additional pitch data (optional)</p>
+                            <p className="mt-1 text-sm text-[var(--muted)]">
+                              Include any extra pitch data you have. If you don&apos;t have it, leave it blank.
+                            </p>
+                            <div className="mt-4 grid gap-4 md:grid-cols-2">{pitcherOptionalFields.map(renderField)}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid gap-4 md:grid-cols-2">{statsFields.map(renderField)}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {step === 2 && (
+                    <div className="space-y-5">
+                      <h2 className="text-2xl font-semibold">School preferences</h2>
+                      <p className="text-sm text-[var(--muted)]">
+                        Add any preferences that matter to you. Leave anything blank if it doesn&apos;t matter right now.
+                      </p>
+                      <div className="grid gap-4 md:grid-cols-2">{preferenceFields.map(renderField)}</div>
+                    </div>
+                  )}
+
+                  <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={prevStep}
+                      disabled={step === 1 || submitting}
+                      className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Back
+                    </button>
+
+                    {step < stepSummary.length ? (
+                      <button
+                        type="button"
+                        onClick={nextStep}
+                        disabled={!canMoveForward || submitting}
+                        className="rounded-full bg-[var(--primary)] px-6 py-2.5 text-sm font-semibold text-white shadow-strong disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Continue
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={runEvaluation}
+                        disabled={!canMoveForward || submitting || !accessToken}
+                        className="rounded-full bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white shadow-strong disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {submitting ? "Running..." : "See My Results"}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </section>
           </FadeOnScroll>
 
           <div className="space-y-6">
             <FadeOnScroll delayMs={70}>
               <section className="rounded-[30px] bg-[var(--navy)] p-6 text-white shadow-strong">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/65">Pipeline map</p>
+                <p className="text-xs uppercase tracking-[0.3em] text-white/65">Step Overview</p>
                 <div className="mt-4 space-y-4">
                   {stepSummary.map((item) => (
                     <div
@@ -1156,8 +1146,8 @@ export default function PredictPage() {
 
             <FadeOnScroll delayMs={120}>
               <section className="glass rounded-[30px] p-6 shadow-soft">
-                <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">What happens next</p>
-                <h3 className="mt-2 text-xl font-semibold">Full evaluation opens on a dedicated page</h3>
+                <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">After You Submit</p>
+                <h3 className="mt-2 text-xl font-semibold">You&apos;ll get a full results report</h3>
 
                 {submissionError && (
                   <div className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">
@@ -1167,8 +1157,8 @@ export default function PredictPage() {
 
                 {!submissionError && (
                   <div className="mt-4 space-y-4 text-sm text-[var(--muted)]">
-                    <p>After you run an evaluation, you will be routed to a full report page for that run ID.</p>
-                    <p>The report includes predicted tier, school matches, playing-time analysis, and preference-hit explanations.</p>
+                    <p>After submission, we&apos;ll take you to your results page.</p>
+                    <p>You&apos;ll see your projected level, best-fit schools, playing-time outlook, and why each match fits.</p>
                     <div className="flex flex-wrap gap-3">
                       <Link
                         href="/evaluations"
