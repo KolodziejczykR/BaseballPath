@@ -8,8 +8,6 @@ import {
   CheckCircle2,
   BarChart3,
   Target,
-  Share2,
-  MousePointer2,
   Menu,
   X
 } from "lucide-react";
@@ -556,61 +554,6 @@ function TelemetryTypewriter() {
         {TELEMETRY_MESSAGES[msgIdx].slice(0, charIdx)}
         <span className="inline-block w-2 bg-[var(--burnt-sienna)] h-3 ml-1 animate-pulse align-middle"></span>
       </div>
-    </div>
-  );
-}
-
-function CursorProtocol() {
-  const [phase, setPhase] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setPhase((p) => (p + 1) % 4);
-    }, 2000);
-    return () => clearInterval(timer);
-  }, []);
-
-  return (
-    <div className="relative w-full h-full flex items-center justify-center pointer-events-none">
-      <div className="relative w-40 h-24" style={{ perspective: "1000px" }}>
-        <div
-          className="w-full h-full relative"
-          style={{
-            transformStyle: "preserve-3d",
-            transform: phase === 2 || phase === 3 ? "rotateY(180deg)" : "rotateY(0deg)",
-            transition: "transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)"
-          }}
-        >
-          <div className="absolute inset-0 bg-white rounded-xl shadow-sm border border-[var(--stroke)] flex flex-col justify-center items-center" style={{ backfaceVisibility: "hidden" }}>
-            <div className={`bg-[var(--burnt-sienna)] text-white px-4 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 transition-transform ${phase === 1 ? "scale-95" : "scale-100"}`}>
-              <Share2 size={12} /> Share
-            </div>
-          </div>
-
-          <div className="absolute inset-0 bg-[var(--walnut)] rounded-xl shadow-sm border border-[var(--golden-sand)]/30 p-2" style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
-            <div className="flex gap-2 h-full">
-              <div className="w-8 h-full bg-gradient-to-b from-white/10 to-transparent rounded"></div>
-              <div className="flex-1 space-y-1.5 py-1">
-                <div className="h-2 bg-white/20 rounded-full w-full"></div>
-                <div className="h-2 bg-[var(--golden-sand)]/50 rounded-full w-2/3"></div>
-                {phase === 3 && (
-                  <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--sage-green)] text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap opacity-100 transition-opacity">Link copied!</div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <MousePointer2
-        className="absolute text-[var(--burnt-sienna)] drop-shadow-md w-6 h-6 z-10"
-        style={{
-          transform: phase === 0 ? "translate(30px, 30px)" : "translate(0px, 5px)",
-          opacity: phase >= 2 ? 0 : 1,
-          transition: "all 0.5s ease-out"
-        }}
-        fill="white"
-      />
     </div>
   );
 }
