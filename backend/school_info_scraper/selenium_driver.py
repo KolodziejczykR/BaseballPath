@@ -1,5 +1,5 @@
 """
-Selenium WebDriver Manager for BaseballPATH Scrapers
+Selenium WebDriver Manager for BaseballPath Scrapers
 Handles browser setup, configuration, and utilities
 """
 

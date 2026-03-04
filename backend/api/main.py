@@ -20,7 +20,7 @@ from api.routers.player_card import router as player_card_router
 from api.routers.public_card import router as public_card_router
 from api.routers.goals import router as goals_router
 
-app = FastAPI(title="BaseballPATH Backend")
+app = FastAPI(title="BaseballPath Backend")
 
 # CORS middleware for frontend
 app.add_middleware(
@@ -53,7 +53,7 @@ app.include_router(goals_router, prefix="/goals", tags=["goals"])
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the BaseballPATH!"}
+    return {"message": "Welcome to the BaseballPath!"}
 
 @app.get("/ping")
 def health_check():

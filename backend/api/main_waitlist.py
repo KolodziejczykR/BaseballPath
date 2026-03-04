@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from api.routers.waitlist import router as waitlist_router
 
-app = FastAPI(title="BaseballPATH Backend")
+app = FastAPI(title="BaseballPath Backend")
 
 # CORS middleware for frontend
 app.add_middleware(
@@ -29,7 +29,7 @@ app.include_router(waitlist_router, prefix="/waitlist")
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the BaseballPATH!"}
+    return {"message": "Welcome to the BaseballPath!"}
 
 @app.get("/ping")
 def health_check():

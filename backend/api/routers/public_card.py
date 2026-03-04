@@ -338,7 +338,7 @@ def _generate_og_image(card: Dict[str, Any]) -> bytes:
                 continue
 
     # Brand bar at bottom
-    draw.text((72, height - 42), "BaseballPATH", fill=accent, font=font_brand)
+    draw.text((72, height - 42), "BaseballPath", fill=accent, font=font_brand)
     draw.text((width - 72, height - 42), "baseballpath.com", fill=sand, font=font_sm, anchor="ra")
 
     output = io.BytesIO()

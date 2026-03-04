@@ -1,5 +1,5 @@
 """
-Niche.com Beautiful Soup Scraper for BaseballPATH
+Niche.com Beautiful Soup Scraper for BaseballPath
 Alternative to Selenium scraper to avoid bot detection
 Uses requests + BeautifulSoup instead of browser automation
 """

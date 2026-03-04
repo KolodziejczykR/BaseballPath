@@ -18,7 +18,8 @@ This directory contains canonical route modules.
 - `preferences.py`
   - Existing school filtering endpoints.
 - `waitlist.py`
-  - Existing waitlist endpoints.
+  - `POST /waitlist/join`
+  - `GET /waitlist/health`
 
 ## Notes
 
