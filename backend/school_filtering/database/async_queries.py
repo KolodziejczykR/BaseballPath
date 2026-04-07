@@ -18,6 +18,11 @@ from supabase import Client
 
 from .async_connection import AsyncSupabaseConnection
 from ..exceptions import SchoolDataError
+from backend.evaluation.competitiveness import (
+    DEFAULT_DIVISION_MAX_RANKS,
+    compute_school_sci_from_rankings,
+    rank_to_percentile,
+)
 from backend.utils.school_group_constants import NON_D1, NON_P4_D1, POWER_4_D1
 
 logger = logging.getLogger(__name__)
@@ -100,16 +105,46 @@ class AsyncSchoolDataQueries:
 
         return None
 
-    def _derive_division_group(self, division_group: Any, division: Any) -> str:
+    @staticmethod
+    def _is_power_four_conference(conference: Any) -> bool:
+        if conference is None:
+            return False
+
+        normalized = str(conference).strip().lower()
+        if not normalized:
+            return False
+
+        power_four_tokens = (
+            "acc",
+            "atlantic coast",
+            "sec",
+            "southeastern",
+            "big ten",
+            "b1g",
+            "big 12",
+            "pac-12",
+            "pac 12",
+            "pac12",
+        )
+        return any(token in normalized for token in power_four_tokens)
+
+    def _derive_division_group(self, division_group: Any, division: Any, conference: Any = None) -> str:
         """
         Normalize division_group with division fallback.
-        If division_group is missing but division=1, default to Non-P4 D1 (never Non-D1).
+        If division_group is missing but division=1, infer Power 4 from conference, otherwise Non-P4 D1.
         """
-        if division_group:
-            return self._normalize_division_group(division_group)
-
         division_num = self._coerce_division_number(division)
+        is_power_four = self._is_power_four_conference(conference)
+
+        if division_group:
+            normalized_group = self._normalize_division_group(division_group)
+            if normalized_group == NON_P4_D1 and division_num == 1 and is_power_four:
+                return POWER_4_D1
+            return normalized_group
+
         if division_num == 1:
+            if is_power_four:
+                return POWER_4_D1
             return NON_P4_D1
         if division_num in (2, 3):
             return NON_D1
@@ -139,36 +174,40 @@ class AsyncSchoolDataQueries:
             logger.info("Loading division_group + baseball metrics cache from database...")
             result_cache: Dict[str, Dict[str, Any]] = {}
 
-            # Prefer verified mappings, then gracefully fall back if a project has not marked them.
-            mapping_response = (
-                client.table("school_baseball_ranking_name_mapping")
-                .select("school_name, team_name, verified")
-                .eq("verified", True)
-                .not_.is_("team_name", "null")
-                .execute()
-            )
-            mapping_rows = mapping_response.data or []
-
-            if not mapping_rows:
-                logger.warning("No verified mappings found; falling back to non-false mappings")
-                fallback_response = (
+            # Treat any mapping that is not explicitly marked false as usable.
+            # Many rows have verified=NULL even when the team name is correct.
+            mapping_rows: List[Dict[str, Any]] = []
+            try:
+                mapping_response = (
                     client.table("school_baseball_ranking_name_mapping")
                     .select("school_name, team_name, verified")
                     .neq("verified", False)
                     .not_.is_("team_name", "null")
                     .execute()
                 )
-                mapping_rows = fallback_response.data or []
+                mapping_rows = mapping_response.data or []
+            except Exception as exc:
+                logger.warning("Non-false mapping query failed, falling back: %s", exc)
 
             if not mapping_rows:
                 logger.warning("No non-false mappings found; falling back to any non-null team_name mapping")
-                fallback_any_response = (
-                    client.table("school_baseball_ranking_name_mapping")
-                    .select("school_name, team_name, verified")
-                    .not_.is_("team_name", "null")
-                    .execute()
-                )
-                mapping_rows = fallback_any_response.data or []
+                try:
+                    fallback_any_response = (
+                        client.table("school_baseball_ranking_name_mapping")
+                        .select("school_name, team_name, verified")
+                        .not_.is_("team_name", "null")
+                        .execute()
+                    )
+                    mapping_rows = fallback_any_response.data or []
+                except Exception as exc:
+                    logger.warning("Mapping query with verified column failed, retrying without verified: %s", exc)
+                    fallback_no_verified_response = (
+                        client.table("school_baseball_ranking_name_mapping")
+                        .select("school_name, team_name")
+                        .not_.is_("team_name", "null")
+                        .execute()
+                    )
+                    mapping_rows = fallback_no_verified_response.data or []
 
             if not mapping_rows:
                 logger.warning("No name mappings found in school_baseball_ranking_name_mapping")
@@ -190,7 +229,9 @@ class AsyncSchoolDataQueries:
                 return result_cache
 
             team_names = list(team_to_school.keys())
-            latest_by_team: Dict[str, Dict[str, Any]] = {}
+            target_years = {"2023", "2024", "2025"}
+            rows_by_team_year: Dict[str, Dict[str, Dict[str, Any]]] = {}
+            max_rank_by_year_div_metric: Dict[Tuple[str, str, str], float] = {}
 
             for team_chunk in self._chunk_list(team_names):
                 try:
@@ -198,7 +239,8 @@ class AsyncSchoolDataQueries:
                         client.table("baseball_rankings_data")
                         .select(
                             "team_name, year, division, division_group, "
-                            "overall_rating, offensive_rating, defensive_rating"
+                            "overall_rating, offensive_rating, defensive_rating, "
+                            "power_rating, strength_of_schedule"
                         )
                         .in_("team_name", team_chunk)
                         .order("year", desc=True)
@@ -210,7 +252,8 @@ class AsyncSchoolDataQueries:
                         client.table("baseball_rankings_data")
                         .select(
                             "team_name, year, division, division_group, "
-                            "overall_rating, offensive_rating, defensive_rating"
+                            "overall_rating, offensive_rating, defensive_rating, "
+                            "power_rating, strength_of_schedule"
                         )
                         .in_("team_name", team_chunk)
                         .execute()
@@ -218,56 +261,63 @@ class AsyncSchoolDataQueries:
 
                 for row in rankings_response.data or []:
                     team_name = (row.get("team_name") or "").strip()
-                    if not team_name:
+                    year_val = row.get("year")
+                    if not team_name or year_val is None:
                         continue
 
-                    existing = latest_by_team.get(team_name)
-                    if existing is None:
-                        latest_by_team[team_name] = row
+                    try:
+                        year_key = str(int(year_val))
+                    except (TypeError, ValueError):
                         continue
 
-                    new_year = row.get("year") or 0
-                    existing_year = existing.get("year") or 0
-                    if new_year > existing_year:
-                        latest_by_team[team_name] = row
+                    if year_key not in target_years:
                         continue
 
+                    per_team_year = rows_by_team_year.setdefault(team_name, {})
+                    existing_year_row = per_team_year.get(year_key)
                     if (
-                        new_year == existing_year
-                        and not existing.get("division_group")
-                        and row.get("division_group")
+                        existing_year_row is None
+                        or (not existing_year_row.get("division_group") and row.get("division_group"))
                     ):
-                        latest_by_team[team_name] = row
+                        per_team_year[year_key] = row
 
-            if not latest_by_team:
+                    division_num = self._coerce_division_number(row.get("division"))
+                    if division_num not in (1, 2, 3):
+                        continue
+
+                    division_key = str(division_num)
+                    for metric in (
+                        "overall_rating",
+                        "offensive_rating",
+                        "defensive_rating",
+                        "power_rating",
+                    ):
+                        metric_value = row.get(metric)
+                        if metric_value is None:
+                            continue
+                        try:
+                            metric_float = float(metric_value)
+                        except (TypeError, ValueError):
+                            continue
+                        cache_key = (year_key, division_key, metric)
+                        max_rank_by_year_div_metric[cache_key] = max(
+                            metric_float,
+                            max_rank_by_year_div_metric.get(cache_key, 0.0),
+                        )
+
+            if not rows_by_team_year:
                 logger.warning("No rankings rows found for mapped team names")
                 return result_cache
 
-            # Preload rating distributions for percentile calculation.
-            year_div_pairs = {
-                (row.get("year"), row.get("division"))
-                for row in latest_by_team.values()
-                if row.get("year") is not None and row.get("division") is not None
-            }
-            ratings_by_year_div: Dict[Tuple[int, int], List[float]] = {}
-
-            for year, division in year_div_pairs:
-                response = (
-                    client.table("baseball_rankings_data")
-                    .select("overall_rating")
-                    .eq("year", year)
-                    .eq("division", division)
-                    .not_.is_("overall_rating", "null")
-                    .execute()
+            latest_by_team: Dict[str, Dict[str, Any]] = {}
+            for team_name, by_year in rows_by_team_year.items():
+                if not by_year:
+                    continue
+                latest_row = max(
+                    by_year.values(),
+                    key=lambda entry: int(entry.get("year") or 0),
                 )
-                ratings = sorted(
-                    [
-                        record.get("overall_rating")
-                        for record in (response.data or [])
-                        if record.get("overall_rating") is not None
-                    ]
-                )
-                ratings_by_year_div[(year, division)] = ratings
+                latest_by_team[team_name] = latest_row
 
             for team_name, row in latest_by_team.items():
                 schools = team_to_school.get(team_name) or []
@@ -281,8 +331,25 @@ class AsyncSchoolDataQueries:
                 year = row.get("year")
                 division = self._coerce_division_number(row.get("division"))
                 overall_rating = row.get("overall_rating")
-                ratings = ratings_by_year_div.get((year, row.get("division")), [])
-                division_percentile = self._calculate_division_percentile(overall_rating, ratings)
+                year_key = str(int(year)) if year is not None else None
+                max_rank = None
+                if year_key and division in (1, 2, 3):
+                    max_rank = max_rank_by_year_div_metric.get((year_key, str(division), "overall_rating"))
+                    if not max_rank or max_rank <= 1:
+                        max_rank = DEFAULT_DIVISION_MAX_RANKS.get(str(division))
+                division_percentile = rank_to_percentile(overall_rating, max_rank) if max_rank else None
+                if division_percentile is not None:
+                    division_percentile = round(division_percentile, 1)
+
+                school_sci = compute_school_sci_from_rankings(
+                    rows_by_team_year.get(team_name, {}),
+                    max_ranks_by_year_div_metric=max_rank_by_year_div_metric,
+                )
+                yearly_overall = school_sci.get("yearly_overall_national") or {}
+                rounded_yearly_overall = {
+                    year_key: (round(value, 2) if value is not None else None)
+                    for year_key, value in yearly_overall.items()
+                }
 
                 enrichment_payload = {
                     "division_group": division_group,
@@ -292,7 +359,41 @@ class AsyncSchoolDataQueries:
                     "baseball_overall_rating": overall_rating,
                     "baseball_offensive_rating": row.get("offensive_rating"),
                     "baseball_defensive_rating": row.get("defensive_rating"),
+                    "baseball_power_rating": row.get("power_rating"),
+                    "baseball_strength_of_schedule": row.get("strength_of_schedule"),
                     "baseball_division_percentile": division_percentile,
+                    "baseball_sci_hitter": (
+                        round(school_sci["sci_hitter"], 2)
+                        if school_sci.get("sci_hitter") is not None
+                        else None
+                    ),
+                    "baseball_sci_pitcher": (
+                        round(school_sci["sci_pitcher"], 2)
+                        if school_sci.get("sci_pitcher") is not None
+                        else None
+                    ),
+                    "baseball_trend_bonus": round(float(school_sci.get("trend_bonus") or 0.0), 2),
+                    "baseball_sci_overall_weighted": (
+                        round(school_sci["overall_weighted"], 2)
+                        if school_sci.get("overall_weighted") is not None
+                        else None
+                    ),
+                    "baseball_sci_offensive_weighted": (
+                        round(school_sci["offensive_weighted"], 2)
+                        if school_sci.get("offensive_weighted") is not None
+                        else None
+                    ),
+                    "baseball_sci_defensive_weighted": (
+                        round(school_sci["defensive_weighted"], 2)
+                        if school_sci.get("defensive_weighted") is not None
+                        else None
+                    ),
+                    "baseball_sci_power_weighted": (
+                        round(school_sci["power_weighted"], 2)
+                        if school_sci.get("power_weighted") is not None
+                        else None
+                    ),
+                    "baseball_sci_yearly_overall": rounded_yearly_overall,
                 }
 
                 for school_name in schools:
@@ -319,6 +420,18 @@ class AsyncSchoolDataQueries:
         for school in schools:
             school_name = school.get('school_name')
             existing_division_group = school.get('division_group')
+            fallback_division = (
+                school.get("division")
+                or school.get("baseball_division")
+                or school.get("ncaa_division")
+                or school.get("athletic_division")
+            )
+            fallback_conference = (
+                school.get("conference")
+                or school.get("athletic_conference")
+                or school.get("baseball_conference")
+                or school.get("conference_name")
+            )
 
             enrichment_payload: Optional[Dict[str, Any]] = None
             if school_name:
@@ -328,19 +441,22 @@ class AsyncSchoolDataQueries:
                     enrichment_payload = self._division_group_cache.get(normalized_key)
 
             if enrichment_payload:
-                school['division_group'] = self._normalize_division_group(
-                    enrichment_payload.get("division_group")
+                school['division_group'] = self._derive_division_group(
+                    enrichment_payload.get("division_group"),
+                    enrichment_payload.get("baseball_division") or fallback_division,
+                    fallback_conference,
                 )
                 for key, value in enrichment_payload.items():
                     if key == "division_group":
                         continue
                     if value is not None:
                         school[key] = value
-            elif existing_division_group:
-                school['division_group'] = self._normalize_division_group(existing_division_group)
             else:
-                # Preserve old fallback behavior when neither cache nor source column has a value.
-                school['division_group'] = NON_D1
+                school['division_group'] = self._derive_division_group(
+                    existing_division_group,
+                    fallback_division,
+                    fallback_conference,
+                )
 
         return schools
 

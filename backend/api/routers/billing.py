@@ -11,8 +11,10 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+import logging
+
 from ..clients.supabase import require_supabase_admin_client
-from ..deps.auth import AuthenticatedUser, get_current_user
+from ..deps.auth import AuthenticatedUser, get_current_user, get_optional_user
 from ..services.plan_service import (
     PLAN_ELITE,
     PLAN_PRO,
@@ -20,6 +22,9 @@ from ..services.plan_service import (
     VALID_PLAN_TIERS,
     get_profile,
 )
+from ..services.pricing_service import get_eval_price
+
+logger = logging.getLogger(__name__)
 
 try:
     import stripe
@@ -221,6 +226,105 @@ async def create_checkout_session(
     return {"checkout_url": session.url, "session_id": session.id}
 
 
+# ---------------------------------------------------------------------------
+# Per-evaluation one-time payment checkout
+# ---------------------------------------------------------------------------
+
+class CreateEvalCheckoutRequest(BaseModel):
+    session_token: str = Field(..., description="Session token from /evaluate/preview")
+    success_url: Optional[str] = None
+    cancel_url: Optional[str] = None
+
+
+@router.post("/create-eval-checkout")
+async def create_eval_checkout(
+    payload: CreateEvalCheckoutRequest,
+    current_user: Optional[AuthenticatedUser] = Depends(get_optional_user),
+) -> Dict[str, Any]:
+    """Create a Stripe Checkout Session for a one-time evaluation payment. Auth optional."""
+    stripe_client = _require_stripe()
+
+    # Determine price: if authenticated, check purchase history; otherwise first-eval price
+    if current_user:
+        pricing = get_eval_price(current_user.user_id)
+        price_cents = pricing["price_cents"]
+        is_first = pricing["is_first_eval"]
+        user_id = current_user.user_id
+        customer_email = current_user.email
+    else:
+        from ..services.pricing_service import FIRST_EVAL_PRICE_CENTS
+        price_cents = FIRST_EVAL_PRICE_CENTS
+        is_first = True
+        user_id = None
+        customer_email = None  # Stripe will collect email on checkout page
+
+    # Create eval_purchases row (status=pending, user_id may be NULL)
+    supabase = require_supabase_admin_client()
+    purchase_insert = {
+        "amount_cents": price_cents,
+        "currency": "usd",
+        "status": "pending",
+        "is_first_eval": is_first,
+    }
+    if user_id:
+        purchase_insert["user_id"] = user_id
+    purchase_result = supabase.table("eval_purchases").insert(purchase_insert).execute()
+    if not purchase_result.data:
+        raise HTTPException(status_code=500, detail="Failed to create purchase record")
+    purchase_id = purchase_result.data[0]["id"]
+
+    origin = os.getenv("APP_BASE_URL", "http://localhost:3000").rstrip("/")
+    success_url = (
+        payload.success_url
+        or f"{origin}/predict/results?purchase_id={purchase_id}&session_token={payload.session_token}"
+    )
+    cancel_url = payload.cancel_url or f"{origin}/predict?checkout=cancelled"
+
+    label = "BaseballPath Evaluation (First)" if is_first else "BaseballPath Evaluation"
+
+    checkout_kwargs: Dict[str, Any] = {
+        "mode": "payment",
+        "line_items": [{
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": price_cents,
+                "product_data": {"name": label},
+            },
+            "quantity": 1,
+        }],
+        "success_url": success_url,
+        "cancel_url": cancel_url,
+        "metadata": {
+            "purchase_id": purchase_id,
+            "session_token": payload.session_token,
+            "payment_type": "eval_purchase",
+        },
+    }
+    if customer_email:
+        checkout_kwargs["customer_email"] = customer_email
+    if user_id:
+        checkout_kwargs["metadata"]["user_id"] = user_id
+        checkout_kwargs["client_reference_id"] = user_id
+
+    session = stripe_client.checkout.Session.create(**checkout_kwargs)
+
+    # Store Stripe session ID on the purchase row
+    supabase.table("eval_purchases").update({
+        "stripe_checkout_session_id": session.id,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", purchase_id).execute()
+
+    return {
+        "checkout_url": session.url,
+        "session_id": session.id,
+        "purchase_id": purchase_id,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Legacy subscription checkout & portal
+# ---------------------------------------------------------------------------
+
 @router.post("/create-portal-session")
 async def create_portal_session(
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -259,21 +363,39 @@ async def billing_webhook(request: Request) -> Dict[str, Any]:
     event_data = ((event.get("data") or {}).get("object")) or {}
 
     if event_type == "checkout.session.completed":
-        user_id = ((event_data.get("metadata") or {}).get("user_id")) or event_data.get("client_reference_id")
-        subscription_id = event_data.get("subscription")
-        customer_id = event_data.get("customer")
-        if subscription_id:
-            subscription = stripe_client.Subscription.retrieve(subscription_id)
-            _sync_from_subscription_object(subscription, user_id=user_id)
-        elif user_id:
-            _upsert_subscription(
-                str(user_id),
-                {
-                    "status": "active",
-                    "stripe_customer_id": str(customer_id) if customer_id else None,
+        metadata = event_data.get("metadata") or {}
+        payment_type = metadata.get("payment_type")
+
+        if payment_type == "eval_purchase":
+            # --- Per-evaluation one-time payment ---
+            purchase_id = metadata.get("purchase_id")
+            if purchase_id:
+                supabase = require_supabase_admin_client()
+                payment_intent_id = event_data.get("payment_intent")
+                supabase.table("eval_purchases").update({
+                    "status": "completed",
+                    "stripe_payment_intent_id": str(payment_intent_id) if payment_intent_id else None,
+                    "stripe_checkout_session_id": event_data.get("id"),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
+                }).eq("id", purchase_id).execute()
+                logger.info(f"Eval purchase {purchase_id} marked completed")
+        else:
+            # --- Legacy subscription checkout ---
+            user_id = metadata.get("user_id") or event_data.get("client_reference_id")
+            subscription_id = event_data.get("subscription")
+            customer_id = event_data.get("customer")
+            if subscription_id:
+                subscription = stripe_client.Subscription.retrieve(subscription_id)
+                _sync_from_subscription_object(subscription, user_id=user_id)
+            elif user_id:
+                _upsert_subscription(
+                    str(user_id),
+                    {
+                        "status": "active",
+                        "stripe_customer_id": str(customer_id) if customer_id else None,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
     elif event_type in {"customer.subscription.updated", "customer.subscription.deleted"}:
         _sync_from_subscription_object(event_data)
 

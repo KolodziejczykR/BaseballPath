@@ -81,16 +81,15 @@ export default function GoalsPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 py-10 md:py-12">
+      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Goals</p>
               <h1 className="display-font mt-2 text-4xl md:text-5xl">Goals & Improvement</h1>
             </div>
             <Link
               href="/goals/create"
-              className="rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white shadow-strong"
+              className="rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold !text-white shadow-strong"
             >
               Add New Goal Set
             </Link>

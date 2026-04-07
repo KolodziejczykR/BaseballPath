@@ -18,6 +18,12 @@ if project_root not in sys.path:
 from backend.school_filtering.async_two_tier_pipeline import get_school_matches_shared, count_eligible_schools_shared
 from backend.utils.preferences_types import UserPreferences, VALID_GRADES
 from backend.utils.prediction_types import MLPipelineResults, D1PredictionResult, P4PredictionResult
+from backend.utils.position_tracks import (
+    CATCHER_PRIMARY_POSITIONS,
+    OUTFIELDER_PRIMARY_POSITIONS,
+    PITCHER_PRIMARY_POSITIONS,
+    normalize_primary_position,
+)
 from backend.utils.player_types import PlayerInfielder, PlayerOutfielder, PlayerCatcher, PlayerPitcher
 from backend.utils.recommendation_types import (
     AcademicsInfo,
@@ -60,6 +66,33 @@ except Exception:  # pragma: no cover - optional dependency
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+MATCH_FILTER_PREFERENCE_FIELDS = {
+    "preferred_states",
+    "preferred_regions",
+    "preferred_school_size",
+    "min_academic_rating",
+    "min_student_satisfaction_rating",
+    "sat",
+    "act",
+    "max_budget",
+    "party_scene_preference",
+    "min_athletics_rating",
+    "admit_rate_floor",
+}
+
+
+def _has_preference_value(value: Any) -> bool:
+    """Return True when a preference field contains a meaningful value."""
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip() != ""
+    if isinstance(value, list):
+        return len(value) > 0
+    if isinstance(value, dict):
+        return len(value) > 0
+    return True
 
 
 def _safe_cache_call(fn, *args):
@@ -274,6 +307,11 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                 "schools": []
             }
 
+        enforce_preference_match_filter = any(
+            _has_preference_value(user_preferences_data.get(field_name))
+            for field_name in MATCH_FILTER_PREFERENCE_FIELDS
+        )
+
         # Format the response with detailed school information
         school_recommendations: List[SchoolRecommendation] = []
         for school_match in filtering_result.school_matches:
@@ -281,6 +319,9 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                                   if school_match.playing_time_result is not None else None)
             nice_to_have_count = len(school_match.nice_to_have_matches)
             academic_grade = school_match.school_data.get("academics_grade")
+
+            if enforce_preference_match_filter and nice_to_have_count < 1:
+                continue
 
             school_recommendations.append(
                 _build_school_recommendation(
@@ -290,6 +331,18 @@ async def filter_schools_by_preferences(request: Dict[str, Any]) -> Dict[str, An
                     nice_to_have_count,
                 )
             )
+
+        if not school_recommendations:
+            return {
+                "success": True,
+                "message": "No schools found with at least one preference match",
+                "summary": {
+                    "total_matches": 0,
+                    "must_have_count": filtering_result.must_have_count,
+                    "ml_prediction": ml_results.get_final_prediction()
+                },
+                "schools": []
+            }
 
         if sort_by:
             school_recommendations = _sort_school_recommendations(
@@ -499,6 +552,133 @@ def _get_size_category(enrollment: int) -> str:
         return "Very Large"
 
 
+def _coerce_division_number(value: Any) -> Optional[int]:
+    """Coerce mixed division values into 1/2/3 where possible."""
+    if value is None:
+        return None
+
+    try:
+        as_int = int(value)
+        if as_int in (1, 2, 3):
+            return as_int
+    except (TypeError, ValueError):
+        pass
+
+    text = str(value).strip().lower()
+    if not text:
+        return None
+
+    if any(token in text for token in ("d1", "division 1", "division i", "ncaa i")):
+        return 1
+    if any(token in text for token in ("d2", "division 2", "division ii", "ncaa ii")):
+        return 2
+    if any(token in text for token in ("d3", "division 3", "division iii", "ncaa iii")):
+        return 3
+
+    return None
+
+
+def _is_power_four_conference(value: Any) -> bool:
+    if value is None:
+        return False
+
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return False
+
+    power_four_tokens = (
+        "acc",
+        "atlantic coast",
+        "sec",
+        "southeastern",
+        "big ten",
+        "b1g",
+        "big 12",
+        "pac-12",
+        "pac 12",
+        "pac12",
+    )
+    return any(token in normalized for token in power_four_tokens)
+
+
+def _format_division_label(school_match) -> Optional[str]:
+    """
+    Return user-facing school level label.
+    Preferred labels: Power 4, Division 1, Division 2, Division 3.
+    """
+    school_data = school_match.school_data or {}
+    group_candidates = [
+        school_match.division_group,
+        school_data.get("division_group"),
+    ]
+
+    conference = (
+        school_data.get("conference")
+        or school_data.get("athletic_conference")
+        or school_data.get("baseball_conference")
+        or school_data.get("conference_name")
+    )
+    rankings_division = None
+    baseball_strength = school_match.baseball_strength or {}
+    if baseball_strength:
+        group_candidates.append(baseball_strength.get("division_group"))
+        group_candidates.append((baseball_strength.get("current_season") or {}).get("division_group"))
+        rankings_division = (
+            baseball_strength.get("current_division")
+            or (baseball_strength.get("current_season") or {}).get("division")
+        )
+
+    normalized_groups = [
+        str(group).strip().lower()
+        for group in group_candidates
+        if group is not None and str(group).strip()
+    ]
+
+    # Respect explicit group classification first.
+    if any("power" in group and "4" in group for group in normalized_groups):
+        return "Power 4"
+    if any("non-p4" in group or "non p4" in group for group in normalized_groups):
+        return "Division 1"
+
+    rankings_division_num = _coerce_division_number(rankings_division)
+    if rankings_division_num == 1 and _is_power_four_conference(conference):
+        return "Power 4"
+    if rankings_division_num == 1:
+        return "Division 1"
+    if rankings_division_num == 2:
+        return "Division 2"
+    if rankings_division_num == 3:
+        return "Division 3"
+
+    if _is_power_four_conference(conference):
+        return "Power 4"
+
+    division_value = (
+        school_data.get("baseball_division")
+        or school_data.get("division")
+        or school_data.get("ncaa_division")
+        or school_data.get("athletic_division")
+    )
+    division_num = _coerce_division_number(division_value)
+    if division_num == 1:
+        return "Division 1"
+    if division_num == 2:
+        return "Division 2"
+    if division_num == 3:
+        return "Division 3"
+
+    if any("d2" in group or "division 2" in group or "division ii" in group for group in normalized_groups):
+        return "Division 2"
+    if any("d3" in group or "division 3" in group or "division iii" in group for group in normalized_groups):
+        return "Division 3"
+    if any("d1" in group or "division 1" in group or "division i" in group for group in normalized_groups):
+        return "Division 1"
+    if any("non-d1" in group or "non d1" in group for group in normalized_groups):
+        return None
+
+    return None
+
+
 def _academic_grade_rank(grade: Optional[str]) -> Optional[int]:
     """Convert academic grade to a numeric rank (higher is better)."""
     if grade not in VALID_GRADES:
@@ -575,9 +755,16 @@ def _build_school_recommendation(
     academic_grade: Optional[str],
     nice_to_have_count: int,
 ) -> SchoolRecommendation:
+    display_school_name = (
+        school_match.school_data.get("display_school_name")
+        or school_match.school_data.get("school_name")
+        or school_match.school_name
+    )
     return SchoolRecommendation(
-        school_name=school_match.school_name,
+        school_name=display_school_name,
+        school_logo_image=school_match.school_data.get("school_logo_image"),
         division_group=school_match.division_group,
+        division_label=_format_division_label(school_match),
         location=SchoolLocation(
             state=school_match.school_data.get("school_state"),
             region=school_match.school_data.get("school_region"),
@@ -648,7 +835,7 @@ def _create_player_from_info(player_info: Dict[str, Any]):
     Returns:
         PlayerInfielder, PlayerOutfielder, PlayerCatcher, or PlayerPitcher based on position
     """
-    position = player_info.get("primary_position", "SS").upper()
+    position = normalize_primary_position(player_info.get("primary_position", "SS"))
 
     # Common args for all player types
     common_args = {
@@ -662,7 +849,7 @@ def _create_player_from_info(player_info: Dict[str, Any]):
         "sixty_time": player_info.get("sixty_time", 7.0),
     }
 
-    if position in ["RHP", "LHP", "P", "PITCHER"]:
+    if position in PITCHER_PRIMARY_POSITIONS:
         throwing_hand = player_info.get("throwing_hand", "R").upper()
         if position == "LHP":
             throwing_hand = "L"
@@ -685,15 +872,15 @@ def _create_player_from_info(player_info: Dict[str, Any]):
             slider_velo=player_info.get("slider_velo"),
             slider_spin=player_info.get("slider_spin"),
         )
-    elif position == "C":
+    elif position in CATCHER_PRIMARY_POSITIONS:
         return PlayerCatcher(
-            **common_args,
+            **{**common_args, "primary_position": "C"},
             c_velo=player_info.get("c_velo", 75.0),
             pop_time=player_info.get("pop_time", 2.0),
         )
-    elif position in ["OF", "LF", "CF", "RF"]:
+    elif position in OUTFIELDER_PRIMARY_POSITIONS:
         return PlayerOutfielder(
-            **common_args,
+            **{**common_args, "primary_position": "OF"},
             of_velo=player_info.get("of_velo", 85.0),
         )
     else:
@@ -819,16 +1006,35 @@ async def get_llm_reasoning(job_id: str) -> Dict[str, Any]:
     cached = None
     if get_cached_reasoning is not None:
         cached = _safe_cache_call(get_cached_reasoning, job_id)
-    if cached is not None:
+
+    def _format_reasoning_payload(raw_payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        payload = raw_payload or {}
+        status = str(payload.get("status") or "completed").lower()
+        if status in {"failed", "unavailable"}:
+            return {
+                "success": False,
+                "job_id": job_id,
+                "status": "failed",
+                "reasoning": None,
+                "player_summary": None,
+                "relax_suggestions": [],
+                "error_code": payload.get("error_code"),
+                "error_message": payload.get("error_message"),
+                "completed_at": payload.get("completed_at"),
+            }
+
         return {
             "success": True,
             "job_id": job_id,
             "status": "completed",
-            "reasoning": cached.get("reasoning", {}),
-            "player_summary": cached.get("player_summary"),
-            "relax_suggestions": cached.get("relax_suggestions", []),
-            "completed_at": cached.get("completed_at"),
+            "reasoning": payload.get("reasoning", {}),
+            "player_summary": payload.get("player_summary"),
+            "relax_suggestions": payload.get("relax_suggestions", []),
+            "completed_at": payload.get("completed_at"),
         }
+
+    if cached is not None:
+        return _format_reasoning_payload(cached)
 
     inflight_id = None
     if get_inflight_job_id is not None:
@@ -859,15 +1065,7 @@ async def get_llm_reasoning(job_id: str) -> Dict[str, Any]:
         }
 
     payload = result.result or {}
-    return {
-        "success": True,
-        "job_id": job_id,
-        "status": "completed",
-        "reasoning": payload.get("reasoning", {}),
-        "player_summary": payload.get("player_summary"),
-        "relax_suggestions": payload.get("relax_suggestions", []),
-        "completed_at": payload.get("completed_at"),
-    }
+    return _format_reasoning_payload(payload)
 
 @router.get("/health")
 async def preferences_health_check() -> Dict[str, str]:

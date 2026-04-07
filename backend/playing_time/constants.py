@@ -234,6 +234,8 @@ PLAYING_TIME_BUCKETS = [
 # Data sources:
 # - P4: 2,603 players from Power 4 conferences
 # - Non-P4 D1: 5,630 players from non-Power 4 D1 conferences
+# - Mid-Major D1: 3,571 players from mapped mid-major conferences
+# - Low-Major D1: 2,059 players from mapped low-major conferences
 # - D2: 4,176 players from Division 2
 # - D3: 7,103 players from Division 3
 #
@@ -273,6 +275,26 @@ DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
         "pop_time": {"mean": 2.0, "std": 0.1},
         "height": {"mean": 72.11, "std": 2.22},
         "weight": {"mean": 182.71, "std": 18.66},
+    },
+    "Mid-Major D1": {
+        "exit_velo": {"mean": 93.72, "std": 5.65},
+        "sixty_time": {"mean": 7.1, "std": 0.34},
+        "inf_velo": {"mean": 83.16, "std": 5.02},
+        "of_velo": {"mean": 86.03, "std": 4.72},
+        "c_velo": {"mean": 77.78, "std": 3.94},
+        "pop_time": {"mean": 2.0, "std": 0.1},
+        "height": {"mean": 72.24, "std": 2.19},
+        "weight": {"mean": 183.27, "std": 18.48},
+    },
+    "Low-Major D1": {
+        "exit_velo": {"mean": 92.89, "std": 5.44},
+        "sixty_time": {"mean": 7.11, "std": 0.35},
+        "inf_velo": {"mean": 82.59, "std": 4.98},
+        "of_velo": {"mean": 84.7, "std": 5.18},
+        "c_velo": {"mean": 77.15, "std": 3.74},
+        "pop_time": {"mean": 2.01, "std": 0.1},
+        "height": {"mean": 71.88, "std": 2.26},
+        "weight": {"mean": 181.72, "std": 18.93},
     },
     "D2": {
         "exit_velo": {"mean": 91.0, "std": 5.44},
@@ -322,6 +344,32 @@ PITCHER_DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
         "Curveball Spin Rate (avg)": {"mean": 2149.25, "std": 281.01},
         "Slider Velo Range": {"mean": 75.09, "std": 4.00},
         "Slider Spin Rate (avg)": {"mean": 2191.69, "std": 277.93},
+    },
+    "Mid-Major D1": {
+        "height": {"mean": 73.79, "std": 2.23},
+        "weight": {"mean": 188.5, "std": 19.35},
+        "FastballVelo Range": {"mean": 86.34, "std": 3.3},
+        "FastballVelocity (max)": {"mean": 88.33, "std": 3.3},
+        "FastballSpin Rate (avg)": {"mean": 2149.38, "std": 175.14},
+        "Changeup Velo Range": {"mean": 77.88, "std": 4.02},
+        "Changeup Spin Rate (avg)": {"mean": 1719.38, "std": 262.73},
+        "Curveball Velo Range": {"mean": 72.89, "std": 3.77},
+        "Curveball Spin Rate (avg)": {"mean": 2162.2, "std": 279.78},
+        "Slider Velo Range": {"mean": 75.51, "std": 3.92},
+        "Slider Spin Rate (avg)": {"mean": 2198.7, "std": 274.8},
+    },
+    "Low-Major D1": {
+        "height": {"mean": 73.47, "std": 2.26},
+        "weight": {"mean": 186.7, "std": 19.25},
+        "FastballVelo Range": {"mean": 85.12, "std": 3.45},
+        "FastballVelocity (max)": {"mean": 87.03, "std": 3.4},
+        "FastballSpin Rate (avg)": {"mean": 2115.77, "std": 179.43},
+        "Changeup Velo Range": {"mean": 76.92, "std": 4.13},
+        "Changeup Spin Rate (avg)": {"mean": 1695.58, "std": 262.18},
+        "Curveball Velo Range": {"mean": 71.94, "std": 3.88},
+        "Curveball Spin Rate (avg)": {"mean": 2127.93, "std": 281.91},
+        "Slider Velo Range": {"mean": 74.27, "std": 4.02},
+        "Slider Spin Rate (avg)": {"mean": 2179.15, "std": 283.25},
     },
     "D2": {
         "height": {"mean": 73.10, "std": 2.33},

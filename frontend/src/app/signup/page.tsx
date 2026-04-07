@@ -16,7 +16,7 @@ export default function SignupPage() {
 function SignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/dashboard";
+  const nextPath = searchParams.get("next") || "/predict";
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
   const [fullName, setFullName] = useState("");
@@ -51,7 +51,7 @@ function SignupContent() {
         password,
         options: {
           data: fullName.trim() ? { full_name: fullName.trim() } : undefined,
-          emailRedirectTo: `${window.location.origin}/dashboard`
+          emailRedirectTo: `${window.location.origin}${nextPath}`
         },
       });
 
@@ -92,7 +92,7 @@ function SignupContent() {
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Create Your Account</p>
           <h1 className="display-font mt-4 text-4xl md:text-5xl">Start your recruiting workspace.</h1>
-          <p className="mt-4 text-[var(--muted)]">
+          <p className="mt-4 pl-1 text-[var(--muted)]">
             New accounts are automatically created on the Starter (free) plan. You can upgrade later from Plans.
           </p>
           <div className="mt-8 grid gap-4">
@@ -179,4 +179,3 @@ function SignupContent() {
     </div>
   );
 }
-

@@ -1,231 +1,334 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
+import { ResultsMap } from "@/components/evaluation/results-map";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-type PreferencePoint = {
-  preference?: string;
-  description?: string;
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type SchoolLocation = {
+  state?: string;
+  region?: string;
+  latitude?: number;
+  longitude?: number;
 };
 
-type PreferenceMiss = {
-  preference?: string;
-  reason?: string;
+type MetricComparison = {
+  metric: string;
+  player_value: number;
+  division_avg: number;
+  unit: string;
 };
 
-type LLMReasoning = {
-  summary?: string;
-  fit_qualities?: string[];
-  cautions?: string[];
+type ResearchSource = {
+  label?: string;
+  url?: string;
+  source_type?: string;
 };
 
-type RelaxSuggestion = {
-  preference?: string;
-  suggestion?: string;
-  reason?: string;
-};
-
-type SchoolResult = {
+type School = {
+  rank: number;
   school_name: string;
+  display_school_name?: string;
+  school_logo_image?: string | null;
+  conference?: string;
   division_group?: string;
-  location?: {
-    state?: string;
-  };
-  academics?: {
-    grade?: string;
-  };
-  athletics?: {
-    grade?: string;
-  };
-  match_analysis?: {
-    total_nice_to_have_matches?: number;
-    pros?: PreferencePoint[];
-    cons?: PreferenceMiss[];
-  };
-  scores?: {
-    playing_time_score?: number | null;
-    nice_to_have_count?: number;
-  };
-  playing_time?: {
-    available?: boolean;
-    percentile?: number | null;
-    bucket?: string | null;
-    interpretation?: string | null;
-    breakdown?: Record<string, number>;
-    message?: string | null;
-  };
-  llm_reasoning?: LLMReasoning;
+  division_label?: string;
+  baseball_division?: number;
+  location?: SchoolLocation;
+  baseball_fit?: string;
+  fit_label?: string;
+  delta?: number;
+  sci?: number;
+  trend?: string;
+  academic_fit?: string;
+  niche_academic_grade?: string;
+  estimated_annual_cost?: number | null;
+  metric_comparisons?: MetricComparison[];
+  fit_summary?: string;
+  school_description?: string;
+  roster_summary?: string;
+  opportunity_summary?: string;
+  trend_summary?: string;
+  research_confidence?: string;
+  opportunity_fit?: string;
+  overall_school_view?: string;
+  roster_label?: string;
+  review_adjustment_from_base?: string;
+  ranking_adjustment?: number;
+  ranking_score?: number;
+  research_status?: string;
+  research_reasons?: string[];
+  research_risks?: string[];
+  research_data_gaps?: string[];
+  research_sources?: ResearchSource[];
 };
 
-type RecommendationSummary = {
-  llm_enabled?: boolean;
-  llm_job_id?: string | null;
-  llm_status?: string | null;
-  player_summary?: string | null;
-  relax_suggestions?: RelaxSuggestion[];
+type BaseballAssessment = {
+  predicted_tier?: string;
+  within_tier_percentile?: number;
+  d1_probability?: number;
+  p4_probability?: number;
+  confidence?: string;
+};
+
+type AcademicScore = {
+  composite?: number;
+  gpa_rating?: number;
+  test_rating?: number;
+  ap_rating?: number;
 };
 
 type EvaluationRun = {
   id: string;
   created_at?: string;
+  position_track?: string;
   identity_input?: Record<string, unknown>;
   stats_input?: Record<string, unknown>;
   preferences_input?: Record<string, unknown>;
-  prediction_response?: {
-    final_prediction?: string;
-  };
+  prediction_response?: Record<string, unknown>;
   preferences_response?: {
-    summary?: {
-      total_matches?: number;
-    };
-    recommendation_summary?: RecommendationSummary;
-    schools?: SchoolResult[];
+    schools?: School[];
+    academic_score?: AcademicScore;
+    baseball_assessment?: BaseballAssessment;
   };
+  llm_reasoning_status?: string;
 };
 
-type ReasoningApiResponse = {
-  success?: boolean;
-  status?: string;
-  reasoning?: Record<string, LLMReasoning> | null;
-  player_summary?: string | null;
-  relax_suggestions?: RelaxSuggestion[];
+type SavedSchoolRecord = {
+  id: string;
+  school_name?: string;
+  school_logo_image?: string | null;
+  dedupe_key?: string;
+  school_data?: School;
+  note?: string | null;
+  created_at?: string;
 };
 
-type SortMode = "default" | "playing_time" | "preferences";
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
-const preferenceLabelMap: Record<string, string> = {
-  preferred_regions: "Preferred regions",
-  preferredRegion: "Preferred regions",
-  preferred_school_size: "Preferred school size",
-  preferredSchoolSize: "Preferred school size",
-  min_academic_rating: "Minimum academic rating",
-  minAcademicRating: "Minimum academic rating",
-  min_athletics_rating: "Minimum athletics rating",
-  minAthleticsRating: "Minimum athletics rating",
-  party_scene_preference: "Party scene preference",
-  partyScenePreference: "Party scene preference",
-  max_budget: "Max yearly budget",
-  maxBudget: "Max yearly budget",
+const FIT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  fit: { bg: "rgba(107,143,94,0.15)", text: "var(--sage-green)", border: "var(--sage-green)" },
+  reach: { bg: "rgba(184,115,51,0.15)", text: "var(--copper)", border: "var(--copper)" },
+  safety: { bg: "rgba(212,168,67,0.15)", text: "var(--golden-sand)", border: "var(--golden-sand)" },
 };
 
-function toDisplayValue(value: unknown): string {
-  if (Array.isArray(value)) {
-    const items = value.filter(Boolean).map((item) => String(item));
-    return items.join(", ");
-  }
-  if (value === null || value === undefined) return "";
-  if (typeof value === "number") return Number.isFinite(value) ? value.toLocaleString() : "";
-  return String(value).trim();
+const MEDAL_COLORS = ["#D4A843", "#C0C0C0", "#CD7F32"];
+
+const DISCLAIMER_TEXT =
+  "This evaluation is based on measurable athletic metrics and academic data only. " +
+  "Factors that college coaches weigh heavily \u2014 including coachability, work ethic, " +
+  "character, delivery style, baseball IQ, development trajectory, and roster context " +
+  "\u2014 are not captured in this snapshot. Players with unique profiles (sidearm deliveries, " +
+  "exceptional competitiveness, late physical development) may be undervalued or " +
+  "overvalued by any metrics-based tool. This is a starting point for your college " +
+  "baseball search, not the final word.";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getNcaLogoUrl(logoKey: string | null | undefined): string | null {
+  const key = (logoKey || "").trim();
+  if (!key) return null;
+  return `https://ncaa-api.henrygd.me/logo/${encodeURIComponent(key)}.svg`;
 }
 
-function getPlayerName(input: Record<string, unknown> | undefined): string {
-  const name = toDisplayValue(input?.name);
-  return name || "Saved Evaluation";
+function getSchoolDedupeKey(school: School): string {
+  const logoKey = (school.school_logo_image || "").trim().toLowerCase();
+  if (logoKey) return `logo:${logoKey}`;
+  return `name:${school.school_name.trim().toLowerCase()}`;
 }
 
-function getPositionLabel(
-  input: Record<string, unknown> | undefined,
-  statsInput: Record<string, unknown> | undefined,
-): string {
-  const identityPosition = toDisplayValue(input?.primary_position);
-  if (identityPosition) return identityPosition;
-
-  const statsPosition = toDisplayValue(statsInput?.primaryPosition);
-  if (statsPosition) return statsPosition;
-
-  return "Position unavailable";
+function formatCost(cost: number | null | undefined): string {
+  if (cost == null) return "N/A";
+  return `$${cost.toLocaleString()}/yr`;
 }
 
-function getPreferenceEntries(input: Record<string, unknown> | undefined): Array<{ label: string; value: string }> {
-  if (!input) return [];
-
-  const keys = Object.keys(preferenceLabelMap);
-  const entries: Array<{ label: string; value: string }> = [];
-  for (const key of keys) {
-    const raw = input[key];
-    const display = toDisplayValue(raw);
-    if (!display) continue;
-    entries.push({ label: preferenceLabelMap[key], value: display });
-  }
-
-  const unique = new Map<string, string>();
-  for (const entry of entries) {
-    if (!unique.has(entry.label)) {
-      unique.set(entry.label, entry.value);
-    }
-  }
-
-  return Array.from(unique.entries()).map(([label, value]) => ({ label, value }));
+function formatPercentile(pct: number | undefined): string {
+  if (pct == null) return "N/A";
+  return `${pct.toFixed(0)}th percentile`;
 }
 
-function getPreferenceSummary(entries: Array<{ label: string; value: string }>, maxItems = 3): string {
-  if (entries.length === 0) return "No explicit preferences selected";
-  return entries
-    .slice(0, maxItems)
-    .map((entry) => `${entry.label}: ${entry.value}`)
-    .join(" · ");
+function formatProbability(prob: number | undefined): string {
+  if (prob == null) return "N/A";
+  return `${(prob * 100).toFixed(0)}%`;
 }
 
-function schoolIdentity(school: SchoolResult): string {
-  return `${school.school_name}::${school.location?.state || ""}::${school.division_group || ""}`;
+function tierDisplayLabel(tier: string | undefined): string {
+  if (!tier) return "Unknown";
+  if (tier.includes("Power 4")) return "Power 4";
+  if (tier.includes("Non-P4")) return "Division 1";
+  if (tier.includes("Non-D1")) return "Non-D1";
+  return tier;
 }
 
-function hasReasoning(school: SchoolResult): boolean {
-  const reasoning = school.llm_reasoning;
-  return Boolean(
-    reasoning &&
-      (reasoning.summary || (reasoning.fit_qualities && reasoning.fit_qualities.length > 0) || (reasoning.cautions && reasoning.cautions.length > 0)),
+function fitLabel(fit: string | undefined): string {
+  if (!fit) return "";
+  return fit.charAt(0).toUpperCase() + fit.slice(1);
+}
+
+function fitColorKey(fit: string | undefined): string {
+  const lower = (fit || "").toLowerCase();
+  if (lower.includes("safety")) return "safety";
+  if (lower.includes("reach")) return "reach";
+  return "fit";
+}
+
+function schoolDivisionLabel(school: School): string {
+  if (school.division_label) return school.division_label;
+  if (school.division_group?.includes("Power 4")) return "Power 4";
+  if (school.division_group?.includes("Non-P4")) return "Division 1";
+  if (school.baseball_division === 2) return "Division 2";
+  if (school.baseball_division === 3) return "Division 3";
+  return "";
+}
+
+function baseballFitText(school: School): string {
+  if (school.fit_label) return school.fit_label;
+  return fitLabel(school.baseball_fit);
+}
+
+function schoolDisplayName(school: School): string {
+  return school.display_school_name || school.school_name;
+}
+
+function isV2Evaluation(run: EvaluationRun): boolean {
+  return Boolean(run.preferences_response?.baseball_assessment);
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+function FitBadge({ type, label }: { type: string; label: string }) {
+  const colors = FIT_COLORS[fitColorKey(type)] || FIT_COLORS.fit;
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
+      style={{ background: colors.bg, color: colors.text, border: `1px solid ${colors.border}` }}
+    >
+      {label}
+    </span>
   );
 }
 
-function findReasoningByName(
-  reasoningMap: Record<string, LLMReasoning>,
-  schoolName: string,
-): LLMReasoning | undefined {
-  if (reasoningMap[schoolName]) return reasoningMap[schoolName];
+function DisclaimerBanner() {
+  const [collapsed, setCollapsed] = useState(false);
 
-  const normalized = schoolName.trim().toLowerCase();
-  for (const key of Object.keys(reasoningMap)) {
-    if (key.trim().toLowerCase() === normalized) {
-      return reasoningMap[key];
-    }
-  }
-
-  return undefined;
+  return (
+    <div
+      className="rounded-2xl border p-4"
+      style={{
+        background: "rgba(212,168,67,0.08)",
+        borderColor: "rgba(212,168,67,0.25)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 text-lg" style={{ color: "var(--golden-sand)" }}>
+            &#9888;
+          </span>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: "var(--walnut)" }}>
+              Important disclaimer
+            </p>
+            {!collapsed && (
+              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+                {DISCLAIMER_TEXT}
+              </p>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCollapsed(!collapsed)}
+          className="shrink-0 text-xs font-semibold"
+          style={{ color: "var(--primary)" }}
+        >
+          {collapsed ? "Show" : "Hide"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
-function getPlayingTimePreview(school: SchoolResult): string {
-  const playingTime = school.playing_time;
-  if (playingTime?.available) {
-    const bucket = playingTime.bucket || "Estimate available";
-    if (typeof playingTime.percentile === "number") {
-      return `${bucket} · ${playingTime.percentile.toFixed(1)} percentile`;
-    }
-    return bucket;
-  }
+function MetricComparisonTable({ comparisons }: { comparisons: MetricComparison[] }) {
+  if (!comparisons || comparisons.length === 0) return null;
 
-  if (typeof school.scores?.playing_time_score === "number") {
-    return `${school.scores.playing_time_score.toFixed(1)} score`;
-  }
+  return (
+    <div className="mt-3 overflow-hidden rounded-xl border border-[var(--stroke)]">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-[var(--sand)]/40">
+            <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Metric</th>
+            <th className="px-3 py-2 text-right font-semibold text-[var(--muted)]">You</th>
+            <th className="px-3 py-2 text-right font-semibold text-[var(--muted)]">Div. Avg</th>
+            <th className="px-3 py-2 text-right font-semibold text-[var(--muted)]">Diff</th>
+          </tr>
+        </thead>
+        <tbody>
+          {comparisons.map((m) => {
+            const diff = m.player_value - m.division_avg;
+            const isPositive = diff > 0;
+            // For time-based metrics (sec), lower is better
+            const isTimeBased = m.unit === "sec";
+            const isGood = isTimeBased ? diff < 0 : diff > 0;
 
-  return playingTime?.message || "Playing-time analysis unavailable";
+            return (
+              <tr key={m.metric} className="border-t border-[var(--stroke)]/50">
+                <td className="px-3 py-1.5 font-medium text-[var(--foreground)]">{m.metric}</td>
+                <td className="px-3 py-1.5 text-right font-semibold text-[var(--navy)]">
+                  {m.player_value} {m.unit}
+                </td>
+                <td className="px-3 py-1.5 text-right text-[var(--muted)]">
+                  {m.division_avg} {m.unit}
+                </td>
+                <td
+                  className="px-3 py-1.5 text-right font-semibold"
+                  style={{ color: isGood ? "var(--sage-green)" : "var(--copper)" }}
+                >
+                  {isPositive ? "+" : ""}
+                  {diff.toFixed(1)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
+
+// ---------------------------------------------------------------------------
+// Main page component
+// ---------------------------------------------------------------------------
 
 export default function EvaluationDetailPage() {
   const { runId } = useParams<{ runId: string }>();
+  const router = useRouter();
   const { loading: authLoading, accessToken, user } = useRequireAuth(`/evaluations/${runId}`);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [evaluation, setEvaluation] = useState<EvaluationRun | null>(null);
-  const [sortMode, setSortMode] = useState<SortMode>("default");
-  const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
-  const [llmPollingStatus, setLlmPollingStatus] = useState<string | null>(null);
+  const [selectedSchoolKey, setSelectedSchoolKey] = useState<string | null>(null);
+  const [savedSchoolByKey, setSavedSchoolByKey] = useState<Record<string, SavedSchoolRecord>>({});
+  const [saveSchoolNote, setSaveSchoolNote] = useState("");
+  const [savingSchool, setSavingSchool] = useState(false);
+  const [saveSchoolMessage, setSaveSchoolMessage] = useState("");
+  const [deletingRun, setDeletingRun] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
 
+  // Load evaluation
   useEffect(() => {
     if (!accessToken || !runId) return;
     let mounted = true;
@@ -240,11 +343,9 @@ export default function EvaluationDetailPage() {
             Authorization: `Bearer ${accessToken}`,
           },
         });
-        const data = (await response.json()) as EvaluationRun | { detail?: string };
+        const data = await response.json();
         if (!response.ok) {
-          throw new Error(
-            typeof data === "object" && data && "detail" in data ? data.detail || "Failed to load evaluation." : "Failed to load evaluation.",
-          );
+          throw new Error(data?.detail || "Failed to load evaluation.");
         }
         if (!mounted) return;
         setEvaluation(data as EvaluationRun);
@@ -252,191 +353,197 @@ export default function EvaluationDetailPage() {
         if (!mounted) return;
         setError(e instanceof Error ? e.message : "Failed to load evaluation.");
       } finally {
-        if (!mounted) return;
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     }
 
     loadEvaluation();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [accessToken, runId]);
 
   useEffect(() => {
-    if (!accessToken || !evaluation) return;
-
-    const summary = evaluation.preferences_response?.recommendation_summary;
-    const llmJobId = summary?.llm_job_id;
-    const schools = evaluation.preferences_response?.schools || [];
-    const alreadyHasReasoning = schools.some(hasReasoning);
-
-    if (!llmJobId || schools.length === 0 || alreadyHasReasoning) {
-      setLlmPollingStatus(null);
-      return;
-    }
+    if (!accessToken || !runId || evaluation?.llm_reasoning_status !== "processing") return;
 
     let cancelled = false;
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-    let attempts = 0;
-    const maxAttempts = 14;
-
-    const pollReasoning = async () => {
-      attempts += 1;
+    const intervalId = window.setInterval(async () => {
       try {
-        setLlmPollingStatus("queued");
-        const response = await fetch(`${API_BASE_URL}/preferences/reasoning/${encodeURIComponent(llmJobId)}`, {
+        const response = await fetch(`${API_BASE_URL}/evaluations/${runId}`, {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
           },
         });
-
-        if (!response.ok) {
-          throw new Error("LLM reasoning lookup failed");
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        if (cancelled) return;
+        setEvaluation(data as EvaluationRun);
+        if ((data as EvaluationRun).llm_reasoning_status !== "processing") {
+          window.clearInterval(intervalId);
         }
-
-        const payload = (await response.json()) as ReasoningApiResponse;
-        const status = (payload.status || "queued").toLowerCase();
-
-        if (status === "completed") {
-          const reasoningMap = payload.reasoning || {};
-          const hasReasoningPayload =
-            Object.keys(reasoningMap).length > 0 ||
-            payload.player_summary !== undefined ||
-            Boolean(payload.relax_suggestions && payload.relax_suggestions.length > 0);
-
-          if (hasReasoningPayload) {
-            setEvaluation((current) => {
-              if (!current) return current;
-              const currentPrefs = current.preferences_response || {};
-              const currentSchools = currentPrefs.schools || [];
-              const mergedSchools = currentSchools.map((school) => {
-                const reasoning = findReasoningByName(reasoningMap, school.school_name);
-                if (!reasoning) return school;
-                return {
-                  ...school,
-                  llm_reasoning: {
-                    summary: reasoning.summary,
-                    fit_qualities: reasoning.fit_qualities || [],
-                    cautions: reasoning.cautions || [],
-                  },
-                };
-              });
-
-              return {
-                ...current,
-                preferences_response: {
-                  ...currentPrefs,
-                  recommendation_summary: {
-                    ...(currentPrefs.recommendation_summary || {}),
-                    llm_status: "completed",
-                    player_summary:
-                      payload.player_summary !== undefined
-                        ? payload.player_summary
-                        : currentPrefs.recommendation_summary?.player_summary,
-                    relax_suggestions:
-                      payload.relax_suggestions || currentPrefs.recommendation_summary?.relax_suggestions || [],
-                  },
-                  schools: mergedSchools,
-                },
-              };
-            });
-          }
-          if (!cancelled) {
-            setLlmPollingStatus("completed");
-          }
-          return;
-        }
-
-        if (status === "failed") {
-          if (!cancelled) {
-            setLlmPollingStatus("failed");
-          }
-          return;
-        }
-
-        if (!cancelled) {
-          setLlmPollingStatus(status);
-        }
-
-        if (attempts >= maxAttempts) {
-          if (!cancelled) {
-            setLlmPollingStatus("timed_out");
-          }
-          return;
-        }
-
-        timeoutHandle = setTimeout(() => {
-          void pollReasoning();
-        }, 2500);
       } catch {
-        if (!cancelled) {
-          setLlmPollingStatus("failed");
-        }
+        // Keep polling while the background job is running.
       }
-    };
-
-    void pollReasoning();
+    }, 8000);
 
     return () => {
       cancelled = true;
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
+      window.clearInterval(intervalId);
     };
-  }, [accessToken, evaluation]);
+  }, [accessToken, runId, evaluation?.llm_reasoning_status]);
 
-  const schools = useMemo(() => evaluation?.preferences_response?.schools || [], [evaluation?.preferences_response?.schools]);
-  const sortedSchools = useMemo(() => {
-    const next = [...schools];
-    if (sortMode === "playing_time") {
-      next.sort((a, b) => {
-        const scoreA = a.scores?.playing_time_score ?? a.playing_time?.percentile ?? -1;
-        const scoreB = b.scores?.playing_time_score ?? b.playing_time?.percentile ?? -1;
-        return scoreB - scoreA;
-      });
-    } else if (sortMode === "preferences") {
-      next.sort((a, b) => {
-        const hitsA = a.match_analysis?.total_nice_to_have_matches ?? a.scores?.nice_to_have_count ?? 0;
-        const hitsB = b.match_analysis?.total_nice_to_have_matches ?? b.scores?.nice_to_have_count ?? 0;
-        return hitsB - hitsA;
-      });
-    }
-    return next;
-  }, [schools, sortMode]);
-
+  // Load saved schools
   useEffect(() => {
-    if (sortedSchools.length === 0) {
-      setSelectedSchoolId(null);
-      return;
+    if (!accessToken) return;
+    let mounted = true;
+
+    async function loadSavedSchools() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/saved-schools`, {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!mounted) return;
+        const nextMap: Record<string, SavedSchoolRecord> = {};
+        for (const item of data.items || []) {
+          if (item.dedupe_key) nextMap[item.dedupe_key] = item;
+        }
+        setSavedSchoolByKey(nextMap);
+      } catch { /* ignore */ }
     }
 
-    const selectedStillExists = selectedSchoolId
-      ? sortedSchools.some((school) => schoolIdentity(school) === selectedSchoolId)
-      : false;
+    loadSavedSchools();
+    return () => { mounted = false; };
+  }, [accessToken]);
 
-    if (!selectedStillExists) {
-      setSelectedSchoolId(schoolIdentity(sortedSchools[0]));
-    }
-  }, [selectedSchoolId, sortedSchools]);
+  // Derived data
+  const schools = useMemo(
+    () => evaluation?.preferences_response?.schools || [],
+    [evaluation?.preferences_response?.schools],
+  );
+
+  const baseball = evaluation?.preferences_response?.baseball_assessment;
+  const academic = evaluation?.preferences_response?.academic_score;
+  const llmStatus = evaluation?.llm_reasoning_status;
+  const v2 = evaluation ? isV2Evaluation(evaluation) : false;
 
   const selectedSchool = useMemo(() => {
-    if (sortedSchools.length === 0) return null;
-    if (!selectedSchoolId) return sortedSchools[0];
-    return sortedSchools.find((school) => schoolIdentity(school) === selectedSchoolId) || sortedSchools[0];
-  }, [selectedSchoolId, sortedSchools]);
+    if (schools.length === 0) return null;
+    if (!selectedSchoolKey) return schools[0];
+    return schools.find((s) => getSchoolDedupeKey(s) === selectedSchoolKey) || schools[0];
+  }, [selectedSchoolKey, schools]);
 
-  const preferenceEntries = useMemo(() => getPreferenceEntries(evaluation?.preferences_input), [evaluation?.preferences_input]);
-  const playerName = useMemo(() => getPlayerName(evaluation?.identity_input), [evaluation?.identity_input]);
-  const positionLabel = useMemo(
-    () => getPositionLabel(evaluation?.identity_input, evaluation?.stats_input),
-    [evaluation?.identity_input, evaluation?.stats_input],
+  const selectedRank = selectedSchool?.rank ?? null;
+
+  const selectedDedupeKey = useMemo(
+    () => (selectedSchool ? getSchoolDedupeKey(selectedSchool) : null),
+    [selectedSchool],
   );
-  const preferenceSummary = useMemo(() => getPreferenceSummary(preferenceEntries), [preferenceEntries]);
-  const recommendationSummary = evaluation?.preferences_response?.recommendation_summary;
-  const activeLlmStatus = (llmPollingStatus || recommendationSummary?.llm_status || "").toLowerCase();
+  const isSelectedSaved = selectedDedupeKey ? Boolean(savedSchoolByKey[selectedDedupeKey]) : false;
 
+  // Reset note when selected school changes
+  useEffect(() => {
+    if (!selectedSchool) {
+      setSaveSchoolNote("");
+      setSaveSchoolMessage("");
+      return;
+    }
+    const saved = selectedDedupeKey ? savedSchoolByKey[selectedDedupeKey] : undefined;
+    setSaveSchoolNote(saved?.note || "");
+    setSaveSchoolMessage("");
+  }, [selectedSchool, selectedDedupeKey, savedSchoolByKey]);
+
+  // Select school handler
+  function selectSchool(rank: number) {
+    const school = schools.find((candidate) => candidate.rank === rank);
+    if (school) {
+      setSelectedSchoolKey(getSchoolDedupeKey(school));
+    }
+    // Scroll detail panel into view on mobile
+    if (window.innerWidth < 1024) {
+      setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    }
+  }
+
+  // Save school
+  async function saveSelectedSchool() {
+    if (!accessToken || !selectedSchool || isSelectedSaved || savingSchool) return;
+    setSavingSchool(true);
+    setSaveSchoolMessage("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/saved-schools`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          school_name: selectedSchool.school_name,
+          school_logo_image: selectedSchool.school_logo_image || null,
+          school_data: selectedSchool,
+          note: saveSchoolNote.trim() || null,
+          evaluation_run_id: runId,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        if (response.status === 409) {
+          setSaveSchoolMessage("School already saved.");
+          return;
+        }
+        throw new Error(payload.detail || "Failed to save school.");
+      }
+
+      const dedupeKey = payload.dedupe_key || selectedDedupeKey || getSchoolDedupeKey(selectedSchool);
+      setSavedSchoolByKey((curr) => ({ ...curr, [dedupeKey]: payload }));
+      setSaveSchoolMessage("School saved!");
+    } catch (e) {
+      setSaveSchoolMessage(e instanceof Error ? e.message : "Failed to save school.");
+    } finally {
+      setSavingSchool(false);
+    }
+  }
+
+  // Delete run
+  async function deleteCurrentRun() {
+    if (!accessToken || deletingRun) return;
+    const confirmed = window.confirm("Delete this evaluation run?");
+    if (!confirmed) return;
+
+    setDeletingRun(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/evaluations/${runId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Failed to delete.");
+      router.push("/evaluations");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete evaluation run.");
+    } finally {
+      setDeletingRun(false);
+    }
+  }
+
+  // Page metadata
+  const playerName = (evaluation?.identity_input?.name as string) || "Evaluation";
+  const positionLabel = (evaluation?.identity_input?.primary_position as string) ||
+    (evaluation?.stats_input?.primary_position as string) || "";
+  const reportDate = evaluation?.created_at
+    ? new Date(evaluation.created_at).toLocaleDateString()
+    : "";
+
+  // Loading state
   if (authLoading || loading) {
     return (
       <div className="min-h-screen px-6 py-16">
@@ -447,312 +554,618 @@ export default function EvaluationDetailPage() {
     );
   }
 
+  if (error && !evaluation) {
+    return (
+      <div className="min-h-screen">
+        {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
+        <div className="mx-auto max-w-3xl px-6 pt-12">
+          <div className="rounded-2xl border border-red-300 bg-red-50 p-6 text-center text-sm text-red-700">
+            {error}
+          </div>
+          <div className="mt-4 text-center">
+            <Link href="/evaluations" className="text-sm font-semibold text-[var(--primary)] hover:underline">
+              Back to evaluations
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 py-10 md:py-12">
+      <main className="px-4 pt-5 pb-12 md:px-6 md:pt-6">
         <div className="mx-auto max-w-6xl">
+          {/* Header */}
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Evaluation Report</p>
-              <h1 className="display-font mt-3 text-4xl md:text-5xl">{playerName}</h1>
-              <p className="mt-3 text-[var(--muted)]">
-                Classification:{" "}
-                <span className="font-semibold text-[var(--navy)]">
-                  {evaluation?.prediction_response?.final_prediction || "Unavailable"}
-                </span>
-                {" · "}
-                Position: <span className="font-semibold text-[var(--navy)]">{positionLabel}</span>
-              </p>
-              <p className="mt-1 text-sm text-[var(--muted)]">Preferences: {preferenceSummary}</p>
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                {evaluation?.created_at ? new Date(evaluation.created_at).toLocaleString() : "Timestamp unavailable"}
-              </p>
+              <h1 className="display-font text-3xl md:text-4xl">
+                {playerName}&apos;s Evaluation
+              </h1>
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[var(--muted)]">
+                {positionLabel && (
+                  <span className="rounded-full bg-[var(--sand)] px-3 py-0.5 text-xs font-semibold text-[var(--navy)]">
+                    {positionLabel}
+                  </span>
+                )}
+                {reportDate && <span>{reportDate}</span>}
+                {v2 && baseball?.predicted_tier && (
+                  <span className="font-semibold text-[var(--navy)]">
+                    {tierDisplayLabel(baseball.predicted_tier)}
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/predict"
+                className="rounded-full bg-[var(--primary)] px-5 py-2 text-sm font-semibold !text-white shadow-soft"
+              >
+                New evaluation
+              </Link>
               <Link
                 href="/evaluations"
-                className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)]"
+                className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2 text-sm font-semibold text-[var(--navy)]"
               >
                 All evaluations
               </Link>
-              <Link
-                href="/predict"
-                className="rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white shadow-strong"
+              <button
+                type="button"
+                onClick={deleteCurrentRun}
+                disabled={deletingRun}
+                className="rounded-full border border-red-300 bg-white px-5 py-2 text-sm font-semibold text-red-700 disabled:opacity-50"
               >
-                Run new evaluation
-              </Link>
-              <Link
-                href={`/goals/create?from_eval=${runId}`}
-                className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)]"
-              >
-                Set Goals
-              </Link>
+                {deletingRun ? "Removing..." : "Remove"}
+              </button>
             </div>
           </div>
 
           {error && (
-            <div className="mt-6 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+            <div className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div>
           )}
 
-          <section className="mt-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="glass rounded-2xl p-6 shadow-soft">
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Selected preferences</p>
-              {preferenceEntries.length === 0 ? (
-                <p className="mt-3 text-sm text-[var(--muted)]">
-                  No explicit preferences were selected for this run. Schools were ranked from baseline fit and playing-time logic.
-                </p>
-              ) : (
-                <div className="mt-4 space-y-2">
-                  {preferenceEntries.map((entry) => (
-                    <div key={entry.label} className="rounded-xl border border-[var(--stroke)] bg-white/80 p-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">{entry.label}</p>
-                      <p className="mt-1 text-sm font-semibold text-[var(--navy)]">{entry.value}</p>
+          {/* Disclaimer */}
+          {v2 && (
+            <div className="mt-5">
+              <DisclaimerBanner />
+            </div>
+          )}
+
+          {llmStatus === "processing" && (
+            <div className="mt-10 flex flex-col items-center justify-center py-16">
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--stroke)] border-t-[var(--primary)]" />
+              <p className="mt-5 text-base font-semibold text-[var(--foreground)]">
+                Researching rosters and recruiting context
+              </p>
+              <p className="mt-2 max-w-md text-center text-sm text-[var(--muted)]">
+                We&apos;re analyzing roster depth, incoming recruits, transfers, and positional need for each school. This typically takes 5&ndash;10 minutes.
+              </p>
+            </div>
+          )}
+
+          {llmStatus === "failed" && (
+            <div className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-4">
+              <p className="text-sm font-semibold text-red-700">
+                Deep roster research did not complete.
+              </p>
+              <p className="mt-1 text-xs text-red-700">
+                The current report still reflects the base athletic and academic match.
+              </p>
+            </div>
+          )}
+
+          {/* Assessment Summary Cards — hidden while research is running */}
+          {llmStatus !== "processing" && v2 && (baseball || academic) && (
+            <section className="mt-6 grid gap-4 md:grid-cols-2">
+              {/* Baseball Assessment */}
+              {baseball && (
+                <div className="glass rounded-2xl p-5 shadow-soft">
+                  <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Baseball assessment</p>
+                  <p className="mt-3 text-2xl font-bold text-[var(--foreground)]">
+                    {tierDisplayLabel(baseball.predicted_tier)}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                      <p className="text-xs text-[var(--muted)]">Within-tier</p>
+                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                        {formatPercentile(baseball.within_tier_percentile)}
+                      </p>
                     </div>
-                  ))}
+                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                      <p className="text-xs text-[var(--muted)]">D1 probability</p>
+                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                        {formatProbability(baseball.d1_probability)}
+                      </p>
+                    </div>
+                    {baseball.p4_probability != null && (
+                      <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                        <p className="text-xs text-[var(--muted)]">P4 probability</p>
+                        <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                          {formatProbability(baseball.p4_probability)}
+                        </p>
+                      </div>
+                    )}
+                    {baseball.confidence && (
+                      <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                        <p className="text-xs text-[var(--muted)]">Confidence</p>
+                        <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                          {baseball.confidence}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
-            </div>
 
-            <div className="glass rounded-2xl p-6 shadow-soft">
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Report summary</p>
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div className="rounded-xl border border-[var(--stroke)] bg-white/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Classification</p>
-                  <p className="mt-1 text-lg font-semibold">{evaluation?.prediction_response?.final_prediction || "-"}</p>
+              {/* Academic Assessment */}
+              {academic && (
+                <div className="glass rounded-2xl p-5 shadow-soft">
+                  <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Academic assessment</p>
+                  <p className="mt-3 text-2xl font-bold text-[var(--foreground)]">
+                    {academic.composite != null ? `${academic.composite.toFixed(1)} / 10` : "N/A"}
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-3">
+                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                      <p className="text-xs text-[var(--muted)]">GPA</p>
+                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                        {academic.gpa_rating != null ? academic.gpa_rating.toFixed(1) : "N/A"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                      <p className="text-xs text-[var(--muted)]">Test score</p>
+                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                        {academic.test_rating != null ? academic.test_rating.toFixed(1) : "N/A"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                      <p className="text-xs text-[var(--muted)]">AP courses</p>
+                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                        {academic.ap_rating != null ? academic.ap_rating.toFixed(1) : "N/A"}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="rounded-xl border border-[var(--stroke)] bg-white/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Schools returned</p>
-                  <p className="mt-1 text-lg font-semibold">{evaluation?.preferences_response?.summary?.total_matches ?? schools.length}</p>
-                </div>
-                <div className="rounded-xl border border-[var(--stroke)] bg-white/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Player / Position</p>
-                  <p className="mt-1 text-sm font-semibold">{playerName}</p>
-                  <p className="text-sm text-[var(--muted)]">{positionLabel}</p>
-                </div>
+              )}
+            </section>
+          )}
+
+          {/* Map — hidden while research is running */}
+          {llmStatus !== "processing" && v2 && schools.length > 0 && (
+            <section className="mt-6">
+              <ResultsMap
+                schools={schools.map((s) => ({
+                  rank: s.rank,
+                  school_name: schoolDisplayName(s),
+                  state: s.location?.state || "",
+                }))}
+                selectedRank={selectedRank ?? (schools[0]?.rank || null)}
+                onSelect={selectSchool}
+                highlightedRegions={(evaluation?.preferences_input?.regions as string[] | undefined) || null}
+              />
+            </section>
+          )}
+
+          {/* Schools section — hidden while research is running */}
+          {llmStatus !== "processing" && <section className="mt-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">
+                  Matched schools ({schools.length})
+                </p>
+                {v2 && (
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    Click a school to view detailed fit analysis
+                  </p>
+                )}
               </div>
             </div>
-          </section>
 
-          <section className="mt-8">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">School matches</p>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  Click a school to open the detailed fit panel with full breakdown and LLM reasoning.
+            {schools.length === 0 ? (
+              <div className="rounded-2xl border border-[var(--stroke)] bg-white/75 p-8 text-center">
+                <p className="text-sm font-semibold text-[var(--foreground)]">No schools matched your criteria.</p>
+                <p className="mt-2 text-sm text-[var(--muted)]">
+                  Try broadening your region or budget preferences.
                 </p>
               </div>
-              <label className="text-sm font-semibold text-[var(--navy)]">
-                Sort
-                <select
-                  value={sortMode}
-                  onChange={(event) => setSortMode(event.target.value as SortMode)}
-                  className="form-control mt-2 min-w-[250px]"
-                >
-                  <option value="default">Default ranking</option>
-                  <option value="playing_time">Playing time (high to low)</option>
-                  <option value="preferences">Preferences hit (high to low)</option>
-                </select>
-              </label>
-            </div>
-
-            {sortedSchools.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-[var(--stroke)] bg-white/75 p-6">
-                <p className="text-sm font-semibold">No schools were returned for this run.</p>
-              </div>
             ) : (
-              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+                {/* School list */}
                 <div className="space-y-3">
-                  {sortedSchools.map((school, index) => {
-                    const id = schoolIdentity(school);
-                    const isActive = selectedSchoolId === id;
+                  {schools.map((school) => {
+                    const isActive = (selectedDedupeKey ?? getSchoolDedupeKey(schools[0])) === getSchoolDedupeKey(school);
+                    const logoUrl = getNcaLogoUrl(school.school_logo_image);
+                    const medalIdx = school.rank - 1;
+                    const hasMedal = medalIdx < 3;
+                    const schoolTierLabel = schoolDivisionLabel(school);
+
                     return (
                       <button
-                        key={`${id}-${index}`}
+                        key={getSchoolDedupeKey(school)}
                         type="button"
-                        onClick={() => setSelectedSchoolId(id)}
-                        className={`w-full rounded-2xl border bg-white/80 p-4 text-left shadow-soft transition duration-200 ${
+                        onClick={() => selectSchool(school.rank)}
+                        className={`w-full rounded-2xl border bg-white/80 p-4 text-left shadow-soft transition-all duration-200 ${
                           isActive
                             ? "border-[var(--primary)] ring-1 ring-[var(--primary)]"
                             : "border-[var(--stroke)] hover:-translate-y-0.5 hover:border-[var(--primary)]/40"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-base font-semibold text-[var(--foreground)]">{school.school_name}</p>
-                          <span className="rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">
-                            {school.division_group || "Division unavailable"}
-                          </span>
-                        </div>
-                        <div className="mt-3 grid gap-2 text-sm text-[var(--muted)]">
-                          <p>
-                            Nice-to-have hits: <span className="font-semibold text-[var(--navy)]">{school.match_analysis?.total_nice_to_have_matches ?? 0}</span>
-                          </p>
-                          <p>
-                            Playing-time calc: <span className="font-semibold text-[var(--navy)]">{getPlayingTimePreview(school)}</span>
-                          </p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              {hasMedal && (
+                                <span
+                                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                                  style={{ background: MEDAL_COLORS[medalIdx] }}
+                                >
+                                  {school.rank}
+                                </span>
+                              )}
+                              {!hasMedal && (
+                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--sand)] text-xs font-semibold text-[var(--navy)]">
+                                  {school.rank}
+                                </span>
+                              )}
+                              <p className="text-sm font-semibold text-[var(--foreground)] md:text-base">
+                                {schoolDisplayName(school)}
+                              </p>
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              {schoolTierLabel && (
+                                <span className="rounded-full bg-[var(--sand)] px-2.5 py-0.5 text-xs font-semibold text-[var(--navy)]">
+                                  {schoolTierLabel}
+                                </span>
+                              )}
+                              {school.conference && (
+                                <span className="text-xs text-[var(--muted)]">{school.conference}</span>
+                              )}
+                              {school.location?.state && (
+                                <span className="text-xs text-[var(--muted)]">{school.location.state}</span>
+                              )}
+                            </div>
+
+                            {v2 && (
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {school.baseball_fit && (
+                                  <FitBadge
+                                    type={school.fit_label || school.baseball_fit}
+                                    label={`Baseball: ${baseballFitText(school)}`}
+                                  />
+                                )}
+                                {school.academic_fit && (
+                                  <FitBadge
+                                    type={school.academic_fit}
+                                    label={`Academic: ${fitLabel(school.academic_fit)}`}
+                                  />
+                                )}
+                                {school.roster_label && school.roster_label !== "unknown" && (
+                                  <span
+                                    className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                                    style={{
+                                      background: school.roster_label === "open" ? "#dcfce7" : school.roster_label === "crowded" ? "#fef3c7" : "#f3f4f6",
+                                      color: school.roster_label === "open" ? "#166534" : school.roster_label === "crowded" ? "#92400e" : "#374151",
+                                      border: `1px solid ${school.roster_label === "open" ? "#86efac" : school.roster_label === "crowded" ? "#fcd34d" : "#d1d5db"}`,
+                                    }}
+                                  >
+                                    {school.roster_label === "open" ? "Open" : school.roster_label === "crowded" ? "Crowded" : "Competitive"}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {logoUrl && (
+                            <img
+                              src={logoUrl}
+                              alt=""
+                              loading="lazy"
+                              onError={(e) => { e.currentTarget.style.display = "none"; }}
+                              className="h-12 w-12 shrink-0 rounded-lg border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
+                            />
+                          )}
                         </div>
                       </button>
                     );
                   })}
                 </div>
 
-                <aside className="glass rounded-2xl p-5 shadow-soft lg:sticky lg:top-24 lg:max-h-[76vh] lg:overflow-hidden">
+                {/* Detail panel */}
+                <aside
+                  ref={detailRef}
+                  className="glass rounded-2xl p-5 shadow-soft lg:sticky lg:top-24 lg:max-h-[82vh] lg:overflow-y-auto"
+                >
                   {selectedSchool ? (
-                    <div key={schoolIdentity(selectedSchool)} className="school-detail-panel flex h-full flex-col">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-lg font-semibold">{selectedSchool.school_name}</p>
-                        <span className="rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">
-                          {selectedSchool.division_group || "Division unavailable"}
-                        </span>
-                      </div>
-
-                      <p className="mt-2 text-sm text-[var(--muted)]">
-                        {selectedSchool.location?.state ? `State: ${selectedSchool.location.state} · ` : ""}
-                        {selectedSchool.academics?.grade ? `Academics: ${selectedSchool.academics.grade} · ` : ""}
-                        {selectedSchool.athletics?.grade
-                          ? `Athletics: ${selectedSchool.athletics.grade}`
-                          : "Athletics grade unavailable"}
-                      </p>
-
-                      <div className="mt-4 space-y-3 overflow-y-auto pr-1 lg:max-h-[62vh]">
-                        <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Playing time calc</p>
-                          {selectedSchool.playing_time?.available ? (
-                            <>
-                              <p className="mt-1 text-sm font-semibold text-[var(--navy)]">
-                                {selectedSchool.playing_time.bucket || "Estimate available"}
-                                {typeof selectedSchool.playing_time.percentile === "number"
-                                  ? ` · ${selectedSchool.playing_time.percentile.toFixed(1)} percentile`
-                                  : ""}
-                              </p>
-                              <p className="mt-1 text-sm text-[var(--muted)]">
-                                {selectedSchool.playing_time.interpretation || "No interpretation available"}
-                              </p>
-                              {selectedSchool.playing_time.breakdown && Object.keys(selectedSchool.playing_time.breakdown).length > 0 && (
-                                <div className="mt-2 space-y-1 text-xs text-[var(--muted)]">
-                                  {Object.entries(selectedSchool.playing_time.breakdown)
-                                    .slice(0, 4)
-                                    .map(([metric, value]) => (
-                                      <p key={metric}>
-                                        {metric.replace(/_/g, " ")}: {typeof value === "number" ? value.toFixed(2) : String(value)}
-                                      </p>
-                                    ))}
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <p className="mt-1 text-sm text-[var(--muted)]">
-                              {selectedSchool.playing_time?.message || "Playing-time analysis unavailable for this school"}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Preference hits</p>
-                          <p className="mt-1 text-sm font-semibold text-[var(--navy)]">
-                            {selectedSchool.match_analysis?.total_nice_to_have_matches ?? 0} matched preferences
-                          </p>
-                          <p className="mt-1 text-sm text-[var(--muted)]">
-                            Score:{" "}
-                            {typeof selectedSchool.scores?.playing_time_score === "number"
-                              ? selectedSchool.scores.playing_time_score.toFixed(1)
-                              : "N/A"}{" "}
-                            playing-time
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Why this matches</p>
-                          {selectedSchool.match_analysis?.pros?.length ? (
-                            <ul className="mt-2 space-y-1 text-sm text-[var(--foreground)]">
-                              {selectedSchool.match_analysis.pros.map((pro, index) => (
-                                <li key={`${pro.preference}-${index}`}>- {pro.description || pro.preference}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="mt-2 text-sm text-[var(--muted)]">No preference matches recorded.</p>
-                          )}
-                        </div>
-
-                        <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Tradeoffs</p>
-                          {selectedSchool.match_analysis?.cons?.length ? (
-                            <ul className="mt-2 space-y-1 text-sm text-[var(--foreground)]">
-                              {selectedSchool.match_analysis.cons.map((con, index) => (
-                                <li key={`${con.preference}-${index}`}>- {con.reason || con.preference}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="mt-2 text-sm text-[var(--muted)]">No major preference tradeoffs detected.</p>
-                          )}
-                        </div>
-
-                        <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">School reasoning</p>
-                            {(activeLlmStatus === "queued" || activeLlmStatus === "pending" || activeLlmStatus === "started") && (
-                              <span className="text-xs text-[var(--muted)]">Generating...</span>
+                    <div key={selectedDedupeKey} className="detail-slide-in">
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            {selectedSchool.rank <= 3 && (
+                              <span
+                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                                style={{ background: MEDAL_COLORS[selectedSchool.rank - 1] }}
+                              >
+                                {selectedSchool.rank}
+                              </span>
+                            )}
+                            <h2 className="text-lg font-bold text-[var(--foreground)]">
+                              {schoolDisplayName(selectedSchool)}
+                            </h2>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--muted)]">
+                            {selectedSchool.conference && <span>{selectedSchool.conference}</span>}
+                            {selectedSchool.conference && selectedSchool.location?.state && <span>&middot;</span>}
+                            {selectedSchool.location?.state && <span>{selectedSchool.location.state}</span>}
+                            {selectedSchool.location?.region && (
+                              <>
+                                <span>&middot;</span>
+                                <span>{selectedSchool.location.region}</span>
+                              </>
                             )}
                           </div>
-
-                          {hasReasoning(selectedSchool) ? (
-                            <>
-                              {selectedSchool.llm_reasoning?.summary && (
-                                <p className="mt-2 text-sm text-[var(--foreground)]">{selectedSchool.llm_reasoning.summary}</p>
-                              )}
-                            </>
-                          ) : (
-                            <p className="mt-2 text-sm text-[var(--muted)]">
-                              {activeLlmStatus === "failed" || activeLlmStatus === "unavailable" || activeLlmStatus === "timed_out"
-                                ? "Reasoning is currently unavailable for this run."
-                                : "Reasoning will appear here when generation finishes."}
-                            </p>
-                          )}
                         </div>
+                        {getNcaLogoUrl(selectedSchool.school_logo_image) && (
+                          <img
+                            src={getNcaLogoUrl(selectedSchool.school_logo_image)!}
+                            alt=""
+                            onError={(e) => { e.currentTarget.style.display = "none"; }}
+                            className="h-14 w-14 shrink-0 rounded-lg border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
+                          />
+                        )}
+                      </div>
 
-                        {recommendationSummary?.player_summary && (
-                          <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
-                            <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Player summary</p>
-                            <p className="mt-2 text-sm text-[var(--foreground)]">{recommendationSummary.player_summary}</p>
+                      {/* Fit labels + tier + cost */}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {schoolDivisionLabel(selectedSchool) && (
+                          <span className="rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">
+                            {schoolDivisionLabel(selectedSchool)}
+                          </span>
+                        )}
+                        {selectedSchool.baseball_fit && (
+                          <FitBadge
+                            type={selectedSchool.fit_label || selectedSchool.baseball_fit}
+                            label={`Baseball: ${baseballFitText(selectedSchool)}`}
+                          />
+                        )}
+                        {selectedSchool.academic_fit && (
+                          <FitBadge
+                            type={selectedSchool.academic_fit}
+                            label={`Academic: ${fitLabel(selectedSchool.academic_fit)}`}
+                          />
+                        )}
+                        {selectedSchool.roster_label && selectedSchool.roster_label !== "unknown" && (
+                          <span
+                            className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                            style={{
+                              background: selectedSchool.roster_label === "open" ? "#dcfce7" : selectedSchool.roster_label === "crowded" ? "#fef3c7" : "#f3f4f6",
+                              color: selectedSchool.roster_label === "open" ? "#166534" : selectedSchool.roster_label === "crowded" ? "#92400e" : "#374151",
+                              border: `1px solid ${selectedSchool.roster_label === "open" ? "#86efac" : selectedSchool.roster_label === "crowded" ? "#fcd34d" : "#d1d5db"}`,
+                            }}
+                          >
+                            {selectedSchool.roster_label === "open" ? "Open" : selectedSchool.roster_label === "crowded" ? "Crowded" : "Competitive"}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        {selectedSchool.niche_academic_grade && (
+                          <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                            <p className="text-xs text-[var(--muted)]">Niche academic grade</p>
+                            <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                              {selectedSchool.niche_academic_grade}
+                            </p>
                           </div>
                         )}
+                        <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                          <p className="text-xs text-[var(--muted)]">Est. annual cost</p>
+                          <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                            {formatCost(selectedSchool.estimated_annual_cost)}
+                          </p>
+                        </div>
+                      </div>
 
-                        {recommendationSummary?.relax_suggestions && recommendationSummary.relax_suggestions.length > 0 && (
-                          <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
-                            <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Relax suggestions</p>
-                            <ul className="mt-2 space-y-1 text-sm text-[var(--foreground)]">
-                              {recommendationSummary.relax_suggestions.map((suggestion, index) => (
-                                <li key={`${suggestion.preference || "suggestion"}-${index}`}>
-                                  - {suggestion.preference}: {suggestion.suggestion}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
+                      {(selectedSchool.research_confidence || selectedSchool.opportunity_fit || selectedSchool.ranking_adjustment != null) && (
+                        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                          {selectedSchool.research_confidence && (
+                            <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                              <p className="text-xs text-[var(--muted)]">Research confidence</p>
+                              <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                                {selectedSchool.research_confidence}
+                              </p>
+                            </div>
+                          )}
+                          {selectedSchool.opportunity_fit && (
+                            <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                              <p className="text-xs text-[var(--muted)]">Roster opportunity</p>
+                              <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                                {selectedSchool.opportunity_fit}
+                              </p>
+                            </div>
+                          )}
+                          {selectedSchool.ranking_adjustment != null && (
+                            <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
+                              <p className="text-xs text-[var(--muted)]">Ranking adjustment</p>
+                              <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
+                                {selectedSchool.ranking_adjustment > 0 ? "+" : ""}
+                                {selectedSchool.ranking_adjustment.toFixed(1)}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* LLM Fit Summary */}
+                      {selectedSchool.fit_summary && (
+                        <div className="mt-4 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Fit analysis</p>
+                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
+                            {selectedSchool.fit_summary}
+                          </p>
+                        </div>
+                      )}
+
+                      {selectedSchool.roster_summary && (
+                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Roster outlook</p>
+                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
+                            {selectedSchool.roster_summary}
+                          </p>
+                        </div>
+                      )}
+
+                      {selectedSchool.opportunity_summary && (
+                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Opportunity context</p>
+                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
+                            {selectedSchool.opportunity_summary}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* LLM School Description */}
+                      {selectedSchool.school_description && (
+                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">About this program</p>
+                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
+                            {selectedSchool.school_description}
+                          </p>
+                        </div>
+                      )}
+
+                      {selectedSchool.trend_summary && (
+                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Program trend</p>
+                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
+                            {selectedSchool.trend_summary}
+                          </p>
+                        </div>
+                      )}
+
+                      {(selectedSchool.research_reasons?.length || selectedSchool.research_risks?.length || selectedSchool.research_data_gaps?.length) && (
+                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Research notes</p>
+                          {selectedSchool.research_reasons?.length ? (
+                            <div className="mt-2">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Positives</p>
+                              <ul className="mt-1 space-y-1 text-sm text-[var(--foreground)]">
+                                {selectedSchool.research_reasons.map((reason) => (
+                                  <li key={reason}>- {reason}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {selectedSchool.research_risks?.length ? (
+                            <div className="mt-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Risks</p>
+                              <ul className="mt-1 space-y-1 text-sm text-[var(--foreground)]">
+                                {selectedSchool.research_risks.map((risk) => (
+                                  <li key={risk}>- {risk}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {selectedSchool.research_data_gaps?.length ? (
+                            <div className="mt-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Data gaps</p>
+                              <ul className="mt-1 space-y-1 text-sm text-[var(--foreground)]">
+                                {selectedSchool.research_data_gaps.map((gap) => (
+                                  <li key={gap}>- {gap}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+
+                      {selectedSchool.research_sources?.length ? (
+                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Research sources</p>
+                          <ul className="mt-2 space-y-1 text-sm">
+                            {selectedSchool.research_sources.map((source) => (
+                              <li key={`${source.url}-${source.label}`}>
+                                <a
+                                  href={source.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[var(--primary)] hover:underline"
+                                >
+                                  {source.label || source.url}
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {/* Metric comparisons */}
+                      {selectedSchool.metric_comparisons && selectedSchool.metric_comparisons.length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
+                            Your metrics vs. {schoolDivisionLabel(selectedSchool) || "division"} average
+                          </p>
+                          <MetricComparisonTable comparisons={selectedSchool.metric_comparisons} />
+                        </div>
+                      )}
+
+                      {/* Save school */}
+                      <div className="mt-4 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Save school</p>
+                          {isSelectedSaved && (
+                            <span className="rounded-full bg-[var(--sage-green)] px-2 py-0.5 text-xs font-semibold text-white">
+                              Saved
+                            </span>
+                          )}
+                        </div>
+                        <textarea
+                          value={saveSchoolNote}
+                          onChange={(e) => setSaveSchoolNote(e.target.value)}
+                          placeholder="Notes about this school..."
+                          className="form-control mt-3 min-h-[72px] resize-y text-sm"
+                        />
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={saveSelectedSchool}
+                            disabled={isSelectedSaved || savingSchool}
+                            className="rounded-full bg-[var(--primary)] px-4 py-2 text-xs font-semibold !text-white shadow-soft disabled:opacity-50"
+                          >
+                            {isSelectedSaved ? "Saved" : savingSchool ? "Saving..." : "Save School"}
+                          </button>
+                          <Link
+                            href="/saved-schools"
+                            className="text-xs font-semibold text-[var(--primary)] hover:underline"
+                          >
+                            View saved
+                          </Link>
+                        </div>
+                        {saveSchoolMessage && (
+                          <p className="mt-2 text-xs text-[var(--muted)]">{saveSchoolMessage}</p>
                         )}
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                      <p className="text-sm text-[var(--muted)]">Select a school to view the full fit report.</p>
+                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-6 text-center">
+                      <p className="text-sm text-[var(--muted)]">Select a school to view details.</p>
                     </div>
                   )}
                 </aside>
               </div>
             )}
-          </section>
+          </section>}
         </div>
       </main>
 
       <style jsx>{`
-        .school-detail-panel {
-          animation: fadeSlideIn 220ms ease;
+        .detail-slide-in {
+          animation: detailSlideIn 220ms ease;
         }
-
-        @keyframes fadeSlideIn {
+        @keyframes detailSlideIn {
           from {
             opacity: 0;
-            transform: translateX(14px);
+            transform: translateX(12px);
           }
           to {
             opacity: 1;

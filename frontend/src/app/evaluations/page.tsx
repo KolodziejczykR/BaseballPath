@@ -83,6 +83,8 @@ export default function EvaluationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [items, setItems] = useState<EvaluationListItem[]>([]);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [resettingAll, setResettingAll] = useState(false);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -121,6 +123,62 @@ export default function EvaluationsPage() {
     };
   }, [accessToken]);
 
+  async function deleteRun(runId: string) {
+    if (!accessToken || deletingRunId || resettingAll) return;
+    const confirmed = window.confirm("Delete this evaluation run?");
+    if (!confirmed) return;
+
+    setDeletingRunId(runId);
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/evaluations/${runId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || "Failed to delete evaluation run.");
+      }
+      setItems((current) => current.filter((item) => item.id !== runId));
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete evaluation run.");
+    } finally {
+      setDeletingRunId(null);
+    }
+  }
+
+  async function resetEvaluationHistory() {
+    if (!accessToken || resettingAll || deletingRunId) return;
+    const confirmed = window.confirm(
+      "Delete all evaluation runs in this account? This cannot be undone.",
+    );
+    if (!confirmed) return;
+
+    setResettingAll(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/evaluations?confirm=true`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || "Failed to reset evaluation history.");
+      }
+      setItems([]);
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : "Failed to reset evaluation history.");
+    } finally {
+      setResettingAll(false);
+    }
+  }
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen px-6 py-16">
@@ -135,22 +193,31 @@ export default function EvaluationsPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 py-10 md:py-12">
+      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Past Evaluations</p>
               <h1 className="display-font mt-3 text-4xl md:text-5xl">Your saved evaluation history.</h1>
-              <p className="mt-3 max-w-2xl text-[var(--muted)]">
+              <p className="mt-3 max-w-none pl-1 text-[var(--muted)]">
                 Open any evaluation to review classification, preferences, and school-fit details.
               </p>
             </div>
-            <Link
-              href="/predict"
-              className="rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white shadow-strong"
-            >
-              Run New Evaluation
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={resetEvaluationHistory}
+                disabled={resettingAll || Boolean(deletingRunId) || items.length === 0}
+                className="rounded-full border border-red-300 bg-white px-5 py-2.5 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {resettingAll ? "Resetting..." : "Reset History"}
+              </button>
+              <Link
+                href="/predict"
+                className="rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold !text-white shadow-strong"
+              >
+                Run New Evaluation
+              </Link>
+            </div>
           </div>
 
           {error && (
@@ -174,32 +241,48 @@ export default function EvaluationsPage() {
                 const preferenceHighlights = getPreferenceHighlights(run);
                 const classification = run.prediction_response?.final_prediction || "Classification unavailable";
                 return (
-                  <Link
+                  <div
                     key={run.id}
-                    href={`/evaluations/${run.id}`}
-                    className="block rounded-2xl border border-[var(--stroke)] bg-white/80 p-4 shadow-soft transition hover:-translate-y-0.5"
+                    className="rounded-2xl border border-[var(--stroke)] bg-white/80 p-4 shadow-soft"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">{playerName}</p>
-                      <span className="text-xs text-[var(--muted)]">
-                        {run.created_at ? new Date(run.created_at).toLocaleString() : "Timestamp unavailable"}
-                      </span>
+                    <Link
+                      href={`/evaluations/${run.id}`}
+                      className="block transition hover:-translate-y-0.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold">{playerName}</p>
+                        <span className="text-xs text-[var(--muted)]">
+                          {run.created_at ? new Date(run.created_at).toLocaleString() : "Timestamp unavailable"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        {classification} · {positionLabel}
+                      </p>
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        {topSchool ? `Top match: ${topSchool}` : "No top-school snapshot available"}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        {preferenceHighlights.length > 0
+                          ? `Preferences: ${preferenceHighlights.join(" · ")}`
+                          : "Preferences: none selected"}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        {typeof totalMatches === "number" ? `${totalMatches} matches` : "Matches unavailable"}
+                      </p>
+                    </Link>
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void deleteRun(run.id);
+                        }}
+                        disabled={deletingRunId === run.id || resettingAll}
+                        className="rounded-full border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingRunId === run.id ? "Removing..." : "Remove Run"}
+                      </button>
                     </div>
-                    <p className="mt-1 text-sm text-[var(--muted)]">
-                      {classification} · {positionLabel}
-                    </p>
-                    <p className="mt-1 text-sm text-[var(--muted)]">
-                      {topSchool ? `Top match: ${topSchool}` : "No top-school snapshot available"}
-                    </p>
-                    <p className="mt-1 text-xs text-[var(--muted)]">
-                      {preferenceHighlights.length > 0
-                        ? `Preferences: ${preferenceHighlights.join(" · ")}`
-                        : "Preferences: none selected"}
-                    </p>
-                    <p className="mt-1 text-xs text-[var(--muted)]">
-                      {typeof totalMatches === "number" ? `${totalMatches} matches` : "Matches unavailable"}
-                    </p>
-                  </Link>
+                  </div>
                 );
               })}
             </div>

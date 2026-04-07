@@ -16,21 +16,15 @@ type AccountMeResponse = {
     remaining_evals?: number | null;
     monthly_eval_limit?: number | null;
   };
+  usage?: {
+    eval_count?: number;
+  };
 };
 
 type AuthenticatedTopBarProps = {
   accessToken: string;
   userEmail?: string | null;
 };
-
-const navItems = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/predict", label: "Predict" },
-  { href: "/evaluations", label: "Evaluations" },
-  { href: "/goals", label: "Goals" },
-  { href: "/plans", label: "Plans" },
-  { href: "/account", label: "Account" },
-];
 
 export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTopBarProps) {
   const pathname = usePathname();
@@ -80,11 +74,17 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
   }, [menuOpen]);
 
   const fullName = account?.profile?.full_name || "";
-  const planTier = (account?.plan?.tier || "starter").toUpperCase();
-  const remainingEvals = account?.plan?.remaining_evals;
-  const monthlyLimit = account?.plan?.monthly_eval_limit;
+  const hasPastEvals = (account?.usage?.eval_count ?? 0) > 0;
   const displayEmail = userEmail || "Signed in";
   const avatarLabel = (fullName || displayEmail || "U").trim().charAt(0).toUpperCase();
+
+  // Build nav items dynamically — Past Evaluations only shown if user has evals
+  const navItems = [
+    { href: "/predict", label: "Evaluate" },
+    ...(hasPastEvals ? [{ href: "/evaluations", label: "Past Evaluations" }] : []),
+    { href: "/saved-schools", label: "Saved Schools" },
+    { href: "/account", label: "Account" },
+  ];
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -94,11 +94,11 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--stroke)]/30 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <Link href="/dashboard" className="flex items-center gap-3">
+        <Link href="/predict" className="flex items-center gap-3">
           <img src="/BP-brown-logo-circle.png" alt="BaseballPath" className="h-11 w-11" />
           <div className="leading-tight">
             <p className="text-xs uppercase tracking-[0.34em] text-[var(--muted)]">BaseballPath</p>
-            <p className="text-base font-semibold">Recruiting Console</p>
+            <p className="text-base font-semibold">Recruitment Assistant</p>
           </div>
         </Link>
 
@@ -129,7 +129,6 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
               </span>
               <span className="hidden text-left text-xs leading-tight sm:block">
                 <span className="block font-semibold">{fullName || "My Account"}</span>
-                <span className="block text-[var(--muted)]">{loading ? "Loading..." : planTier}</span>
               </span>
             </button>
 
@@ -138,35 +137,24 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
                 <div className="rounded-xl border border-[var(--stroke)] bg-[var(--sand)]/45 p-3">
                   <p className="text-sm font-semibold text-[var(--navy)]">{fullName || "My Account"}</p>
                   <p className="mt-0.5 text-xs text-[var(--muted)]">{displayEmail}</p>
-                  <p className="mt-2 text-xs font-semibold text-[var(--navy)]">
-                    {planTier}
-                    {typeof remainingEvals === "number" && typeof monthlyLimit === "number"
-                      ? ` · ${remainingEvals}/${monthlyLimit} left`
-                      : ""}
-                  </p>
                 </div>
 
                 <div className="mt-3 grid gap-2 text-sm">
-                  <Link
-                    href="/evaluations"
-                    className="rounded-xl border border-[var(--stroke)] px-3 py-2 font-semibold text-[var(--navy)] hover:bg-[var(--sand)]/45"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    Past Evaluations
-                  </Link>
+                  {hasPastEvals && (
+                    <Link
+                      href="/evaluations"
+                      className="rounded-xl border border-[var(--stroke)] px-3 py-2 font-semibold text-[var(--navy)] hover:bg-[var(--sand)]/45"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Past Evaluations
+                    </Link>
+                  )}
                   <Link
                     href="/account"
                     className="rounded-xl border border-[var(--stroke)] px-3 py-2 font-semibold text-[var(--navy)] hover:bg-[var(--sand)]/45"
                     onClick={() => setMenuOpen(false)}
                   >
                     Account Settings
-                  </Link>
-                  <Link
-                    href="/account#billing"
-                    className="rounded-xl border border-[var(--stroke)] px-3 py-2 font-semibold text-[var(--navy)] hover:bg-[var(--sand)]/45"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    Upgrade or Manage Plan
                   </Link>
                   <button
                     type="button"

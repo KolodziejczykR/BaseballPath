@@ -8,7 +8,10 @@ Grounding rules:
 
 import asyncio
 import json
+import logging
 import os
+import random
+import time
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +21,20 @@ from openai import OpenAI
 from backend.utils.recommendation_types import LLMReasoning, RelaxSuggestion, SchoolRecommendation
 
 load_dotenv()
+logger = logging.getLogger(__name__)
+
+
+class InsufficientQuotaError(RuntimeError):
+    """Raised when OpenAI responds with insufficient_quota."""
+
+
+def _is_insufficient_quota_error(error: Exception) -> bool:
+    code = getattr(error, "code", None)
+    if isinstance(code, str) and code.lower() == "insufficient_quota":
+        return True
+
+    text = str(error).lower()
+    return "insufficient_quota" in text or "exceeded your current quota" in text
 
 
 def _extract_json(content: str) -> Optional[Dict[str, Any]]:
@@ -46,9 +63,70 @@ class RecommendationReasoningGenerator:
         max_concurrent_batches: int = 2,
     ):
         api_key = os.getenv("OPENAI_API_KEY")
-        self.client = client or OpenAI(api_key=api_key)
+        self.model_name = os.getenv("OPENAI_REASONING_MODEL", "gpt-5.4-nano")
+        self.max_chat_attempts = max(1, int(os.getenv("OPENAI_CHAT_MAX_ATTEMPTS", "3")))
+        self.retry_base_delay_s = max(0.0, float(os.getenv("OPENAI_CHAT_RETRY_BASE_DELAY_S", "1.2")))
+        self.retry_max_delay_s = max(self.retry_base_delay_s, float(os.getenv("OPENAI_CHAT_RETRY_MAX_DELAY_S", "8.0")))
+        self.retry_jitter_s = max(0.0, float(os.getenv("OPENAI_CHAT_RETRY_JITTER_S", "0.35")))
+        self.batch_pause_s = max(0.0, float(os.getenv("OPENAI_BATCH_PAUSE_S", "0.5")))
+
+        openai_max_retries = max(0, int(os.getenv("OPENAI_CLIENT_MAX_RETRIES", "0")))
+        self.client = client or OpenAI(api_key=api_key, max_retries=openai_max_retries)
         self.llm_timeout_s = llm_timeout_s
         self.max_concurrent_batches = max_concurrent_batches
+
+    @staticmethod
+    def _system_message(content: Optional[str] = None) -> Dict[str, str]:
+        return {
+            "role": "system",
+            "content": content
+            or (
+                "You are a concise, grounded sports recruiting assistant. "
+                "Only use the provided fields. Do not add facts."
+            ),
+        }
+
+    def _create_chat_completion(self, prompt: str, system_content: Optional[str] = None) -> Any:
+        messages = [self._system_message(system_content), {"role": "user", "content": prompt}]
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, self.max_chat_attempts + 1):
+            try:
+                return self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                )
+            except Exception as error:  # pragma: no cover - SDK/runtime dependent branches
+                last_error = error
+                if _is_insufficient_quota_error(error):
+                    raise InsufficientQuotaError(str(error)) from error
+
+                if attempt >= self.max_chat_attempts:
+                    raise
+
+                backoff_delay = min(
+                    self.retry_max_delay_s,
+                    self.retry_base_delay_s * (2 ** (attempt - 1)),
+                ) + random.uniform(0, self.retry_jitter_s)
+
+                logger.warning(
+                    "OpenAI completion attempt %s/%s failed. Retrying in %.2fs. Error: %s",
+                    attempt,
+                    self.max_chat_attempts,
+                    backoff_delay,
+                    error,
+                )
+                time.sleep(backoff_delay)
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("LLM completion failed without an explicit error")
+
+    async def _create_chat_completion_async(self, prompt: str, system_content: Optional[str] = None) -> Any:
+        return await asyncio.wait_for(
+            asyncio.to_thread(self._create_chat_completion, prompt, system_content),
+            timeout=self.llm_timeout_s,
+        )
 
     async def generate_school_reasoning_async(
         self,
@@ -87,6 +165,8 @@ class RecommendationReasoningGenerator:
     ) -> Dict[str, LLMReasoning]:
         results: Dict[str, LLMReasoning] = {}
         for i in range(0, len(schools), batch_size):
+            if i > 0 and self.batch_pause_s > 0:
+                time.sleep(self.batch_pause_s)
             batch = schools[i : i + batch_size]
             batch_results = self._generate_school_reasoning_batch(
                 batch, player_info, ml_summary, preferences
@@ -105,19 +185,7 @@ class RecommendationReasoningGenerator:
             schools, player_info, ml_summary, preferences
         )
 
-        response = self.client.chat.completions.create(
-            model="gpt-5.2",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a concise, grounded sports recruiting assistant. "
-                        "Only use the provided fields. Do not add facts."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
+        response = self._create_chat_completion(prompt)
 
         content = response.choices[0].message.content.strip()
         data = _extract_json(content)
@@ -149,23 +217,7 @@ class RecommendationReasoningGenerator:
                 schools, player_info, ml_summary, preferences
             )
             try:
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        self.client.chat.completions.create,
-                        model="gpt-5.2",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": (
-                                    "You are a concise, grounded sports recruiting assistant. "
-                                    "Only use the provided fields. Do not add facts."
-                                ),
-                            },
-                            {"role": "user", "content": prompt},
-                        ],
-                    ),
-                    timeout=self.llm_timeout_s,
-                )
+                response = await self._create_chat_completion_async(prompt)
             except Exception:
                 return {}
 
@@ -232,19 +284,7 @@ class RecommendationReasoningGenerator:
             schools, player_info, ml_summary, preferences
         )
 
-        response = self.client.chat.completions.create(
-            model="gpt-5.2",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a concise, grounded sports recruiting assistant. "
-                        "Only use the provided fields. Do not add facts."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
+        response = self._create_chat_completion(prompt)
 
         content = response.choices[0].message.content.strip()
         data = _extract_json(content)
@@ -263,23 +303,7 @@ class RecommendationReasoningGenerator:
             schools, player_info, ml_summary, preferences
         )
         try:
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self.client.chat.completions.create,
-                    model="gpt-5.2",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a concise, grounded sports recruiting assistant. "
-                                "Only use the provided fields. Do not add facts."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                ),
-                timeout=self.llm_timeout_s,
-            )
+            response = await self._create_chat_completion_async(prompt)
         except Exception:
             return None
 
@@ -329,18 +353,12 @@ class RecommendationReasoningGenerator:
             return []
 
         prompt = self._build_relax_suggestions_prompt(must_haves, total_matches)
-        response = self.client.chat.completions.create(
-            model="gpt-5.2",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a cautious assistant. Only suggest relaxing must-have preferences. "
-                        "Do not mention budget unless it is already a must-have, and place it last."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+        response = self._create_chat_completion(
+            prompt,
+            system_content=(
+                "You are a cautious assistant. Only suggest relaxing must-have preferences. "
+                "Do not mention budget unless it is already a must-have, and place it last."
+            ),
         )
         content = response.choices[0].message.content.strip()
         data = _extract_json(content)
@@ -374,22 +392,12 @@ class RecommendationReasoningGenerator:
 
         prompt = self._build_relax_suggestions_prompt(must_haves, total_matches)
         try:
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self.client.chat.completions.create,
-                    model="gpt-5.2",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a cautious assistant. Only suggest relaxing must-have preferences. "
-                                "Do not mention budget unless it is already a must-have, and place it last."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
+            response = await self._create_chat_completion_async(
+                prompt,
+                system_content=(
+                    "You are a cautious assistant. Only suggest relaxing must-have preferences. "
+                    "Do not mention budget unless it is already a must-have, and place it last."
                 ),
-                timeout=self.llm_timeout_s,
             )
         except Exception:
             return []

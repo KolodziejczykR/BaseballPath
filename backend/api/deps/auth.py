@@ -141,3 +141,32 @@ async def get_current_user(
         access_token=access_token,
         claims=claims,
     )
+
+
+async def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> Optional[AuthenticatedUser]:
+    """Return AuthenticatedUser if a valid token is present, None otherwise."""
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        return None
+    try:
+        access_token = credentials.credentials
+        claims = _decode_jwt_payload(access_token)
+        _validate_issuer_and_audience(claims)
+        supabase = require_supabase_admin_client()
+        user_response = supabase.auth.get_user(access_token)
+        auth_user = _resolve_auth_user_obj(user_response)
+        if auth_user is None:
+            return None
+        user_id = _get_attr_or_key(auth_user, "id")
+        email = _get_attr_or_key(auth_user, "email")
+        if not user_id:
+            return None
+        return AuthenticatedUser(
+            user_id=str(user_id),
+            email=str(email) if email else None,
+            access_token=access_token,
+            claims=claims,
+        )
+    except Exception:
+        return None

@@ -23,19 +23,30 @@ from ..services.plan_service import (
 )
 from .preferences import filter_schools_by_preferences
 
+from backend.ml.router.catcher_router import CatcherInput
+from backend.ml.router.catcher_router import pipeline as catcher_pipeline
 from backend.ml.router.infielder_router import InfielderInput
 from backend.ml.router.infielder_router import pipeline as infielder_pipeline
 from backend.ml.router.outfielder_router import OutfielderInput
 from backend.ml.router.outfielder_router import pipeline as outfielder_pipeline
 from backend.ml.router.pitcher_router import PitcherInput
 from backend.ml.router.pitcher_router import pipeline as pitcher_pipeline
-from backend.utils.player_types import PlayerInfielder, PlayerOutfielder, PlayerPitcher
+from backend.utils.position_tracks import (
+    CATCHER_PRIMARY_POSITIONS,
+    normalize_primary_position,
+)
+from backend.utils.player_types import (
+    PlayerCatcher,
+    PlayerInfielder,
+    PlayerOutfielder,
+    PlayerPitcher,
+)
 
 router = APIRouter()
 
 
 class EvaluationRunRequest(BaseModel):
-    position_endpoint: Literal["pitcher", "infielder", "outfielder"]
+    position_endpoint: Literal["pitcher", "infielder", "outfielder", "catcher"]
     identity_input: Dict[str, Any]
     stats_input: Dict[str, Any]
     preferences_input: Dict[str, Any]
@@ -83,6 +94,28 @@ def _run_prediction(position_endpoint: str, payload: Dict[str, Any]) -> Dict[str
             sixty_time=validated["sixty_time"],
         )
         return outfielder_pipeline.predict(player).get_api_response()
+
+    if position_endpoint == "catcher":
+        if catcher_pipeline is None:
+            raise HTTPException(status_code=500, detail="Catcher pipeline not available")
+        validated = CatcherInput(**payload).model_dump(exclude_none=True)
+        catcher_position = normalize_primary_position(validated.get("primary_position"))
+        canonical_primary_position = (
+            "C" if catcher_position in CATCHER_PRIMARY_POSITIONS else validated["primary_position"]
+        )
+        player = PlayerCatcher(
+            height=validated["height"],
+            weight=validated["weight"],
+            primary_position=canonical_primary_position,
+            hitting_handedness=validated["hitting_handedness"],
+            throwing_hand=validated["throwing_hand"],
+            region=validated["player_region"],
+            exit_velo_max=validated["exit_velo_max"],
+            c_velo=validated["c_velo"],
+            pop_time=validated["pop_time"],
+            sixty_time=validated["sixty_time"],
+        )
+        return catcher_pipeline.predict(player).get_api_response()
 
     if position_endpoint == "infielder":
         if infielder_pipeline is None:
@@ -320,3 +353,52 @@ async def get_evaluation(
     if not response.data:
         raise HTTPException(status_code=404, detail="Evaluation run not found")
     return response.data[0]
+
+
+@router.delete("/{run_id}")
+async def delete_evaluation(
+    run_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> Dict[str, Any]:
+    supabase = require_supabase_admin_client()
+    existing = (
+        supabase.table("prediction_runs")
+        .select("id")
+        .eq("id", run_id)
+        .eq("user_id", current_user.user_id)
+        .limit(1)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Evaluation run not found")
+
+    supabase.table("prediction_runs").delete().eq("id", run_id).eq("user_id", current_user.user_id).execute()
+    return {"deleted": True, "run_id": run_id}
+
+
+@router.delete("")
+async def delete_all_evaluations(
+    confirm: bool = Query(default=False),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> Dict[str, Any]:
+    if not confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pass confirm=true to delete all evaluation runs for this account",
+        )
+
+    supabase = require_supabase_admin_client()
+    count_response = (
+        supabase.table("prediction_runs")
+        .select("id", count="exact")
+        .eq("user_id", current_user.user_id)
+        .limit(1)
+        .execute()
+    )
+    deleted_count = count_response.count if hasattr(count_response, "count") and count_response.count is not None else 0
+
+    if deleted_count == 0:
+        return {"deleted": True, "deleted_count": 0}
+
+    supabase.table("prediction_runs").delete().eq("user_id", current_user.user_id).execute()
+    return {"deleted": True, "deleted_count": int(deleted_count)}
