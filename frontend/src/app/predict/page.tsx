@@ -88,7 +88,12 @@ const POSITION_OPTIONS: { label: string; value: PositionCode }[] = [
   { label: "OF (Outfield)", value: "OF" },
 ];
 
-const GRAD_YEARS = [2025, 2026, 2027, 2028, 2029];
+const GRAD_YEARS = [
+  { label: "2026", value: 2026 },
+  { label: "2027", value: 2027 },
+  { label: "2028", value: 2028 },
+  { label: "2029+", value: 2029 },
+];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -485,7 +490,7 @@ export default function PredictPage() {
                   <select className="form-control" value={gradYear} onChange={(e) => setGradYear(e.target.value)} required>
                     <option value="">Select year...</option>
                     {GRAD_YEARS.map((y) => (
-                      <option key={y} value={String(y)}>{y}</option>
+                      <option key={y.value} value={String(y.value)}>{y.label}</option>
                     ))}
                   </select>
                 </div>

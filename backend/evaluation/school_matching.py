@@ -12,7 +12,6 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.constants import DIVISION_BENCHMARKS, PITCHER_DIVISION_BENCHMARKS
-from backend.evaluation.academic_scoring import niche_grade_to_numeric
 from backend.evaluation.competitiveness import (
     DEFAULT_DIVISION_MAX_RANKS,
     benchmark_pci,
@@ -334,27 +333,29 @@ def _resolve_school_sci(school: Dict[str, Any], is_pitcher: bool) -> Tuple[Optio
 
 
 def _academic_fit_label(
-    player_academic_rating: int,
-    school_academic_rating: Optional[int],
+    player_academic_rating: float,
+    school_academic_rating: Optional[float],
 ) -> Optional[str]:
     """
-    Determine academic fit: 'reach', 'fit', 'safety', or None (exclude).
+    Determine academic fit from delta = player - school.
+
+    Positive delta → player exceeds school selectivity (safety).
+    Negative delta → school is more selective (reach).
     """
     if school_academic_rating is None:
         return "fit"
 
-    diff = school_academic_rating - player_academic_rating
+    delta = player_academic_rating - school_academic_rating
 
-    if diff == 0:
-        return "fit"
-    if diff == 1:
-        return "reach"
-    if diff == -1:
+    if delta > 1.6:
+        return "strong_safety"
+    if delta >= 0.8:
         return "safety"
-    if diff >= 2:
-        return None
-    if diff <= -2:
-        return None
+    if delta >= -0.8:
+        return "fit"
+    if delta >= -1.6:
+        return "reach"
+    # Strong reach academically — exclude
     return None
 
 
@@ -382,7 +383,7 @@ def match_and_rank_schools(
     set (wider delta range, relaxed exclusion rules) intended for downstream
     roster research that will perform final selection.
     """
-    player_academic_rounded = round(academic_composite)
+    player_academic_rounded = academic_composite
     candidates: List[Dict[str, Any]] = []
 
     allowed_states = None
@@ -432,8 +433,14 @@ def match_and_rank_schools(
         fit_label = classify_fit(delta)
         baseball_fit = to_legacy_fit_label(fit_label)
 
-        school_acad_grade = school.get("academics_grade")
-        school_acad_numeric = niche_grade_to_numeric(school_acad_grade)
+        school_selectivity = school.get("academic_selectivity_score")
+        if school_selectivity is not None:
+            try:
+                school_acad_numeric: Optional[float] = float(school_selectivity)
+            except (TypeError, ValueError):
+                school_acad_numeric = 2.0
+        else:
+            school_acad_numeric = 2.0
         acad_label = _academic_fit_label(player_academic_rounded, school_acad_numeric)
         if acad_label is None:
             continue
@@ -444,7 +451,7 @@ def match_and_rank_schools(
             # In consideration_pool mode, let roster research decide.
             if baseball_fit == "reach" and acad_label == "reach":
                 continue
-            if fit_label == "Strong Safety" and acad_label == "safety":
+            if fit_label == "Strong Safety" and acad_label in ("safety", "strong_safety"):
                 continue
 
         if user_state:

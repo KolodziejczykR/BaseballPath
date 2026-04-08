@@ -455,7 +455,7 @@ async def _run_core_evaluation(
         player_stats=player_stats,
         predicted_tier=predicted_tier,
         player_pci=player_pci,
-        academic_composite=academic_score["composite"],
+        academic_composite=academic_score["effective"],
         is_pitcher=is_pitcher_flag,
         selected_regions=prefs.regions,
         max_budget=budget_max,

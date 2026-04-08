@@ -108,6 +108,8 @@ class RosterContext(BaseModel):
     returning_high_usage_exact_position: Optional[int] = None
     starter_opening_estimate_same_family: Literal["high", "medium", "low", "unknown"] = "unknown"
     starter_opening_estimate_exact_position: Literal["high", "medium", "low", "unknown"] = "unknown"
+    projected_years_out: int = 0
+    projected_departures_note: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
 
 
@@ -334,6 +336,16 @@ def _player_archetype(player_stats: Dict[str, Any]) -> str:
     return "infield_candidate"
 
 
+def _current_academic_year() -> int:
+    """Return the academic year for the current roster season.
+
+    Rosters published before August reflect the upcoming academic year
+    (spring season), so we use the calendar year directly.
+    """
+    from datetime import date
+    return date.today().year
+
+
 def _target_incoming_grad_year(player_stats: Dict[str, Any]) -> int:
     grad_year = player_stats.get("graduation_year")
     try:
@@ -345,6 +357,16 @@ def _target_incoming_grad_year(player_stats: Dict[str, Any]) -> int:
         return int(os.getenv("OPENAI_RESEARCH_INCOMING_GRAD_YEAR", "2027"))
     except (TypeError, ValueError):
         return 2027
+
+
+def _years_until_enrollment(player_stats: Dict[str, Any]) -> int:
+    """How many roster turnover cycles before the player arrives on campus.
+
+    Capped at 3 because beyond that the entire roster will have turned over
+    and further projection adds no value.
+    """
+    enrollment_year = _target_incoming_grad_year(player_stats)
+    return min(3, max(0, enrollment_year - _current_academic_year()))
 
 
 def _review_confidence_multiplier(value: str) -> float:
@@ -1114,27 +1136,46 @@ class DeepSchoolInsightService:
         roster_url: str,
         stats_available: bool,
     ) -> GatheredEvidence:
-        """Build GatheredEvidence deterministically from parsed roster/stats data."""
+        """Build GatheredEvidence deterministically from parsed roster/stats data.
+
+        Projections are shifted forward by the player's years until enrollment
+        so that departures, upperclassmen/underclassmen counts, and opportunity
+        estimates reflect the roster the player will actually face on arrival.
+        """
         target_family = _school_position_family(player_stats.get("primary_position", ""))
         target_position = normalize_position(player_stats.get("primary_position", ""))
+        years_out = _years_until_enrollment(player_stats)
+        enrollment_year = _target_incoming_grad_year(player_stats)
 
         # Filter players by position family
         same_family = [m for m in matched_players if m.player.position_family == target_family]
         same_exact = [m for m in matched_players if m.player.position_normalized == target_position] if target_position else []
 
-        # Count by class year
-        upperclassmen = sum(1 for m in same_family if (m.player.normalized_class_year or 0) >= 3)
-        underclassmen = sum(1 for m in same_family if (m.player.normalized_class_year or 0) in (1, 2))
+        # Departure projection: a player departs if their effective class year
+        # plus years_out reaches senior level (4+).  Redshirt players get an
+        # extra year of eligibility.
+        def _will_depart(m: MatchedPlayer) -> bool:
+            cy = m.player.normalized_class_year or 0
+            if cy == 0:
+                return False  # unknown class year — conservatively assume stays
+            effective = cy - (1 if m.player.is_redshirt else 0)
+            return effective + years_out >= 4
 
-        # Departures: seniors (4) and grad students (5) are likely leaving
-        departures_family = sum(
-            1 for m in same_family
-            if (m.player.normalized_class_year or 0) >= 4
+        departures_family = sum(1 for m in same_family if _will_depart(m))
+        departures_exact = (
+            sum(1 for m in same_exact if _will_depart(m))
+            if same_exact else None
         )
-        departures_exact = sum(
-            1 for m in same_exact
-            if (m.player.normalized_class_year or 0) >= 4
-        ) if same_exact else None
+
+        # Projected class years at arrival — only among players still on roster
+        remaining_family = [m for m in same_family if not _will_depart(m)]
+        remaining_exact = [m for m in same_exact if not _will_depart(m)]
+
+        def _projected_year(m: MatchedPlayer) -> int:
+            return (m.player.normalized_class_year or 0) + years_out
+
+        upperclassmen = sum(1 for m in remaining_family if _projected_year(m) >= 3)
+        underclassmen = sum(1 for m in remaining_family if 1 <= _projected_year(m) <= 2)
 
         # Transfers into the program (previous_school is a college)
         transfers_family = sum(
@@ -1163,13 +1204,12 @@ class DeepSchoolInsightService:
         else:
             pos_quality = "unknown"
 
-        # High-usage returning players (based on stats GP-GS)
+        # High-usage returning players — only those who will still be on the
+        # roster when the player arrives.
         returning_high_usage_family = 0
         returning_high_usage_exact = 0
         if stats_available:
-            for m in same_family:
-                if (m.player.normalized_class_year or 0) >= 4:
-                    continue  # departing
+            for m in remaining_family:
                 stat = m.batting_stats or m.pitching_stats
                 if stat and stat.games_started >= HIGH_USAGE_GS_THRESHOLD:
                     returning_high_usage_family += 1
@@ -1188,26 +1228,48 @@ class DeepSchoolInsightService:
             returning_high_usage=returning_high_usage_exact if stats_available else None,
         ) if same_exact else "unknown"
 
-        # Opportunity and competition levels
+        # Opportunity and competition levels — based on the projected remaining
+        # roster, not the current full roster.
         opportunity = self._estimate_opportunity(
             departures=departures_family,
             total=len(same_family),
             returning_starters=returning_high_usage_family if stats_available else None,
         )
         competition = self._estimate_competition(
-            total=len(same_family),
+            total=len(remaining_family),
             returning_starters=returning_high_usage_family if stats_available else None,
             underclassmen=underclassmen,
         )
 
         # Notes
         notes: List[str] = []
+        if years_out > 0:
+            notes.append(
+                f"Projected {years_out} year(s) forward ({enrollment_year} enrollment): "
+                f"{departures_family} of {len(same_family)} {target_family} players "
+                f"will have graduated by arrival."
+            )
         if not stats_available:
             notes.append("Stats page was not available; estimates based on roster data only.")
         if pos_quality == "family_only":
             notes.append("Position listings use broad categories (IF/OF/P); exact positions unknown.")
         if pos_quality != "unknown" and not same_family:
             notes.append(f"No listed players matched the {target_family} position family on the roster.")
+
+        # Projected departures note for the model
+        projected_note: Optional[str] = None
+        if years_out >= 3:
+            projected_note = (
+                f"Player enrolls in {enrollment_year} — current roster will be almost "
+                f"entirely turned over by then. Program size ({len(same_family)} {target_family} "
+                f"players) and recruiting patterns are more relevant than specific player analysis."
+            )
+        elif years_out > 0:
+            projected_note = (
+                f"Player enrolls in {enrollment_year} ({years_out} year(s) out). "
+                f"{departures_family} of {len(same_family)} current {target_family} players "
+                f"projected to depart; {len(remaining_family)} will remain on roster at arrival."
+            )
 
         # Sources
         sources = [
@@ -1239,6 +1301,12 @@ class DeepSchoolInsightService:
         data_gaps: List[str] = []
         if not stats_available:
             data_gaps.append("Team statistics unavailable — starter usage estimates less precise.")
+        if years_out >= 3:
+            data_gaps.append(
+                f"Player enrolls in {enrollment_year} — current roster will be almost entirely "
+                f"turned over by then. Program size and recruiting patterns are more relevant "
+                f"than specific player analysis."
+            )
 
         return GatheredEvidence(
             roster_context=RosterContext(
@@ -1253,6 +1321,8 @@ class DeepSchoolInsightService:
                 returning_high_usage_exact_position=returning_high_usage_exact if stats_available else None,
                 starter_opening_estimate_same_family=opener_family,
                 starter_opening_estimate_exact_position=opener_exact,
+                projected_years_out=years_out,
+                projected_departures_note=projected_note,
                 notes=notes,
             ),
             recruiting_context=RecruitingContext(
@@ -1495,7 +1565,17 @@ class DeepSchoolInsightService:
             "If the roster shows zero players in the target family and position quality is not unknown, "
             "say that no listed players in that family were found; do not say the count was unavailable.\n"
             "If the evidence is thin, keep the base fit unchanged and say so.\n"
-            "You may adjust the interpretation by at most one fit level.\n"
+            "You may adjust the interpretation by at most one fit level.\n\n"
+            "ENROLLMENT TIMING: The player packet includes enrollment_year and "
+            "years_until_enrollment. All departure counts and roster projections in the "
+            "evidence have already been shifted forward to reflect the roster at arrival. "
+            "When years_until_enrollment >= 1, frame your summaries around what the roster "
+            "will look like when the player arrives, not what it looks like today. "
+            "When years_until_enrollment >= 3, emphasize program size, recruiting patterns, "
+            "and historical trends over specific current players since the roster will be "
+            "almost entirely turned over by arrival. "
+            "If projected_departures_note is present in the roster context, incorporate "
+            "that context into your roster_summary and opportunity_summary.\n\n"
             "Write a fit_summary (2-3 sentences on overall fit), program_summary (program context), "
             "roster_summary (roster composition and openings), opportunity_summary (playing time outlook), "
             "and trend_summary (program trajectory). Keep each under 100 words.\n"
@@ -1523,19 +1603,32 @@ class DeepSchoolInsightService:
             "trend": school.get("trend"),
             "conference": school.get("conference"),
         }
+        position_family = _school_position_family(player_stats.get("primary_position", ""))
+        # Only include defensive metrics relevant to the player's position family.
+        # OF → of_velo, INF → inf_velo, C → c_velo + pop_time.
+        positional_metrics: Dict[str, Any] = {}
+        if position_family == "OF":
+            positional_metrics["of_velo"] = player_stats.get("of_velo")
+        elif position_family == "IF":
+            positional_metrics["inf_velo"] = player_stats.get("inf_velo")
+        elif position_family == "C":
+            positional_metrics["c_velo"] = player_stats.get("c_velo")
+            positional_metrics["pop_time"] = player_stats.get("pop_time")
+
+        years_out = _years_until_enrollment(player_stats)
+        enrollment_year = _target_incoming_grad_year(player_stats)
         payload = {
             "player": {
                 "primary_position": player_stats.get("primary_position"),
-                "position_family": _school_position_family(player_stats.get("primary_position", "")),
+                "position_family": position_family,
                 "archetype": _player_archetype(player_stats),
                 "height": player_stats.get("height"),
                 "weight": player_stats.get("weight"),
                 "exit_velo_max": player_stats.get("exit_velo_max"),
                 "sixty_time": player_stats.get("sixty_time"),
-                "inf_velo": player_stats.get("inf_velo"),
-                "of_velo": player_stats.get("of_velo"),
-                "c_velo": player_stats.get("c_velo"),
-                "pop_time": player_stats.get("pop_time"),
+                "enrollment_year": enrollment_year,
+                "years_until_enrollment": years_out,
+                **positional_metrics,
             },
             "baseball_assessment": baseball_assessment,
             "academic_score": academic_score,

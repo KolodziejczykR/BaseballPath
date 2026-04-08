@@ -99,6 +99,7 @@ catboost_info/
 
 # miscelaneous
 sql_scripts/
+dump.rdb
 
 # have the claude context files not be committed to git
 CLAUDE.md

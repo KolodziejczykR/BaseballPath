@@ -4,7 +4,6 @@ Manual inspector for deep-school roster/stats parsing and evidence computation.
 Examples:
     python3 backend/scripts/inspect_school_parser.py \
         --school "Abilene Christian" \
-        --school "Nevada" \
         --position OF
 
     python3 backend/scripts/inspect_school_parser.py \

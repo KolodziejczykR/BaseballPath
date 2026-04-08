@@ -1,26 +1,28 @@
 """
-Academic scoring module for BaseballPath V1 evaluation flow.
+Academic scoring module for BaseballPath evaluation flow.
 
-Computes a composite academic score (1.0–10.0) from GPA, SAT/ACT, and AP courses.
-The composite maps against Niche school grades for academic fit matching.
+Computes a composite academic score (1.0–10.0) from GPA, SAT/ACT, and AP courses,
+then adds a +1.0 recruited-athlete admissions boost.  The effective score is
+compared against each school's ``academic_selectivity_score`` column for fit
+matching.
 """
 
 from typing import Optional
 
 
 # ---------------------------------------------------------------------------
-# GPA → Rating (1–10), non-linear mapping
+# GPA → Rating (1–10)
 # ---------------------------------------------------------------------------
 _GPA_BRACKETS = [
-    (3.90, 10),
-    (3.70, 9),
-    (3.50, 8),
-    (3.30, 7),
-    (3.00, 6),
-    (2.70, 5),
-    (2.40, 4),
-    (2.00, 3),
-    (1.50, 2),
+    (3.95, 10),
+    (3.85, 9),
+    (3.70, 8),
+    (3.50, 7),
+    (3.30, 6),
+    (3.00, 5),
+    (2.70, 4),
+    (2.40, 3),
+    (2.00, 2),
     (0.00, 1),
 ]
 
@@ -36,15 +38,15 @@ def gpa_to_rating(gpa: float) -> int:
 # ACT → Rating (1–10)
 # ---------------------------------------------------------------------------
 _ACT_BRACKETS = [
-    (34, 10),
-    (30, 9),
-    (27, 8),
-    (24, 7),
-    (21, 6),
-    (19, 5),
-    (16, 4),
-    (13, 3),
-    (10, 2),
+    (35, 10),
+    (34, 9),
+    (33, 8),
+    (30, 7),
+    (27, 6),
+    (24, 5),
+    (21, 4),
+    (18, 3),
+    (15, 2),
     (1, 1),
 ]
 
@@ -61,15 +63,15 @@ def act_to_rating(act: int) -> int:
 # ---------------------------------------------------------------------------
 _SAT_BRACKETS = [
     (1550, 10),
-    (1450, 9),
-    (1350, 8),
-    (1200, 7),
-    (1100, 6),
-    (1020, 5),
-    (900, 4),
-    (800, 3),
-    (600, 2),
-    (400, 1),
+    (1500, 9),
+    (1440, 8),
+    (1370, 7),
+    (1290, 6),
+    (1200, 5),
+    (1100, 4),
+    (1000, 3),
+    (900, 2),
+    (0, 1),
 ]
 
 
@@ -103,7 +105,13 @@ def ap_to_rating(ap_courses: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Niche grade → numeric (for school comparison)
+# Athlete boost — all users are prospective recruits
+# ---------------------------------------------------------------------------
+ATHLETE_BOOST = 1.0
+
+
+# ---------------------------------------------------------------------------
+# Niche grade → numeric (kept for backward compatibility / display)
 # ---------------------------------------------------------------------------
 NICHE_GRADE_MAP = {
     "A+": 10, "A": 9, "A-": 8,
@@ -133,7 +141,8 @@ def compute_academic_score(
     Compute composite academic score from student inputs.
 
     Returns dict with:
-        composite: float (1.0–10.0)
+        composite: float (1.0–10.0) — raw weighted score
+        effective: float — composite + athlete boost (used for matching)
         gpa_rating: int
         test_rating: int
         ap_rating: int
@@ -151,10 +160,11 @@ def compute_academic_score(
 
     ap_r = ap_to_rating(ap_courses)
 
-    composite = (gpa_r * 0.40) + (test_r * 0.35) + (ap_r * 0.25)
+    composite = (gpa_r * 0.40) + (test_r * 0.40) + (ap_r * 0.20)
 
     return {
         "composite": round(composite, 2),
+        "effective": round(composite + ATHLETE_BOOST, 2),
         "gpa_rating": gpa_r,
         "test_rating": test_r,
         "ap_rating": ap_r,
