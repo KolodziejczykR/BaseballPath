@@ -7,8 +7,7 @@
       "Fetch(*)",
       "Search(*)",
       "WebBrowse(*)",
-      "Write(**)",
-      "Edit(**)"
+      "Write(**)"
     ],
     "deny": [
       "Bash(rm *)",

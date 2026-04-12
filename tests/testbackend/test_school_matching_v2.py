@@ -143,6 +143,7 @@ def test_match_and_rank_uses_school_sci_delta_not_flat_tier():
             "school_state": "TN",
             "conference": "SEC",
             "academics_grade": "B",
+            "academic_selectivity_score": 6.5,
             "baseball_sci_hitter": 86.0,
             "baseball_trend_bonus": 2.5,
             "out_of_state_tuition": 45000,
@@ -154,6 +155,7 @@ def test_match_and_rank_uses_school_sci_delta_not_flat_tier():
             "school_state": "MO",
             "conference": "SEC",
             "academics_grade": "B",
+            "academic_selectivity_score": 5.5,
             "baseball_sci_hitter": 70.0,
             "baseball_trend_bonus": -0.3,
             "out_of_state_tuition": 35000,
@@ -186,6 +188,10 @@ def test_match_and_rank_uses_school_sci_delta_not_flat_tier():
     assert by_name["Missouri"]["display_school_name"] == "Missouri"
     assert by_name["Tennessee"]["delta"] < 0
     assert by_name["Missouri"]["delta"] > 0
+    assert by_name["Tennessee"]["niche_academic_grade"] == 6.5
+    assert by_name["Missouri"]["niche_academic_grade"] == 5.5
+    assert "academic_delta" in by_name["Tennessee"]
+    assert "academic_delta" in by_name["Missouri"]
 
 
 def test_non_d1_schools_surface_d2_d3_labels():
@@ -325,6 +331,7 @@ def test_backfill_includes_strong_fit_bands_when_regular_band_is_too_small():
             "baseball_division": 1,
             "school_state": "MD",
             "academics_grade": "B",
+            "academic_selectivity_score": 5.5,
             "baseball_sci_hitter": 50.0,
             "out_of_state_tuition": 30000,
         },
@@ -335,6 +342,7 @@ def test_backfill_includes_strong_fit_bands_when_regular_band_is_too_small():
             "baseball_division": 2,
             "school_state": "FL",
             "academics_grade": "B",
+            "academic_selectivity_score": 5.5,
             "baseball_sci_hitter": 38.0,
             "out_of_state_tuition": 28000,
         },
@@ -345,6 +353,7 @@ def test_backfill_includes_strong_fit_bands_when_regular_band_is_too_small():
             "baseball_division": 1,
             "school_state": "TN",
             "academics_grade": "B",
+            "academic_selectivity_score": 5.5,
             "baseball_sci_hitter": 60.0,
             "out_of_state_tuition": 32000,
         },
@@ -372,6 +381,100 @@ def test_backfill_includes_strong_fit_bands_when_regular_band_is_too_small():
     assert "Only Fit" in by_name
     assert "Strong Safety One" in by_name
     assert "Strong Reach One" in by_name
+
+
+def test_consideration_pool_reserves_academic_diversity_slots():
+    """Consideration pool reserves slots for academically appropriate schools."""
+    schools = []
+    # 8 schools: baseball fit, academic strong safety (too easy)
+    for i in range(8):
+        schools.append({
+            "school_name": f"AcadSS_{i}",
+            "division_group": NON_P4_D1,
+            "baseball_division": 1,
+            "school_state": "FL",
+            "academic_selectivity_score": 3.0,
+            "baseball_sci_hitter": 50.0 + i * 0.1,
+            "out_of_state_tuition": 30000,
+        })
+    # 4 schools: baseball fit, academic fit
+    for i in range(4):
+        schools.append({
+            "school_name": f"AcadFit_{i}",
+            "division_group": NON_P4_D1,
+            "baseball_division": 1,
+            "school_state": "GA",
+            "academic_selectivity_score": 7.0,
+            "baseball_sci_hitter": 50.0 + i * 0.1,
+            "out_of_state_tuition": 35000,
+        })
+
+    results = match_and_rank_schools(
+        schools=schools,
+        player_stats={
+            "primary_position": "OF",
+            "exit_velo_max": 90.0,
+            "of_velo": 85.0,
+            "sixty_time": 6.8,
+        },
+        predicted_tier=NON_P4_D1,
+        player_pci=52.0,
+        academic_composite=7.5,
+        is_pitcher=False,
+        limit=10,
+        consideration_pool=True,
+    )
+
+    acad_fit_count = sum(1 for r in results if r["academic_fit"] in ("Fit", "Safety", "Reach"))
+    assert acad_fit_count >= 4, (
+        f"Expected at least 4 academically appropriate schools, got {acad_fit_count}"
+    )
+
+
+def test_consideration_pool_excludes_double_settling():
+    """Consideration pool excludes baseball safety + academic strong safety."""
+    schools = [
+        {
+            "school_name": "Good Match",
+            "division_group": NON_P4_D1,
+            "baseball_division": 1,
+            "school_state": "FL",
+            "academic_selectivity_score": 7.0,
+            "baseball_sci_hitter": 50.0,
+            "out_of_state_tuition": 30000,
+        },
+        {
+            "school_name": "Double Settling",
+            "division_group": NON_D1,
+            "baseball_division": 2,
+            "school_state": "GA",
+            "academic_selectivity_score": 3.0,
+            "baseball_sci_hitter": 46.0,
+            "out_of_state_tuition": 25000,
+        },
+    ]
+
+    results = match_and_rank_schools(
+        schools=schools,
+        player_stats={
+            "primary_position": "OF",
+            "exit_velo_max": 90.0,
+            "of_velo": 85.0,
+            "sixty_time": 6.8,
+        },
+        predicted_tier=NON_P4_D1,
+        player_pci=52.0,
+        academic_composite=7.5,
+        is_pitcher=False,
+        limit=15,
+        consideration_pool=True,
+    )
+
+    by_name = {r["school_name"]: r for r in results}
+    assert "Good Match" in by_name
+    assert "Double Settling" not in by_name, (
+        "Baseball safety + academic strong safety should be excluded from consideration pool"
+    )
 
 
 def test_normalize_hitter_position_handles_catcher_alias():

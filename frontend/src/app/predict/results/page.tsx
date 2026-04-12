@@ -6,8 +6,8 @@ import { useOptionalAuth } from "@/hooks/useOptionalAuth";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-const MAX_RETRIES = 5;
-const RETRY_DELAYS = [1000, 2000, 3000, 4000, 5000];
+const MAX_RETRIES = 2;
+const RETRY_DELAYS = [1500, 3000];
 
 // ---------------------------------------------------------------------------
 // Types (matches finalize response)
@@ -219,7 +219,7 @@ export default function ResultsPage() {
       }
     }
 
-    setStatus("Generating your personalized results...");
+    setStatus("Generating your personalized evaluation...");
     finalize(0);
   }, [authLoading, accessToken, isAuthenticated, purchaseId, sessionToken, router]);
 
@@ -692,20 +692,21 @@ export default function ResultsPage() {
                                   const isPositive = diff > 0;
                                   const isTimeBased = m.unit === "sec";
                                   const isGood = isTimeBased ? diff < 0 : diff > 0;
+                                  const decimals = isTimeBased ? 2 : 1;
                                   return (
                                     <tr key={m.metric} className="border-t border-[var(--stroke)]/50">
                                       <td className="px-3 py-1.5 font-medium text-[var(--foreground)]">{m.metric}</td>
                                       <td className="px-3 py-1.5 text-right font-semibold text-[var(--foreground)]">
-                                        {m.player_value} {m.unit}
+                                        {Number(m.player_value).toFixed(decimals)} {m.unit}
                                       </td>
                                       <td className="px-3 py-1.5 text-right text-[var(--muted)]">
-                                        {m.division_avg} {m.unit}
+                                        {Number(m.division_avg).toFixed(decimals)} {m.unit}
                                       </td>
                                       <td
                                         className="px-3 py-1.5 text-right font-semibold"
                                         style={{ color: isGood ? "var(--sage-green)" : "var(--copper)" }}
                                       >
-                                        {isPositive ? "+" : ""}{diff.toFixed(1)}
+                                        {isPositive ? "+" : ""}{diff.toFixed(decimals)}
                                       </td>
                                     </tr>
                                   );

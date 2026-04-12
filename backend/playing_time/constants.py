@@ -438,3 +438,242 @@ STAT_TO_STRENGTH: Dict[str, str] = {
 # - pop_time: Lower time = quicker release = better
 
 INVERTED_STATS = ["sixty_time", "pop_time"]
+
+
+# =============================================================================
+# POSITION-SPECIFIC DIVISION BENCHMARKS
+# =============================================================================
+# Calculated from all_hitter_data.csv filtered by position group.
+# See backend/data/division_benchmarks.ipynb for calculation methodology.
+#
+# Position groups:
+# - OF: OF, CF, RF, LF
+# - MIF: SS, 2B, MIF (middle infielders)
+# - CIF: 3B, 1B (corner infielders)
+# - C: C (catchers)
+#
+# These provide more accurate benchmarks since physical profiles differ
+# significantly by position (e.g., OF run faster 60s, CIF are bigger/stronger).
+
+OF_DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
+    "P4": {
+        "exit_velo": {"mean": 96.06, "std": 5.90},
+        "sixty_time": {"mean": 6.84, "std": 0.30},
+        "height": {"mean": 72.70, "std": 2.25},
+        "weight": {"mean": 186.34, "std": 17.79},
+        "of_velo": {"mean": 86.94, "std": 5.57},
+    },
+    "Non-P4 D1": {
+        "exit_velo": {"mean": 93.76, "std": 5.58},
+        "sixty_time": {"mean": 6.92, "std": 0.29},
+        "height": {"mean": 72.17, "std": 2.23},
+        "weight": {"mean": 180.94, "std": 16.62},
+        "of_velo": {"mean": 85.53, "std": 4.94},
+    },
+    "Mid-Major D1": {
+        "exit_velo": {"mean": 94.00, "std": 5.77},
+        "sixty_time": {"mean": 6.93, "std": 0.30},
+        "height": {"mean": 72.32, "std": 2.18},
+        "weight": {"mean": 181.74, "std": 16.53},
+        "of_velo": {"mean": 86.03, "std": 4.72},
+    },
+    "Low-Major D1": {
+        "exit_velo": {"mean": 93.36, "std": 5.23},
+        "sixty_time": {"mean": 6.90, "std": 0.28},
+        "height": {"mean": 71.90, "std": 2.30},
+        "weight": {"mean": 179.53, "std": 16.69},
+        "of_velo": {"mean": 84.70, "std": 5.18},
+    },
+    "D2": {
+        "exit_velo": {"mean": 91.43, "std": 5.35},
+        "sixty_time": {"mean": 7.06, "std": 0.31},
+        "height": {"mean": 71.55, "std": 2.26},
+        "weight": {"mean": 175.96, "std": 16.81},
+        "of_velo": {"mean": 82.83, "std": 4.97},
+    },
+    "D3": {
+        "exit_velo": {"mean": 89.24, "std": 5.51},
+        "sixty_time": {"mean": 7.15, "std": 0.32},
+        "height": {"mean": 71.13, "std": 2.23},
+        "weight": {"mean": 171.70, "std": 16.86},
+        "of_velo": {"mean": 80.56, "std": 5.20},
+    },
+}
+
+MIF_DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
+    "P4": {
+        "exit_velo": {"mean": 94.20, "std": 6.00},
+        "sixty_time": {"mean": 6.97, "std": 0.28},
+        "height": {"mean": 72.16, "std": 2.13},
+        "weight": {"mean": 178.67, "std": 15.37},
+        "inf_velo": {"mean": 85.24, "std": 5.10},
+    },
+    "Non-P4 D1": {
+        "exit_velo": {"mean": 91.91, "std": 5.30},
+        "sixty_time": {"mean": 7.05, "std": 0.29},
+        "height": {"mean": 71.49, "std": 2.10},
+        "weight": {"mean": 173.45, "std": 14.58},
+        "inf_velo": {"mean": 83.45, "std": 4.86},
+    },
+    "Mid-Major D1": {
+        "exit_velo": {"mean": 92.30, "std": 5.33},
+        "sixty_time": {"mean": 7.04, "std": 0.27},
+        "height": {"mean": 71.61, "std": 2.11},
+        "weight": {"mean": 173.83, "std": 14.65},
+        "inf_velo": {"mean": 83.65, "std": 4.90},
+    },
+    "Low-Major D1": {
+        "exit_velo": {"mean": 91.29, "std": 5.19},
+        "sixty_time": {"mean": 7.07, "std": 0.30},
+        "height": {"mean": 71.30, "std": 2.07},
+        "weight": {"mean": 172.80, "std": 14.45},
+        "inf_velo": {"mean": 83.14, "std": 4.77},
+    },
+    "D2": {
+        "exit_velo": {"mean": 89.37, "std": 5.41},
+        "sixty_time": {"mean": 7.16, "std": 0.30},
+        "height": {"mean": 70.74, "std": 2.15},
+        "weight": {"mean": 167.93, "std": 14.67},
+        "inf_velo": {"mean": 80.54, "std": 5.00},
+    },
+    "D3": {
+        "exit_velo": {"mean": 86.87, "std": 5.63},
+        "sixty_time": {"mean": 7.29, "std": 0.34},
+        "height": {"mean": 70.24, "std": 2.18},
+        "weight": {"mean": 163.99, "std": 15.37},
+        "inf_velo": {"mean": 78.20, "std": 5.16},
+    },
+}
+
+CIF_DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
+    "P4": {
+        "exit_velo": {"mean": 96.95, "std": 6.02},
+        "sixty_time": {"mean": 7.21, "std": 0.36},
+        "height": {"mean": 74.08, "std": 1.93},
+        "weight": {"mean": 203.22, "std": 19.48},
+        "inf_velo": {"mean": 83.34, "std": 5.48},
+    },
+    "Non-P4 D1": {
+        "exit_velo": {"mean": 95.44, "std": 5.63},
+        "sixty_time": {"mean": 7.30, "std": 0.33},
+        "height": {"mean": 73.50, "std": 2.05},
+        "weight": {"mean": 197.91, "std": 18.60},
+        "inf_velo": {"mean": 81.83, "std": 5.17},
+    },
+    "Mid-Major D1": {
+        "exit_velo": {"mean": 95.59, "std": 5.82},
+        "sixty_time": {"mean": 7.28, "std": 0.33},
+        "height": {"mean": 73.64, "std": 2.00},
+        "weight": {"mean": 197.60, "std": 18.07},
+        "inf_velo": {"mean": 82.11, "std": 5.11},
+    },
+    "Low-Major D1": {
+        "exit_velo": {"mean": 95.19, "std": 5.30},
+        "sixty_time": {"mean": 7.32, "std": 0.33},
+        "height": {"mean": 73.25, "std": 2.12},
+        "weight": {"mean": 198.46, "std": 19.52},
+        "inf_velo": {"mean": 81.38, "std": 5.23},
+    },
+    "D2": {
+        "exit_velo": {"mean": 92.63, "std": 5.30},
+        "sixty_time": {"mean": 7.42, "std": 0.34},
+        "height": {"mean": 72.71, "std": 2.25},
+        "weight": {"mean": 194.05, "std": 21.14},
+        "inf_velo": {"mean": 79.41, "std": 5.13},
+    },
+    "D3": {
+        "exit_velo": {"mean": 90.33, "std": 5.88},
+        "sixty_time": {"mean": 7.54, "std": 0.39},
+        "height": {"mean": 72.53, "std": 2.19},
+        "weight": {"mean": 191.90, "std": 21.89},
+        "inf_velo": {"mean": 76.91, "std": 5.13},
+    },
+}
+
+C_DIVISION_BENCHMARKS: Dict[str, Dict[str, Dict[str, float]]] = {
+    "P4": {
+        "exit_velo": {"mean": 95.45, "std": 5.46},
+        "sixty_time": {"mean": 7.20, "std": 0.33},
+        "height": {"mean": 72.24, "std": 2.14},
+        "weight": {"mean": 192.15, "std": 16.35},
+        "c_velo": {"mean": 79.02, "std": 3.90},
+        "pop_time": {"mean": 1.99, "std": 0.10},
+    },
+    "Non-P4 D1": {
+        "exit_velo": {"mean": 93.75, "std": 5.37},
+        "sixty_time": {"mean": 7.28, "std": 0.33},
+        "height": {"mean": 71.96, "std": 2.04},
+        "weight": {"mean": 188.85, "std": 17.49},
+        "c_velo": {"mean": 77.54, "std": 3.87},
+        "pop_time": {"mean": 2.00, "std": 0.10},
+    },
+    "Mid-Major D1": {
+        "exit_velo": {"mean": 94.14, "std": 5.28},
+        "sixty_time": {"mean": 7.27, "std": 0.33},
+        "height": {"mean": 72.09, "std": 1.95},
+        "weight": {"mean": 190.17, "std": 17.22},
+        "c_velo": {"mean": 77.78, "std": 3.94},
+        "pop_time": {"mean": 2.00, "std": 0.10},
+    },
+    "Low-Major D1": {
+        "exit_velo": {"mean": 93.11, "std": 5.46},
+        "sixty_time": {"mean": 7.30, "std": 0.32},
+        "height": {"mean": 71.74, "std": 2.16},
+        "weight": {"mean": 186.66, "std": 17.72},
+        "c_velo": {"mean": 77.15, "std": 3.74},
+        "pop_time": {"mean": 2.01, "std": 0.10},
+    },
+    "D2": {
+        "exit_velo": {"mean": 91.11, "std": 5.18},
+        "sixty_time": {"mean": 7.40, "std": 0.34},
+        "height": {"mean": 71.37, "std": 2.06},
+        "weight": {"mean": 184.60, "std": 17.68},
+        "c_velo": {"mean": 75.44, "std": 3.58},
+        "pop_time": {"mean": 2.06, "std": 0.11},
+    },
+    "D3": {
+        "exit_velo": {"mean": 88.75, "std": 5.52},
+        "sixty_time": {"mean": 7.50, "std": 0.37},
+        "height": {"mean": 70.99, "std": 2.15},
+        "weight": {"mean": 179.91, "std": 18.12},
+        "c_velo": {"mean": 73.72, "std": 3.74},
+        "pop_time": {"mean": 2.11, "std": 0.12},
+    },
+}
+
+
+# =============================================================================
+# POSITION-SPECIFIC BENCHMARK LOOKUP
+# =============================================================================
+# Maps a player's primary position to the correct position-specific benchmarks.
+
+_POSITION_TO_BENCHMARK: Dict[str, Dict[str, Dict[str, Dict[str, float]]]] = {}
+
+# OF positions
+for _pos in ("OF", "CF", "RF", "LF", "OUTFIELDER"):
+    _POSITION_TO_BENCHMARK[_pos] = OF_DIVISION_BENCHMARKS
+
+# MIF positions
+for _pos in ("SS", "2B", "MIF"):
+    _POSITION_TO_BENCHMARK[_pos] = MIF_DIVISION_BENCHMARKS
+
+# CIF positions
+for _pos in ("3B", "1B"):
+    _POSITION_TO_BENCHMARK[_pos] = CIF_DIVISION_BENCHMARKS
+
+# Catcher positions
+for _pos in ("C", "CATCHER"):
+    _POSITION_TO_BENCHMARK[_pos] = C_DIVISION_BENCHMARKS
+
+
+def get_position_benchmarks(
+    position: str,
+) -> Dict[str, Dict[str, Dict[str, float]]]:
+    """
+    Return the position-specific benchmark dict for the given primary position.
+
+    Falls back to the general DIVISION_BENCHMARKS for unknown positions or
+    generic infielder positions (IF, UTILITY, DH).
+    """
+    pos = position.strip().upper() if position else ""
+    return _POSITION_TO_BENCHMARK.get(pos, DIVISION_BENCHMARKS)

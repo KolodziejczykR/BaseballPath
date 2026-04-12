@@ -184,9 +184,10 @@ class TestNormalDataFlow:
         an alignment bonus when the school needs offense.
         """
         # Create player with exit_velo as clear best stat
+        # Note: 1B uses CIF benchmarks where exit_velo mean is ~95.4
         offensive_player = PlayerStats(
-            exit_velo=98.0,     # Well above average
-            sixty_time=7.2,     # Average
+            exit_velo=100.0,    # Well above CIF average
+            sixty_time=7.3,     # Average for CIF
             inf_velo=82.0,      # Average
             height=72,
             weight=185,

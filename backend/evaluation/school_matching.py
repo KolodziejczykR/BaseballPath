@@ -11,7 +11,7 @@ import logging
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.constants import DIVISION_BENCHMARKS, PITCHER_DIVISION_BENCHMARKS
+from backend.constants import DIVISION_BENCHMARKS, PITCHER_DIVISION_BENCHMARKS, get_position_benchmarks
 from backend.evaluation.competitiveness import (
     DEFAULT_DIVISION_MAX_RANKS,
     benchmark_pci,
@@ -151,6 +151,7 @@ def compute_within_tier_percentile(
     player_stats: Dict[str, Any],
     predicted_tier: str,
     is_pitcher: bool,
+    player_position: str = "",
 ) -> float:
     """
     Compute a within-tier percentile (0-100) by averaging stat z-scores against
@@ -179,8 +180,9 @@ def compute_within_tier_percentile(
             "Slider Spin Rate (avg)": player_stats.get("slider_spin"),
         }
     else:
-        benchmarks = DIVISION_BENCHMARKS.get(
-            benchmark_key, DIVISION_BENCHMARKS.get("Non-P4 D1", {})
+        pos_benchmarks = get_position_benchmarks(player_position)
+        benchmarks = pos_benchmarks.get(
+            benchmark_key, pos_benchmarks.get("Non-P4 D1", {})
         )
         stat_map = {
             "exit_velo": player_stats.get("exit_velo_max"),
@@ -234,10 +236,12 @@ def compute_player_pci(
 ) -> Dict[str, Optional[float]]:
     """Compute ML PCI, benchmark PCI, and blended final PCI."""
     normalized_tier = normalize_predicted_tier(predicted_tier)
+    player_position = player_stats.get("primary_position", "") or ""
     within_tier_percentile = compute_within_tier_percentile(
         player_stats=player_stats,
         predicted_tier=normalized_tier,
         is_pitcher=is_pitcher,
+        player_position=player_position,
     )
 
     ml_pci = ml_based_pci(
@@ -343,19 +347,21 @@ def _academic_fit_label(
     Negative delta → school is more selective (reach).
     """
     if school_academic_rating is None:
-        return "fit"
+        return "Fit"
 
     delta = player_academic_rating - school_academic_rating
 
-    if delta > 1.6:
-        return "strong_safety"
-    if delta >= 0.8:
-        return "safety"
-    if delta >= -0.8:
-        return "fit"
-    if delta >= -1.6:
-        return "reach"
-    # Strong reach academically — exclude
+    if delta > 2.4:
+        return "Strong Safety"
+    if delta > 0.9:
+        return "Safety"
+    if delta >= -0.9:
+        return "Fit"
+    if delta >= -1.8:
+        return "Reach"
+    if delta >= -2.4:
+        return "Strong Reach"
+    # Beyond strong reach — exclude
     return None
 
 
@@ -446,12 +452,15 @@ def match_and_rank_schools(
             continue
 
         if not consideration_pool:
-            # Keep obvious double-reach schools out, but allow ordinary
-            # safety/safety combinations to surface as true fallback options.
-            # In consideration_pool mode, let roster research decide.
-            if baseball_fit == "reach" and acad_label == "reach":
+            # Exclude only extreme double-mismatches where the school is
+            # a strong outlier in both dimensions.
+            if fit_label == "Strong Safety" and acad_label in ("Strong Safety",):
                 continue
-            if fit_label == "Strong Safety" and acad_label in ("safety", "strong_safety"):
+
+        if consideration_pool:
+            # Exclude schools that are settling in both dimensions:
+            # baseball safety/strong-safety AND academic strong safety.
+            if fit_label in ("Safety", "Strong Safety") and acad_label == "Strong Safety":
                 continue
 
         if user_state:
@@ -486,13 +495,14 @@ def match_and_rank_schools(
             "baseball_fit": baseball_fit,
             "fit_label": fit_label,
             "academic_fit": acad_label,
-            "niche_academic_grade": school_acad_grade,
+            "niche_academic_grade": school_acad_numeric,
             "estimated_annual_cost": display_tuition,
             "metric_comparisons": metric_comparisons,
             "delta": round(delta, 2),
             "sci": round(float(school_sci), 2),
             "trend": f"{trend_bonus:+.2f}",
             "trend_bonus": round(trend_bonus, 2),
+            "academic_delta": round(player_academic_rounded - (school_acad_numeric or 2.0), 2),
             "_abs_delta": abs(delta),
         })
 
@@ -508,11 +518,37 @@ def match_and_rank_schools(
     )
 
     if consideration_pool:
-        # Consideration pool: return all candidates sorted by closeness to
-        # fit, up to limit.  Downstream roster research handles final
-        # selection — no balanced-category logic needed here.
-        candidates.sort(key=lambda x: x["_abs_delta"])
-        selected = candidates[:limit]
+        # Consideration pool: blend baseball closeness with academic fit
+        # quality so academically appropriate schools surface alongside
+        # pure baseball-fit matches.
+        _ACAD_DISTANCE = {
+            "Fit": 0.0, "Safety": 1.0, "Reach": 1.5,
+            "Strong Safety": 3.0, "Strong Reach": 3.5,
+        }
+        candidates.sort(
+            key=lambda x: x["_abs_delta"] + _ACAD_DISTANCE.get(
+                x.get("academic_fit", "Fit"), 2.0
+            ) * 1.5
+        )
+
+        # Reserve slots for academically appropriate schools so downstream
+        # research has academic diversity to work with.
+        MIN_ACAD_DIVERSE = 12
+        acad_good = [
+            c for c in candidates
+            if c.get("academic_fit") in ("Fit", "Reach", "Safety")
+        ]
+        selected: List[Dict[str, Any]] = acad_good[:MIN_ACAD_DIVERSE]
+        selected_names = {s["school_name"] for s in selected}
+
+        for c in candidates:
+            if len(selected) >= limit:
+                break
+            if c["school_name"] not in selected_names:
+                selected.append(c)
+                selected_names.add(c["school_name"])
+
+        selected = selected[:limit]
     else:
         # Exclude strong outliers by default, unless there are no regular candidates.
         regular_candidates = [
@@ -576,7 +612,9 @@ def _build_metric_comparisons(
             ("Slider Velocity", "slider_velo", "Slider Velo Range", "mph"),
         ]
     else:
-        benchmarks = DIVISION_BENCHMARKS.get(benchmark_key, {})
+        player_position = player_stats.get("primary_position", "") or ""
+        pos_benchmarks = get_position_benchmarks(player_position)
+        benchmarks = pos_benchmarks.get(benchmark_key, {})
         metrics = [
             ("Exit Velocity", "exit_velo_max", "exit_velo", "mph"),
             ("60-Yard Dash", "sixty_time", "sixty_time", "sec"),
@@ -598,8 +636,9 @@ def _build_metric_comparisons(
         if not bench:
             continue
         try:
-            player_num = round(float(player_val), 1)
-            bench_num = round(float(bench["mean"]), 1)
+            decimals = 2 if unit == "sec" else 1
+            player_num = round(float(player_val), decimals)
+            bench_num = round(float(bench["mean"]), decimals)
         except (TypeError, ValueError, KeyError):
             continue
 

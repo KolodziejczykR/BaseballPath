@@ -71,6 +71,9 @@ from .constants import (
     DIVISION_BENCHMARKS,
     PITCHER_DIVISION_BENCHMARKS,
 
+    # Position-specific benchmarks
+    get_position_benchmarks,
+
     # Stat classification
     STAT_TO_STRENGTH,
 )
@@ -116,9 +119,10 @@ class PlayingTimeCalculator:
 
         Args:
             benchmarks: Optional custom benchmarks dict. If not provided,
-                       uses DIVISION_BENCHMARKS from constants.py.
+                       uses position-specific benchmarks from constants.py.
                        Structure: {division_group: {stat_name: {"mean": float, "std": float}}}
         """
+        self._custom_benchmarks = benchmarks
         self.benchmarks = benchmarks or DIVISION_BENCHMARKS
 
     def calculate(
@@ -217,8 +221,11 @@ class PlayingTimeCalculator:
         is_pitcher = self._is_pitcher(player_stats)
         if is_pitcher:
             benchmarks = PITCHER_DIVISION_BENCHMARKS.get(division_group, PITCHER_DIVISION_BENCHMARKS.get("Non-P4 D1"))
+        elif self._custom_benchmarks:
+            benchmarks = self._custom_benchmarks.get(division_group, self._custom_benchmarks.get("Non-P4 D1"))
         else:
-            benchmarks = self.benchmarks.get(division_group, self.benchmarks.get("Non-P4 D1"))
+            pos_benchmarks = get_position_benchmarks(player_stats.primary_position or "")
+            benchmarks = pos_benchmarks.get(division_group, pos_benchmarks.get("Non-P4 D1"))
 
         z_scores: List[StatZScore] = []
 
@@ -430,8 +437,11 @@ class PlayingTimeCalculator:
         """
         if self._is_pitcher(player_stats):
             benchmarks = PITCHER_DIVISION_BENCHMARKS.get(division_group, PITCHER_DIVISION_BENCHMARKS.get("Non-P4 D1"))
+        elif self._custom_benchmarks:
+            benchmarks = self._custom_benchmarks.get(division_group, self._custom_benchmarks.get("Non-P4 D1"))
         else:
-            benchmarks = self.benchmarks.get(division_group, self.benchmarks.get("Non-P4 D1"))
+            pos_benchmarks = get_position_benchmarks(player_stats.primary_position or "")
+            benchmarks = pos_benchmarks.get(division_group, pos_benchmarks.get("Non-P4 D1"))
 
         z_height = self._calc_single_z_score(
             player_stats.height,

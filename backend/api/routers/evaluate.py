@@ -116,6 +116,7 @@ class AcademicInput(BaseModel):
 class PreferencesInput(BaseModel):
     regions: Optional[List[str]] = None  # None = all regions
     max_budget: Optional[str] = None  # Budget key or "no_preference"
+    ranking_priority: Optional[str] = None  # "playing_time" | "baseball_fit" | "academics"
 
 
 class EvaluateRequest(BaseModel):
@@ -318,6 +319,7 @@ def _enqueue_deep_school_research(
     baseball_assessment: Dict[str, Any],
     academic_score: Dict[str, Any],
     final_limit: Optional[int] = None,
+    ranking_priority: Optional[str] = None,
 ) -> tuple[str, Optional[str]]:
     if not _should_enqueue_deep_school_research(schools):
         return "skipped", None
@@ -334,6 +336,8 @@ def _enqueue_deep_school_research(
         }
         if final_limit is not None:
             payload["final_limit"] = final_limit
+        if ranking_priority is not None:
+            payload["ranking_priority"] = ranking_priority
         job = generate_deep_school_research.delay(payload)
         return "processing", getattr(job, "id", None)
     except Exception as exc:
@@ -639,28 +643,11 @@ async def finalize_evaluation(
 
     purchase = purchase_result.data[0]
 
-    if purchase["status"] != "completed":
-        # Fallback: check Stripe directly in case webhook hasn't arrived yet
-        try:
-            import stripe
-            stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-            if purchase.get("stripe_checkout_session_id"):
-                session = stripe.checkout.Session.retrieve(
-                    purchase["stripe_checkout_session_id"]
-                )
-                if session.payment_status == "paid":
-                    supabase.table("eval_purchases").update(
-                        {"status": "completed", "updated_at": "now()"}
-                    ).eq("id", payload.purchase_id).execute()
-                    purchase["status"] = "completed"
-        except Exception as e:
-            logger.warning(f"Stripe verification fallback failed: {e}")
-
-        if purchase["status"] != "completed":
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail="Payment has not been confirmed yet",
-            )
+    # Proceed immediately without waiting for payment confirmation.
+    # Token cost per run is ~$0.08–0.10, so we prioritise speed over
+    # payment gating.  The Stripe webhook will mark the purchase as
+    # completed asynchronously; the purchase record is still used for
+    # accounting and linking to the evaluation run.
 
     # --- Load pending evaluation (by session_token only) ---
     pending_result = (
@@ -693,7 +680,7 @@ async def finalize_evaluation(
         MLPrediction(**ml_data),
         AcademicInput(**acad_data),
         PreferencesInput(**prefs_data),
-        school_limit=30,
+        school_limit=50,
         consideration_pool=True,
     )
     consideration_schools = core["ranked_schools"]
@@ -754,6 +741,7 @@ async def finalize_evaluation(
         baseball_assessment=baseball_assessment,
         academic_score=academic_score,
         final_limit=15,
+        ranking_priority=prefs_data.get("ranking_priority"),
     )
     supabase.table("prediction_runs").update(
         {
@@ -873,7 +861,7 @@ async def run_evaluation(
         payload.academic_input,
         payload.preferences,
         user_state=user_state,
-        school_limit=30,
+        school_limit=50,
         consideration_pool=True,
     )
 
@@ -942,6 +930,7 @@ async def run_evaluation(
         baseball_assessment=baseball_assessment,
         academic_score=academic_score,
         final_limit=15,
+        ranking_priority=payload.preferences.ranking_priority,
     )
     supabase.table("prediction_runs").update(
         {

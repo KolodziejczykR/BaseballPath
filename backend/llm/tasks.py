@@ -194,6 +194,7 @@ def generate_deep_school_research(payload: Dict[str, Any]) -> Dict[str, Any]:
     baseball_assessment = payload.get("baseball_assessment") or {}
     academic_score = payload.get("academic_score") or {}
     final_limit = payload.get("final_limit")
+    ranking_priority = payload.get("ranking_priority")
 
     supabase = get_supabase_admin_client()
     if supabase is None:
@@ -215,6 +216,7 @@ def generate_deep_school_research(payload: Dict[str, Any]) -> Dict[str, Any]:
                 baseball_assessment=baseball_assessment,
                 academic_score=academic_score,
                 final_limit=final_limit,
+                ranking_priority=ranking_priority,
             )
         )
 

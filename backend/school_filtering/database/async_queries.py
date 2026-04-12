@@ -174,14 +174,13 @@ class AsyncSchoolDataQueries:
             logger.info("Loading division_group + baseball metrics cache from database...")
             result_cache: Dict[str, Dict[str, Any]] = {}
 
-            # Treat any mapping that is not explicitly marked false as usable.
-            # Many rows have verified=NULL even when the team name is correct.
+            # Include all mappings that have a team_name.
+            # The verified column has no false values; all rows are NULL or TRUE.
             mapping_rows: List[Dict[str, Any]] = []
             try:
                 mapping_response = (
                     client.table("school_baseball_ranking_name_mapping")
                     .select("school_name, team_name, verified")
-                    .neq("verified", False)
                     .not_.is_("team_name", "null")
                     .execute()
                 )

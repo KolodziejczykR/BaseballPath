@@ -79,14 +79,44 @@ RESEARCH_QUALITY_BONUS = 1.5
 # Cross-school reranking constants.
 CROSS_SCHOOL_OPPORTUNITY_WEIGHT = 2.5
 CROSS_SCHOOL_Z_CLAMP = 2.5
-ACADEMIC_FIT_PENALTY_MAP = {"safety": 0.0, "fit": 0.0, "reach": -3.0}
-FIT_FAMILY_BASE = {
-    "Fit": 150.0,
-    "Safety": 75.0,
-    "Strong Safety": 75.0,
-    "Reach": 0.0,
-    "Strong Reach": 0.0,
+ACADEMIC_FIT_PENALTY_MAP = {
+    "strong safety": -4.0,
+    "safety": -1.5,
+    "fit": 0.0,
+    "reach": -1.75,
+    "strong reach": -5.0,
 }
+FIT_FAMILY_BASE = {
+    "Fit": 100.0,
+    "Safety": 50.0,
+    "Strong Safety": 30.0,
+    "Reach": 20.0,
+    "Strong Reach": 0.0
+}
+PRIORITY_WEIGHTS = {
+    None: {"fit_family_base": 1.0, "ranking_score": 1.0, "opportunity_bonus": 1.0, "academic_penalty": 1.0},
+    "playing_time": {"fit_family_base": 0.8, "ranking_score": 1.0, "opportunity_bonus": 2.0, "academic_penalty": 0.6},
+    "baseball_fit": {"fit_family_base": 1.3, "ranking_score": 1.2, "opportunity_bonus": 0.5, "academic_penalty": 0.8},
+    "academics": {"fit_family_base": 0.9, "ranking_score": 0.8, "opportunity_bonus": 0.5, "academic_penalty": 2.0},
+}
+VALID_RANKING_PRIORITIES = {"playing_time", "baseball_fit", "academics"}
+
+
+def _academic_penalty(academic_delta: float) -> float:
+    """Continuous academic penalty that scales with the gap magnitude.
+
+    ``academic_delta`` = player_academic - school_academic.
+    Positive means the student is overqualified (safety direction).
+    Negative means the school is harder (reach direction).
+    """
+    if abs(academic_delta) <= 0.9:
+        return 0.0
+    if academic_delta > 0.9:
+        excess = academic_delta - 0.9
+        return -(excess ** 1.5) * 1.5
+    else:
+        excess = abs(academic_delta) - 0.9
+        return -(excess ** 1.5) * 1.2
 
 
 class ResearchSource(BaseModel):
@@ -523,18 +553,29 @@ def _cross_school_sort_key(school: Dict[str, Any]) -> Tuple[float, float, float]
     )
 
 
-def _apply_cross_school_reranking(schools: Sequence[Dict[str, Any]]) -> None:
+def _apply_cross_school_reranking(
+    schools: Sequence[Dict[str, Any]],
+    ranking_priority: Optional[str] = None,
+) -> None:
     """Attach family-guarded composite scores and relative opportunity metrics."""
     metrics_by_id = _compute_relative_opportunity_metrics(schools)
+    w = PRIORITY_WEIGHTS.get(ranking_priority, PRIORITY_WEIGHTS[None])
 
     for school in schools:
         school["raw_opportunity_signal"] = compute_raw_opportunity_signal(school)
         school["relative_opportunity_zscore"] = None
         school["relative_opportunity_bonus"] = 0.0
-        school["academic_fit_penalty"] = ACADEMIC_FIT_PENALTY_MAP.get(
-            str(school.get("academic_fit") or "").strip().lower(),
-            0.0,
-        )
+
+        # Use continuous delta-aware penalty when academic_delta is available,
+        # fall back to the flat label-based map for legacy school dicts.
+        acad_delta = school.get("academic_delta")
+        if acad_delta is not None:
+            school["academic_fit_penalty"] = _academic_penalty(float(acad_delta))
+        else:
+            school["academic_fit_penalty"] = ACADEMIC_FIT_PENALTY_MAP.get(
+                str(school.get("academic_fit") or "").strip().lower(),
+                0.0,
+            )
 
         research_id = school.get("_research_id")
         if research_id is not None:
@@ -548,10 +589,10 @@ def _apply_cross_school_reranking(schools: Sequence[Dict[str, Any]]) -> None:
             school["fit_label"] = fit_label
 
         composite = (
-            FIT_FAMILY_BASE[fit_label]
-            + float(school.get("ranking_score") or 0.0)
-            + float(school.get("relative_opportunity_bonus") or 0.0)
-            + float(school.get("academic_fit_penalty") or 0.0)
+            w["fit_family_base"] * FIT_FAMILY_BASE[fit_label]
+            + w["ranking_score"] * float(school.get("ranking_score") or 0.0)
+            + w["opportunity_bonus"] * float(school.get("relative_opportunity_bonus") or 0.0)
+            + w["academic_penalty"] * float(school.get("academic_fit_penalty") or 0.0)
         )
         school["cross_school_composite"] = round(composite, 2)
 
@@ -621,6 +662,7 @@ class DeepSchoolInsightService:
         baseball_assessment: Dict[str, Any],
         academic_score: Dict[str, Any],
         final_limit: Optional[int] = None,
+        ranking_priority: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         if not self.enabled or self.client is None or not schools:
             return schools
@@ -688,7 +730,7 @@ class DeepSchoolInsightService:
 
             batch_size = self.batch_size
 
-        _apply_cross_school_reranking(schools_copy)
+        _apply_cross_school_reranking(schools_copy, ranking_priority=ranking_priority)
         schools_copy.sort(
             key=_cross_school_sort_key,
             reverse=True,
@@ -701,6 +743,7 @@ class DeepSchoolInsightService:
         if final_limit is not None and len(schools_copy) > final_limit:
             MAX_STRONG_SAFETY = 2
             MAX_STRONG_REACH = 2
+            MAX_ACAD_STRONG_SAFETY = 2 if ranking_priority == "academics" else 5
 
             strong_safeties = [s for s in schools_copy if s.get("fit_label") == "Strong Safety"]
             strong_reaches = [s for s in schools_copy if s.get("fit_label") == "Strong Reach"]
@@ -713,7 +756,19 @@ class DeepSchoolInsightService:
             selected.extend(strong_safeties[:MAX_STRONG_SAFETY])
             selected.extend(strong_reaches[:MAX_STRONG_REACH])
             selected.sort(key=_cross_school_sort_key, reverse=True)
-            schools_copy = selected[:final_limit]
+
+            # Cap academic strong safeties to prevent dominance.
+            acad_ss_count = 0
+            acad_capped: list = []
+            for s in selected:
+                if (s.get("academic_fit") or "").strip() == "Strong Safety":
+                    acad_ss_count += 1
+                    if acad_ss_count <= MAX_ACAD_STRONG_SAFETY:
+                        acad_capped.append(s)
+                else:
+                    acad_capped.append(s)
+
+            schools_copy = acad_capped[:final_limit]
 
         for idx, school in enumerate(schools_copy, start=1):
             school.pop("_research_id", None)

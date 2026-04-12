@@ -12,6 +12,7 @@ from backend.llm.deep_school_insights import (
     FIT_FAMILY_BASE,
     GatheredEvidence,
     MAX_RERANK_ADJUSTMENT,
+    PRIORITY_WEIGHTS,
     MatchedPlayer,
     OpportunityContext,
     ParsedPlayer,
@@ -19,6 +20,7 @@ from backend.llm.deep_school_insights import (
     ResearchSource,
     RecruitingContext,
     RosterContext,
+    _academic_penalty,
     _apply_cross_school_reranking,
     _compute_relative_opportunity_metrics,
     _has_meaningful_evidence,
@@ -799,11 +801,42 @@ def test_cross_school_applies_academic_reach_penalty():
     _apply_cross_school_reranking(schools)
     by_name = {school["school_name"]: school for school in schools}
 
-    assert by_name["Academic Reach"]["academic_fit_penalty"] == -3.0
+    assert by_name["Academic Reach"]["academic_fit_penalty"] == -1.75
     assert (
         by_name["Academic Fit"]["cross_school_composite"]
         - by_name["Academic Reach"]["cross_school_composite"]
-        == 3.0
+        == 1.75
+    )
+
+
+def test_cross_school_applies_academic_strong_safety_penalty():
+    """Academic strong safety schools receive a penalty in cross-school ranking."""
+    schools = [
+        _make_cross_school(
+            "Academic Fit",
+            research_id=0,
+            delta=0.0,
+            fit_label="Fit",
+            academic_fit="Fit",
+            opportunity_level="medium",
+        ),
+        _make_cross_school(
+            "Academic Strong Safety",
+            research_id=1,
+            delta=0.0,
+            fit_label="Fit",
+            academic_fit="Strong Safety",
+            opportunity_level="medium",
+        ),
+    ]
+
+    _apply_cross_school_reranking(schools)
+    by_name = {school["school_name"]: school for school in schools}
+
+    assert by_name["Academic Strong Safety"]["academic_fit_penalty"] == -4.0
+    assert (
+        by_name["Academic Fit"]["cross_school_composite"]
+        > by_name["Academic Strong Safety"]["cross_school_composite"]
     )
 
 
@@ -934,6 +967,12 @@ async def test_final_limit_caps_still_use_cross_school_composite():
 
 
 def test_fit_family_gap_exceeds_worst_case_cross_family_swing():
+    """Fit family should always rank above Safety family even in worst/best case.
+
+    Note: Safety vs Reach cross-family inversions are now intentionally possible
+    when roster opportunity or academic penalties warrant it (e.g. Strong Safety
+    with terrible academics can drop below a Reach school with great opportunity).
+    """
     max_bonus = round(CROSS_SCHOOL_OPPORTUNITY_WEIGHT * CROSS_SCHOOL_Z_CLAMP, 2)
     worst_penalty = min(ACADEMIC_FIT_PENALTY_MAP.values())
     family_min = {"Fit": float("inf"), "Safety": float("inf"), "Reach": float("inf")}
@@ -962,7 +1001,6 @@ def test_fit_family_gap_exceeds_worst_case_cross_family_swing():
         family_max[family] = max(family_max[family], best_composite)
 
     assert family_min["Fit"] > family_max["Safety"]
-    assert family_min["Safety"] > family_max["Reach"]
 
 
 # ---------------------------------------------------------------------------
@@ -1231,3 +1269,151 @@ def test_sidearm_extract_from_card_handles_unlabeled_compact_sidearm_cards():
     assert player["weight"] == "180"
     assert player["bats"] == "R"
     assert player["throws"] == "R"
+
+
+# ---------------------------------------------------------------------------
+# Tests for continuous academic penalty
+# ---------------------------------------------------------------------------
+
+
+def test_academic_penalty_zero_in_fit_range():
+    assert _academic_penalty(0.0) == 0.0
+    assert _academic_penalty(0.5) == 0.0
+    assert _academic_penalty(-0.5) == 0.0
+    assert _academic_penalty(0.9) == 0.0
+    assert _academic_penalty(-0.9) == 0.0
+
+
+def test_academic_penalty_mild_safety():
+    penalty = _academic_penalty(1.5)
+    assert -1.5 < penalty < 0.0
+
+
+def test_academic_penalty_extreme_safety():
+    penalty = _academic_penalty(5.0)
+    assert penalty < -10.0
+
+
+def test_academic_penalty_mild_reach():
+    penalty = _academic_penalty(-1.5)
+    assert -1.5 < penalty < 0.0
+
+
+def test_academic_penalty_extreme_reach():
+    penalty = _academic_penalty(-3.3)
+    assert penalty < -4.0
+
+
+def test_academic_penalty_scales_monotonically():
+    """Larger gaps produce larger (more negative) penalties."""
+    vals = [_academic_penalty(d) for d in [1.0, 2.0, 3.0, 4.0, 5.0]]
+    for i in range(len(vals) - 1):
+        assert vals[i] > vals[i + 1]
+
+
+# ---------------------------------------------------------------------------
+# Tests for continuous penalty in cross-school reranking
+# ---------------------------------------------------------------------------
+
+
+def test_cross_school_uses_continuous_penalty_when_academic_delta_present():
+    """Schools with academic_delta use the continuous function, not the label map."""
+    schools = [
+        {
+            **_make_cross_school(
+                "Continuous",
+                research_id=0,
+                delta=0.0,
+                fit_label="Fit",
+                academic_fit="Strong Safety",
+            ),
+            "academic_delta": 5.0,
+        },
+        _make_cross_school(
+            "Label Fallback",
+            research_id=1,
+            delta=0.0,
+            fit_label="Fit",
+            academic_fit="Strong Safety",
+        ),
+    ]
+
+    _apply_cross_school_reranking(schools)
+    by_name = {s["school_name"]: s for s in schools}
+
+    # Continuous penalty for delta=5.0 is much harsher than flat -4.0
+    assert by_name["Continuous"]["academic_fit_penalty"] < -10.0
+    assert by_name["Label Fallback"]["academic_fit_penalty"] == -4.0
+
+
+def test_cross_school_academics_priority_amplifies_penalty():
+    """The 'academics' priority doubles the academic penalty weight."""
+    schools = [
+        {
+            **_make_cross_school(
+                "Good Academics",
+                research_id=0,
+                delta=0.0,
+                fit_label="Fit",
+                academic_fit="Fit",
+            ),
+            "academic_delta": 0.0,
+        },
+        {
+            **_make_cross_school(
+                "Bad Academics Great Roster",
+                research_id=1,
+                delta=0.0,
+                fit_label="Fit",
+                academic_fit="Strong Safety",
+                opportunity_level="high",
+            ),
+            "academic_delta": 5.0,
+        },
+    ]
+
+    _apply_cross_school_reranking(schools, ranking_priority="academics")
+    by_name = {s["school_name"]: s for s in schools}
+
+    assert (
+        by_name["Good Academics"]["cross_school_composite"]
+        > by_name["Bad Academics Great Roster"]["cross_school_composite"]
+    )
+
+
+def test_cross_school_playing_time_priority_boosts_opportunity():
+    """The 'playing_time' priority doubles opportunity bonus weight."""
+    schools = [
+        {
+            **_make_cross_school(
+                "High Opportunity",
+                research_id=0,
+                delta=0.0,
+                fit_label="Fit",
+                opportunity_level="high",
+                competition_level="low",
+                same_family_opening="high",
+            ),
+            "academic_delta": 0.0,
+        },
+        {
+            **_make_cross_school(
+                "Low Opportunity",
+                research_id=1,
+                delta=0.0,
+                fit_label="Fit",
+                opportunity_level="low",
+                competition_level="high",
+                same_family_opening="low",
+            ),
+            "academic_delta": 0.0,
+        },
+    ]
+
+    _apply_cross_school_reranking(schools, ranking_priority="playing_time")
+    by_name = {s["school_name"]: s for s in schools}
+
+    assert (
+        by_name["High Opportunity"]["cross_school_composite"]
+        > by_name["Low Opportunity"]["cross_school_composite"]
+    )

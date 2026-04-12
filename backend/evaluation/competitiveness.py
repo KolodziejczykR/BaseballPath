@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from backend.constants import DIVISION_BENCHMARKS, PITCHER_DIVISION_BENCHMARKS
+from backend.constants import DIVISION_BENCHMARKS, PITCHER_DIVISION_BENCHMARKS, get_position_benchmarks
 from backend.utils.position_tracks import primary_position_to_hitter_bucket
 from backend.utils.school_group_constants import NON_D1, NON_P4_D1, POWER_4_D1
 
@@ -666,7 +666,7 @@ def benchmark_pci(
             benchmarks=benchmark_dict,
         )
 
-    benchmark_dict = benchmarks or DIVISION_BENCHMARKS
+    benchmark_dict = benchmarks or get_position_benchmarks(player_position)
     return _hitter_benchmark_pci(
         player_metrics=player_metrics,
         player_position=player_position,

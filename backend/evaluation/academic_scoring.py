@@ -2,7 +2,7 @@
 Academic scoring module for BaseballPath evaluation flow.
 
 Computes a composite academic score (1.0–10.0) from GPA, SAT/ACT, and AP courses,
-then adds a +1.0 recruited-athlete admissions boost.  The effective score is
+then adds a +0.5 recruited-athlete admissions boost.  The effective score is
 compared against each school's ``academic_selectivity_score`` column for fit
 matching.
 """
@@ -86,6 +86,12 @@ def sat_to_rating(sat: int) -> int:
 # AP Courses → Rating (3–10), floor of 3
 # ---------------------------------------------------------------------------
 _AP_BRACKETS = [
+    (13, 10),
+    (12, 10),
+    (11, 10),
+    (10, 10),
+    (9, 10),
+    (8, 10),
     (7, 10),
     (6, 9),
     (5, 8),
@@ -107,7 +113,7 @@ def ap_to_rating(ap_courses: int) -> int:
 # ---------------------------------------------------------------------------
 # Athlete boost — all users are prospective recruits
 # ---------------------------------------------------------------------------
-ATHLETE_BOOST = 1.0
+ATHLETE_BOOST = 0.5
 
 
 # ---------------------------------------------------------------------------

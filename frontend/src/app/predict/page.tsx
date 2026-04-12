@@ -161,6 +161,7 @@ export default function PredictPage() {
   // Step 3: Preferences
   const [selectedRegions, setSelectedRegions] = useState<RegionName[]>([]);
   const [budget, setBudget] = useState("no_preference");
+  const [rankingPriority, setRankingPriority] = useState("");
 
   // ML prediction result (fires in background after Step 1)
   const mlResultRef = useRef<Promise<MLPrediction | null> | null>(null);
@@ -305,6 +306,7 @@ export default function PredictPage() {
         preferences: {
           regions: selectedRegions.length > 0 ? selectedRegions : null,
           max_budget: budget,
+          ranking_priority: rankingPriority || null,
         },
       };
 
@@ -713,6 +715,33 @@ export default function PredictPage() {
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
+                </div>
+
+                {/* Ranking Priority */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">What matters most to you?</label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { value: "", label: "Balanced", desc: "Equal weight across all factors" },
+                      { value: "playing_time", label: "Day 1 Playing Time", desc: "Prioritize roster opportunity" },
+                      { value: "baseball_fit", label: "Best Baseball Fit", desc: "Closest competitive match" },
+                      { value: "academics", label: "Best Academics", desc: "Strongest school you can play at" },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setRankingPriority(option.value)}
+                        className={`text-left rounded-xl border p-3 transition-all ${
+                          rankingPriority === option.value
+                            ? "border-[var(--primary)] bg-[var(--primary)]/5"
+                            : "border-[var(--stroke)] hover:border-[var(--muted)]"
+                        }`}
+                      >
+                        <p className="text-sm font-medium">{option.label}</p>
+                        <p className="text-xs text-[var(--muted)]">{option.desc}</p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 

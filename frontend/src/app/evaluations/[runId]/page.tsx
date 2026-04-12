@@ -174,7 +174,9 @@ function tierDisplayLabel(tier: string | undefined): string {
 
 function fitLabel(fit: string | undefined): string {
   if (!fit) return "";
-  return fit.charAt(0).toUpperCase() + fit.slice(1);
+  return fit
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function fitColorKey(fit: string | undefined): string {
