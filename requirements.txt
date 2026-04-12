@@ -7,7 +7,7 @@ xgboost
 pandas
 requests
 beautifulsoup4
-openai
+openai>=1.93.0
 catboost
 joblib
 torch

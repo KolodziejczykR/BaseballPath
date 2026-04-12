@@ -3,12 +3,14 @@
 ## New Migration
 
 - `20260211_auth_and_entitlements.sql`
+- `20260305_saved_schools.sql`
 
 Creates:
 - `profiles`
 - `subscriptions`
 - `prediction_runs`
 - `plan_usage_monthly`
+- `saved_schools`
 
 Also adds:
 - trigger to create `profiles` row for new `auth.users`
@@ -29,4 +31,3 @@ Also adds:
    - `prediction_runs` row inserted
    - `plan_usage_monthly` row updated/incremented
 3. Query `GET /account/me` and verify plan/usage payload.
-

@@ -16,7 +16,7 @@ export default function LoginPage() {
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/dashboard";
+  const nextPath = searchParams.get("next") || "/predict";
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
   const [email, setEmail] = useState("");
@@ -78,7 +78,7 @@ function LoginContent() {
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Welcome Back</p>
           <h1 className="display-font mt-4 text-4xl md:text-5xl">Access your recruiting dashboard.</h1>
-          <p className="mt-4 text-[var(--muted)]">
+          <p className="mt-4 pl-1 text-[var(--muted)]">
             Log in to view your evaluations, save schools, and unlock premium insights.
           </p>
           <div className="mt-8 grid gap-4">

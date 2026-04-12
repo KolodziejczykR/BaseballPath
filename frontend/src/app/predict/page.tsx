@@ -1,1184 +1,852 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FadeOnScroll } from "@/components/ui/fade-on-scroll";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useOptionalAuth } from "@/hooks/useOptionalAuth";
 import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
+import { RegionMap, type RegionName } from "@/components/evaluation/region-map";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-type Step = 1 | 2;
-type PositionCode = "LHP" | "RHP" | "1B" | "2B" | "SS" | "3B" | "OF";
-type PositionTrack = "Pitcher" | "Infielder" | "Outfielder";
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-type Option = {
-  label: string;
-  value: string;
+type PositionCode = "LHP" | "RHP" | "C" | "1B" | "2B" | "SS" | "3B" | "OF";
+type Step = 1 | 2 | 3 | 4;
+
+type MLPrediction = {
+  final_prediction: string;
+  d1_probability: number;
+  p4_probability: number | null;
+  confidence: string;
+  d1_details?: Record<string, unknown>;
+  p4_details?: Record<string, unknown>;
+  player_info?: Record<string, unknown>;
 };
 
-type FieldConfig = {
-  id: string;
-  label: string;
-  type: "number" | "text" | "select";
-  multiple?: boolean;
-  placeholder?: string;
-  step?: string;
-  min?: number;
-  max?: number;
-  required: boolean;
-  options?: Option[];
-};
+// ---------------------------------------------------------------------------
+// Position helpers
+// ---------------------------------------------------------------------------
 
-type EvaluationRunApiResponse = {
-  run_id: string;
-  entitlement?: {
-    plan_tier?: string;
-    monthly_eval_limit?: number | null;
-    remaining_evals?: number | null;
-    usage_before?: number;
-    usage_after?: number;
-  };
-};
+const PITCHER_POSITIONS = new Set(["LHP", "RHP"]);
+const CATCHER_POSITIONS = new Set(["C", "CATCHER"]);
 
-type AccountProfileResponse = {
-  profile?: {
-    full_name?: string | null;
-    state?: string | null;
-    grad_year?: number | null;
-    primary_position?: string | null;
-  };
-};
-
-const validGrades = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"];
-
-const battingHandOptions: Option[] = [
-  { label: "Right", value: "R" },
-  { label: "Left", value: "L" },
-  { label: "Switch", value: "S" },
-];
-
-const throwingHandOptions: Option[] = [
-  { label: "Right", value: "R" },
-  { label: "Left", value: "L" },
-];
-
-const regionPreferenceOptions: Option[] = [
-  { label: "Northeast", value: "Northeast" },
-  { label: "Midwest", value: "Midwest" },
-  { label: "South", value: "South" },
-  { label: "West", value: "West" },
-];
-
-const schoolSizeOptions: Option[] = [
-  { label: "Small (5000 students or less)", value: "Small" },
-  { label: "Medium (5-15k students)", value: "Medium" },
-  { label: "Large (15-30k students)", value: "Large" },
-  { label: "Very Large (More than 30k students)", value: "Very Large" },
-];
-
-const partySceneOptions: Option[] = [
-  { label: "Active (A+, A, A- grade)", value: "Active" },
-  { label: "Moderate (B+, B, B- grade)", value: "Moderate" },
-  { label: "Quiet (C+ and below grade)", value: "Quiet" },
-];
-
-const gradeOptions: Option[] = validGrades.map((grade) => ({ label: grade, value: grade }));
-
-const preferenceFields: FieldConfig[] = [
-  {
-    id: "preferredRegion",
-    label: "Preferred region",
-    type: "select",
-    multiple: true,
-    required: false,
-    options: regionPreferenceOptions,
-  },
-  {
-    id: "preferredSchoolSize",
-    label: "Preferred school size",
-    type: "select",
-    multiple: true,
-    required: false,
-    options: schoolSizeOptions,
-  },
-  {
-    id: "minAcademicRating",
-    label: "Minimum academic rating",
-    type: "select",
-    required: false,
-    options: gradeOptions,
-  },
-  {
-    id: "minAthleticsRating",
-    label: "Minimum athletics rating",
-    type: "select",
-    required: false,
-    options: gradeOptions,
-  },
-  {
-    id: "partyScenePreference",
-    label: "Party scene preference",
-    type: "select",
-    multiple: true,
-    required: false,
-    options: partySceneOptions,
-  },
-  {
-    id: "maxBudget",
-    label: "Max yearly budget (USD)",
-    type: "number",
-    required: false,
-    step: "1",
-    min: 0,
-    placeholder: "Example: 35000",
-  },
-];
-
-const pitcherFields: FieldConfig[] = [
-  {
-    id: "height",
-    label: "Height (inches)",
-    type: "number",
-    required: true,
-    min: 60,
-    max: 84,
-    step: "1",
-    placeholder: "Example: 74",
-  },
-  {
-    id: "weight",
-    label: "Weight (lbs)",
-    type: "number",
-    required: true,
-    min: 120,
-    max: 320,
-    step: "1",
-    placeholder: "Example: 200",
-  },
-  {
-    id: "fastballVeloRange",
-    label: "Fastball velocity average (mph)",
-    type: "number",
-    required: false,
-    min: 60,
-    max: 105,
-    step: "0.1",
-    placeholder: "Example: 88.0",
-  },
-  {
-    id: "fastballVeloMax",
-    label: "Fastball velocity max (mph)",
-    type: "number",
-    required: true,
-    min: 60,
-    max: 105,
-    step: "0.1",
-    placeholder: "Example: 92.0",
-  },
-  {
-    id: "fastballSpin",
-    label: "Fastball spin rate (rpm)",
-    type: "number",
-    required: false,
-    min: 1200,
-    max: 3500,
-    step: "1",
-    placeholder: "Example: 2250",
-  },
-  {
-    id: "changeupVelo",
-    label: "Changeup velocity (mph)",
-    type: "number",
-    required: false,
-    min: 60,
-    max: 95,
-    step: "0.1",
-    placeholder: "Example: 80.0",
-  },
-  {
-    id: "changeupSpin",
-    label: "Changeup spin (rpm)",
-    type: "number",
-    required: false,
-    min: 800,
-    max: 3200,
-    step: "1",
-    placeholder: "Example: 1700",
-  },
-  {
-    id: "curveballVelo",
-    label: "Curveball velocity (mph)",
-    type: "number",
-    required: false,
-    min: 55,
-    max: 95,
-    step: "0.1",
-    placeholder: "Example: 74.0",
-  },
-  {
-    id: "curveballSpin",
-    label: "Curveball spin (rpm)",
-    type: "number",
-    required: false,
-    min: 1200,
-    max: 3500,
-    step: "1",
-    placeholder: "Example: 2200",
-  },
-  {
-    id: "sliderVelo",
-    label: "Slider velocity (mph)",
-    type: "number",
-    required: false,
-    min: 60,
-    max: 100,
-    step: "0.1",
-    placeholder: "Example: 78.0",
-  },
-  {
-    id: "sliderSpin",
-    label: "Slider spin (rpm)",
-    type: "number",
-    required: false,
-    min: 1200,
-    max: 3500,
-    step: "1",
-    placeholder: "Example: 2300",
-  },
-];
-
-const infielderFields: FieldConfig[] = [
-  {
-    id: "height",
-    label: "Height (inches)",
-    type: "number",
-    required: true,
-    min: 60,
-    max: 84,
-    step: "1",
-    placeholder: "Example: 72",
-  },
-  {
-    id: "weight",
-    label: "Weight (lbs)",
-    type: "number",
-    required: true,
-    min: 120,
-    max: 300,
-    step: "1",
-    placeholder: "Example: 180",
-  },
-  {
-    id: "sixtyTime",
-    label: "60-yard time (seconds)",
-    type: "number",
-    required: true,
-    min: 5.0,
-    max: 10.0,
-    step: "0.01",
-    placeholder: "Example: 6.95",
-  },
-  {
-    id: "exitVeloMax",
-    label: "Exit velocity max (mph)",
-    type: "number",
-    required: true,
-    min: 50,
-    max: 130,
-    step: "0.1",
-    placeholder: "Example: 92",
-  },
-  {
-    id: "infVelo",
-    label: "Infield velocity (mph)",
-    type: "number",
-    required: true,
-    min: 50,
-    max: 100,
-    step: "0.1",
-    placeholder: "Example: 83",
-  },
-  {
-    id: "throwingHand",
-    label: "Throwing hand",
-    type: "select",
-    required: true,
-    options: throwingHandOptions,
-  },
-  {
-    id: "hittingHandedness",
-    label: "Hitting handedness",
-    type: "select",
-    required: true,
-    options: battingHandOptions,
-  },
-];
-
-const outfielderFields: FieldConfig[] = [
-  {
-    id: "height",
-    label: "Height (inches)",
-    type: "number",
-    required: true,
-    min: 60,
-    max: 84,
-    step: "1",
-    placeholder: "Example: 72",
-  },
-  {
-    id: "weight",
-    label: "Weight (lbs)",
-    type: "number",
-    required: true,
-    min: 120,
-    max: 300,
-    step: "1",
-    placeholder: "Example: 180",
-  },
-  {
-    id: "sixtyTime",
-    label: "60-yard time (seconds)",
-    type: "number",
-    required: true,
-    min: 5.0,
-    max: 10.0,
-    step: "0.01",
-    placeholder: "Example: 6.85",
-  },
-  {
-    id: "exitVeloMax",
-    label: "Exit velocity max (mph)",
-    type: "number",
-    required: true,
-    min: 50,
-    max: 130,
-    step: "0.1",
-    placeholder: "Example: 94",
-  },
-  {
-    id: "ofVelo",
-    label: "Outfield velocity (mph)",
-    type: "number",
-    required: true,
-    min: 50,
-    max: 110,
-    step: "0.1",
-    placeholder: "Example: 88",
-  },
-  {
-    id: "throwingHand",
-    label: "Throwing hand",
-    type: "select",
-    required: true,
-    options: throwingHandOptions,
-  },
-  {
-    id: "hittingHandedness",
-    label: "Hitting handedness",
-    type: "select",
-    required: true,
-    options: battingHandOptions,
-  },
-];
-
-const allFields = [
-  ...pitcherFields,
-  ...infielderFields,
-  ...outfielderFields,
-  ...preferenceFields,
-];
-const allFieldIds = Array.from(new Set(allFields.map((field) => field.id)));
-const initialFieldState = Object.fromEntries(allFieldIds.map((id) => [id, ""])) as Record<string, string>;
-const initialMultiSelectState: Record<string, string[]> = {
-  preferredRegion: [],
-  preferredSchoolSize: [],
-  partyScenePreference: [],
-};
-
-const northeastStates = new Set(["CT", "ME", "MA", "NH", "RI", "VT", "NJ", "NY", "PA"]);
-const midwestStates = new Set(["IL", "IN", "IA", "KS", "MI", "MN", "MO", "NE", "ND", "OH", "SD", "WI"]);
-const southStates = new Set(["AL", "AR", "DE", "DC", "FL", "GA", "KY", "LA", "MD", "MS", "NC", "OK", "SC", "TN", "TX", "VA", "WV"]);
-
-function toNumber(value: string): number {
-  return Number(value);
+function isPitcher(pos: string): boolean {
+  return PITCHER_POSITIONS.has(pos.toUpperCase());
 }
 
-function numberIfPresent(value: string): number | undefined {
-  const normalized = value.trim();
-  if (!normalized) return undefined;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function mapStateToPlayerRegion(stateAbbrev: string): string {
-  const state = stateAbbrev.toUpperCase();
-  if (northeastStates.has(state)) return "Northeast";
-  if (midwestStates.has(state)) return "Midwest";
-  if (southStates.has(state)) return "South";
-  return "West";
-}
-
-function getPositionTrack(position: PositionCode | ""): PositionTrack {
-  if (position === "LHP" || position === "RHP") return "Pitcher";
-  if (position === "OF") return "Outfielder";
-  return "Infielder";
-}
-
-function pickStatsFields(position: PositionCode | ""): FieldConfig[] {
-  const track = getPositionTrack(position);
-  if (track === "Pitcher") return pitcherFields;
-  if (track === "Outfielder") return outfielderFields;
-  return infielderFields;
-}
-
-function endpointForPosition(position: PositionCode): string {
-  const track = getPositionTrack(position);
-  if (track === "Pitcher") return "pitcher";
-  if (track === "Outfielder") return "outfielder";
+function mlEndpoint(pos: string): string {
+  const p = pos.toUpperCase();
+  if (PITCHER_POSITIONS.has(p)) return "pitcher";
+  if (p === "OF") return "outfielder";
+  if (CATCHER_POSITIONS.has(p)) return "catcher";
   return "infielder";
 }
 
-function normalizePositionCode(value: string | null | undefined): PositionCode | "" {
-  if (!value) return "";
-  const normalized = value.trim().toUpperCase();
-  if (normalized === "LHP" || normalized === "RHP" || normalized === "1B" || normalized === "2B" || normalized === "SS" || normalized === "3B" || normalized === "OF") {
-    return normalized;
-  }
-  return "";
+// ---------------------------------------------------------------------------
+// State / region mapping
+// ---------------------------------------------------------------------------
+
+const NE = new Set(["CT", "ME", "MA", "NH", "RI", "VT", "NJ", "NY", "PA"]);
+const MW = new Set(["IL", "IN", "IA", "KS", "MI", "MN", "MO", "NE", "ND", "OH", "SD", "WI"]);
+const S = new Set(["AL", "AR", "DE", "DC", "FL", "GA", "KY", "LA", "MD", "MS", "NC", "OK", "SC", "TN", "TX", "VA", "WV"]);
+
+function stateToRegion(st: string): string {
+  const s2 = st.toUpperCase();
+  if (NE.has(s2)) return "Northeast";
+  if (MW.has(s2)) return "Midwest";
+  if (S.has(s2)) return "South";
+  return "West";
 }
 
+// ---------------------------------------------------------------------------
+// Budget options
+// ---------------------------------------------------------------------------
+
+const BUDGET_OPTIONS = [
+  { label: "Under $20K", value: "under_20k" },
+  { label: "$20K – $35K", value: "20k_35k" },
+  { label: "$35K – $50K", value: "35k_50k" },
+  { label: "$50K – $65K", value: "50k_65k" },
+  { label: "$65K+", value: "65k_plus" },
+  { label: "No preference", value: "no_preference" },
+];
+
+// ---------------------------------------------------------------------------
+// Position options
+// ---------------------------------------------------------------------------
+
+const POSITION_OPTIONS: { label: string; value: PositionCode }[] = [
+  { label: "RHP (Right-Handed Pitcher)", value: "RHP" },
+  { label: "LHP (Left-Handed Pitcher)", value: "LHP" },
+  { label: "C (Catcher)", value: "C" },
+  { label: "1B (First Base)", value: "1B" },
+  { label: "2B (Second Base)", value: "2B" },
+  { label: "SS (Shortstop)", value: "SS" },
+  { label: "3B (Third Base)", value: "3B" },
+  { label: "OF (Outfield)", value: "OF" },
+];
+
+const GRAD_YEARS = [
+  { label: "2026", value: 2026 },
+  { label: "2027", value: 2027 },
+  { label: "2028", value: 2028 },
+  { label: "2029+", value: 2029 },
+];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function num(v: string): number | undefined {
+  const n = Number(v.trim());
+  return v.trim() && Number.isFinite(n) ? n : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export default function PredictPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen px-6 py-16" />}>
+      <PredictContent />
+    </Suspense>
+  );
+}
+
+function PredictContent() {
+  const { loading: authLoading, accessToken, user, isAuthenticated } = useOptionalAuth();
   const router = useRouter();
-  const { loading: authLoading, accessToken, user } = useRequireAuth("/predict");
+  const searchParams = useSearchParams();
+
   const [step, setStep] = useState<Step>(1);
-  const [fields, setFields] = useState<Record<string, string>>(initialFieldState);
-  const [multiSelectValues, setMultiSelectValues] = useState<Record<string, string[]>>(initialMultiSelectState);
-  const [openMultiSelectId, setOpenMultiSelectId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [submissionError, setSubmissionError] = useState("");
-  const multiDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const [identity, setIdentity] = useState({
-    name: "",
-    state: "",
-    primaryPosition: "" as PositionCode | "",
-    graduatingClass: "",
-  });
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [profileError, setProfileError] = useState("");
+  const [error, setError] = useState("");
 
-  const positionTrack = getPositionTrack(identity.primaryPosition);
-  const statsFields = useMemo(() => pickStatsFields(identity.primaryPosition), [identity.primaryPosition]);
-  const pitcherRequiredFields = useMemo(
-    () => pitcherFields.filter((field) => field.required),
-    [],
-  );
-  const pitcherOptionalFields = useMemo(
-    () => pitcherFields.filter((field) => !field.required),
-    [],
-  );
-
-  const stepSummary = [
-    { id: 1, title: "Performance stats", detail: "Enter your current measurements and on-field numbers." },
-    { id: 2, title: "School preferences", detail: "Tell us what matters most so we can personalize your results." },
-  ] as const;
-
-  const missingProfileFields = useMemo(() => {
-    const missing: string[] = [];
-    if (!identity.state.trim()) missing.push("State");
-    if (!identity.primaryPosition) missing.push("Primary position");
-    if (!identity.graduatingClass.trim()) missing.push("Graduating class");
-    return missing;
-  }, [identity.state, identity.primaryPosition, identity.graduatingClass]);
-
-  const accountProfileComplete = missingProfileFields.length === 0;
-
-  const statsComplete = statsFields
-    .filter((field) => field.required)
-    .every((field) => fields[field.id].trim() !== "");
-
-  const preferencesComplete = preferenceFields
-    .filter((field) => field.required)
-    .every((field) =>
-      field.multiple ? (multiSelectValues[field.id] || []).length > 0 : fields[field.id].trim() !== "",
-    );
-
-  const canMoveForward = step === 1 ? statsComplete : preferencesComplete;
-
-  function setFieldValue(fieldId: string, value: string) {
-    setFields((prev) => ({ ...prev, [fieldId]: value }));
-  }
-
-  function setMultiSelectFieldValue(fieldId: string, values: string[]) {
-    setMultiSelectValues((prev) => ({ ...prev, [fieldId]: values }));
-  }
-
+  // Check if user returned from cancelled checkout
   useEffect(() => {
-    function handleOutsideClick(event: MouseEvent) {
-      if (!openMultiSelectId) return;
-      const dropdownRoot = multiDropdownRefs.current[openMultiSelectId];
-      if (!dropdownRoot) return;
-      if (!dropdownRoot.contains(event.target as Node)) {
-        setOpenMultiSelectId(null);
-      }
+    if (searchParams.get("checkout") === "cancelled") {
+      setError("Checkout was cancelled. You can try again when you're ready.");
     }
+  }, [searchParams]);
 
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [openMultiSelectId]);
+  // Profile data
+  const [userState, setUserState] = useState("");
 
+  // Step 1: Baseball
+  const [position, setPosition] = useState<PositionCode | "">("");
+  const [gradYear, setGradYear] = useState("");
+  const [height, setHeight] = useState("");
+  const [weight, setWeight] = useState("");
+  const [throwingHand, setThrowingHand] = useState("R");
+  const [hittingHand, setHittingHand] = useState("R");
+  // Hitter
+  const [exitVelo, setExitVelo] = useState("");
+  const [sixtyTime, setSixtyTime] = useState("");
+  const [infVelo, setInfVelo] = useState("");
+  const [ofVelo, setOfVelo] = useState("");
+  const [cVelo, setCVelo] = useState("");
+  const [popTime, setPopTime] = useState("");
+  // Pitcher
+  const [fbVeloMax, setFbVeloMax] = useState("");
+  const [fbVeloAvg, setFbVeloAvg] = useState("");
+  const [fbSpin, setFbSpin] = useState("");
+  const [chVelo, setChVelo] = useState("");
+  const [chSpin, setChSpin] = useState("");
+  const [cbVelo, setCbVelo] = useState("");
+  const [cbSpin, setCbSpin] = useState("");
+  const [slVelo, setSlVelo] = useState("");
+  const [slSpin, setSlSpin] = useState("");
+
+  // Step 2: Academics
+  const [gpa, setGpa] = useState("");
+  const [satScore, setSatScore] = useState("");
+  const [actScore, setActScore] = useState("");
+  const [apCourses, setApCourses] = useState("");
+
+  // Step 3: Preferences
+  const [selectedRegions, setSelectedRegions] = useState<RegionName[]>([]);
+  const [budget, setBudget] = useState("no_preference");
+  const [rankingPriority, setRankingPriority] = useState("");
+
+  // ML prediction result (fires in background after Step 1)
+  const mlResultRef = useRef<Promise<MLPrediction | null> | null>(null);
+  const [mlRunning, setMlRunning] = useState(false);
+
+  // Step 4: Preview/Payment state
+  const [sessionToken, setSessionToken] = useState("");
+  const [priceCents, setPriceCents] = useState<number | null>(null);
+  const [isFirstEval, setIsFirstEval] = useState<boolean | null>(null);
+
+  // Load profile state (only if authenticated)
   useEffect(() => {
     if (!accessToken) return;
-    let mounted = true;
+    fetch(`${API}/account/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.profile?.state) setUserState(data.profile.state);
+      })
+      .catch(() => { });
+  }, [accessToken]);
 
-    async function loadIdentityFromAccount() {
-      setProfileLoading(true);
-      setProfileError("");
+  // ---------------------------------------------------------------------------
+  // Step 1 submit → fire ML prediction in background
+  // ---------------------------------------------------------------------------
 
-      try {
-        const response = await fetch(`${API_BASE_URL}/account/me`, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-        const data = (await response.json()) as AccountProfileResponse | { detail?: string };
-        if (!response.ok) {
-          const detail =
-            typeof data === "object" && data && "detail" in data ? data.detail : "Unable to load account profile.";
-          throw new Error(detail || "Unable to load account profile.");
+  function buildMLPayload(): Record<string, unknown> {
+    const pos = position as PositionCode;
+    if (isPitcher(pos)) {
+      return {
+        height: Number(height),
+        weight: Number(weight),
+        primary_position: pos,
+        player_region: userState ? stateToRegion(userState) : "West",
+        throwing_hand: throwingHand,
+        fastball_velo_max: Number(fbVeloMax),
+        ...(num(fbVeloAvg) !== undefined && { fastball_velo_range: num(fbVeloAvg) }),
+        ...(num(fbSpin) !== undefined && { fastball_spin: num(fbSpin) }),
+        ...(num(chVelo) !== undefined && { changeup_velo: num(chVelo) }),
+        ...(num(chSpin) !== undefined && { changeup_spin: num(chSpin) }),
+        ...(num(cbVelo) !== undefined && { curveball_velo: num(cbVelo) }),
+        ...(num(cbSpin) !== undefined && { curveball_spin: num(cbSpin) }),
+        ...(num(slVelo) !== undefined && { slider_velo: num(slVelo) }),
+        ...(num(slSpin) !== undefined && { slider_spin: num(slSpin) }),
+      };
+    }
+    // Position player
+    const base: Record<string, unknown> = {
+      height: Number(height),
+      weight: Number(weight),
+      primary_position: pos === "C" ? "C" : pos,
+      player_region: userState ? stateToRegion(userState) : "West",
+      throwing_hand: throwingHand,
+      hitting_handedness: hittingHand,
+      sixty_time: Number(sixtyTime),
+      exit_velo_max: Number(exitVelo),
+    };
+    if (pos === "C") {
+      base.c_velo = Number(cVelo);
+      base.pop_time = Number(popTime);
+    } else if (pos === "OF") {
+      base.of_velo = Number(ofVelo);
+    } else {
+      base.inf_velo = Number(infVelo);
+    }
+    return base;
+  }
+
+  function fireMLPrediction() {
+    const payload = buildMLPayload();
+    const endpoint = mlEndpoint(position);
+
+    setMlRunning(true);
+    const promise = fetch(`${API}/predict/${endpoint}/predict`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.detail || "ML prediction failed");
         }
+        return res.json() as Promise<MLPrediction>;
+      })
+      .catch((err) => {
+        console.error("ML prediction error:", err);
+        return null;
+      })
+      .finally(() => setMlRunning(false));
 
-        if (!mounted) return;
-        const profile = (data as AccountProfileResponse).profile || {};
-        const fallbackName = user?.email?.split("@")[0] || "";
-
-        setIdentity({
-          name: (profile.full_name || fallbackName).trim(),
-          state: (profile.state || "").toUpperCase(),
-          primaryPosition: normalizePositionCode(profile.primary_position),
-          graduatingClass: profile.grad_year ? String(profile.grad_year) : "",
-        });
-      } catch (error) {
-        if (!mounted) return;
-        const message = error instanceof Error ? error.message : "Unable to load account profile.";
-        setProfileError(message);
-      } finally {
-        if (!mounted) return;
-        setProfileLoading(false);
-      }
-    }
-
-    loadIdentityFromAccount();
-
-    return () => {
-      mounted = false;
-    };
-  }, [accessToken, user?.email]);
-
-  function nextStep() {
-    if (!canMoveForward || step === stepSummary.length) return;
-    setStep((prev) => (prev + 1) as Step);
+    mlResultRef.current = promise;
   }
 
-  function prevStep() {
-    if (step === 1) return;
-    setStep((prev) => (prev - 1) as Step);
+  function handleStep1Submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    fireMLPrediction();
+    setStep(2);
   }
 
-  function buildPredictionPayload(position: PositionCode, playerRegion: string): Record<string, unknown> {
-    const track = getPositionTrack(position);
-
-    if (track === "Pitcher") {
-      const throwingHand = position === "LHP" ? "L" : "R";
-      const payload: Record<string, unknown> = {
-        height: toNumber(fields.height),
-        weight: toNumber(fields.weight),
-        primary_position: position,
-        player_region: playerRegion,
-        throwing_hand: throwingHand,
-        fastball_velo_max: toNumber(fields.fastballVeloMax),
-      };
-
-      const optionalPitchMetrics: Array<[string, number | undefined]> = [
-        ["fastball_velo_range", numberIfPresent(fields.fastballVeloRange)],
-        ["fastball_spin", numberIfPresent(fields.fastballSpin)],
-        ["changeup_velo", numberIfPresent(fields.changeupVelo)],
-        ["changeup_spin", numberIfPresent(fields.changeupSpin)],
-        ["curveball_velo", numberIfPresent(fields.curveballVelo)],
-        ["curveball_spin", numberIfPresent(fields.curveballSpin)],
-        ["slider_velo", numberIfPresent(fields.sliderVelo)],
-        ["slider_spin", numberIfPresent(fields.sliderSpin)],
-      ];
-
-      for (const [key, value] of optionalPitchMetrics) {
-        if (value !== undefined) payload[key] = value;
-      }
-
-      return payload;
-    }
-
-    if (track === "Outfielder") {
-      return {
-        height: toNumber(fields.height),
-        weight: toNumber(fields.weight),
-        sixty_time: toNumber(fields.sixtyTime),
-        exit_velo_max: toNumber(fields.exitVeloMax),
-        of_velo: toNumber(fields.ofVelo),
-        primary_position: "OF",
-        hitting_handedness: fields.hittingHandedness,
-        throwing_hand: fields.throwingHand,
-        player_region: playerRegion,
-      };
-    }
-
-    return {
-      height: toNumber(fields.height),
-      weight: toNumber(fields.weight),
-      sixty_time: toNumber(fields.sixtyTime),
-      exit_velo_max: toNumber(fields.exitVeloMax),
-      inf_velo: toNumber(fields.infVelo),
-      primary_position: position,
-      hitting_handedness: fields.hittingHandedness,
-      throwing_hand: fields.throwingHand,
-      player_region: playerRegion,
-    };
-  }
-
-  function buildPlayerInfoForPreferences(position: PositionCode, playerRegion: string): Record<string, unknown> {
-    const track = getPositionTrack(position);
-
-    if (track === "Pitcher") {
-      const throwingHand = position === "LHP" ? "L" : "R";
-      const playerInfo: Record<string, unknown> = {
-        height: toNumber(fields.height),
-        weight: toNumber(fields.weight),
-        primary_position: position,
-        region: playerRegion,
-        throwing_hand: throwingHand,
-        fastball_velo_max: toNumber(fields.fastballVeloMax),
-      };
-
-      const optionalPitchMetrics: Array<[string, number | undefined]> = [
-        ["fastball_velo_range", numberIfPresent(fields.fastballVeloRange)],
-        ["fastball_spin", numberIfPresent(fields.fastballSpin)],
-        ["changeup_velo", numberIfPresent(fields.changeupVelo)],
-        ["changeup_spin", numberIfPresent(fields.changeupSpin)],
-        ["curveball_velo", numberIfPresent(fields.curveballVelo)],
-        ["curveball_spin", numberIfPresent(fields.curveballSpin)],
-        ["slider_velo", numberIfPresent(fields.sliderVelo)],
-        ["slider_spin", numberIfPresent(fields.sliderSpin)],
-      ];
-
-      for (const [key, value] of optionalPitchMetrics) {
-        if (value !== undefined) playerInfo[key] = value;
-      }
-
-      return playerInfo;
-    }
-
-    if (track === "Outfielder") {
-      return {
-        height: toNumber(fields.height),
-        weight: toNumber(fields.weight),
-        primary_position: "OF",
-        exit_velo_max: toNumber(fields.exitVeloMax),
-        sixty_time: toNumber(fields.sixtyTime),
-        of_velo: toNumber(fields.ofVelo),
-        throwing_hand: fields.throwingHand,
-        hitting_handedness: fields.hittingHandedness,
-        region: playerRegion,
-      };
-    }
-
-    return {
-      height: toNumber(fields.height),
-      weight: toNumber(fields.weight),
-      primary_position: position,
-      exit_velo_max: toNumber(fields.exitVeloMax),
-      sixty_time: toNumber(fields.sixtyTime),
-      inf_velo: toNumber(fields.infVelo),
-      throwing_hand: fields.throwingHand,
-      hitting_handedness: fields.hittingHandedness,
-      region: playerRegion,
-    };
-  }
-
-  async function runEvaluation() {
-    if (!accountProfileComplete) {
-      setSubmissionError("Please complete your account profile (state, graduating class, and primary position) before continuing.");
+  function handleStep2Submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!satScore.trim() && !actScore.trim()) {
+      setError("Please provide at least one test score (SAT or ACT).");
       return;
     }
-    if (!identity.primaryPosition || !accessToken) return;
+    setStep(3);
+  }
 
+  async function handleStep3Submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
     setSubmitting(true);
-    setSubmissionError("");
 
     try {
-      const playerRegion = mapStateToPlayerRegion(identity.state);
-      const predictionPayload = buildPredictionPayload(identity.primaryPosition, playerRegion);
-      const positionEndpoint = endpointForPosition(identity.primaryPosition);
-
-      const userPreferencesPayload: Record<string, unknown> = {
-        user_state: identity.state,
-        hs_graduation_year: Number(identity.graduatingClass),
-      };
-      if (multiSelectValues.preferredRegion.length > 0) {
-        userPreferencesPayload.preferred_regions = multiSelectValues.preferredRegion;
-      }
-      if (multiSelectValues.preferredSchoolSize.length > 0) {
-        userPreferencesPayload.preferred_school_size = multiSelectValues.preferredSchoolSize;
-      }
-      if (multiSelectValues.partyScenePreference.length > 0) {
-        userPreferencesPayload.party_scene_preference = multiSelectValues.partyScenePreference;
-      }
-      if (fields.minAcademicRating.trim()) {
-        userPreferencesPayload.min_academic_rating = fields.minAcademicRating.trim();
-      }
-      if (fields.minAthleticsRating.trim()) {
-        userPreferencesPayload.min_athletics_rating = fields.minAthleticsRating.trim();
-      }
-      const maxBudget = numberIfPresent(fields.maxBudget);
-      if (maxBudget !== undefined) {
-        userPreferencesPayload.max_budget = maxBudget;
+      // Wait for ML result
+      const mlResult = mlResultRef.current ? await mlResultRef.current : null;
+      if (!mlResult) {
+        setError("Baseball prediction failed. Please go back and try again.");
+        setSubmitting(false);
+        return;
       }
 
-      const preferencesPayload: Record<string, unknown> = {
-        user_preferences: userPreferencesPayload,
-        player_info: buildPlayerInfoForPreferences(identity.primaryPosition, playerRegion),
-        // 0 means "no limit" in the backend two-tier pipeline.
-        limit: 0,
-      };
-      const preferencesInput: Record<string, unknown> = {};
-      if (multiSelectValues.preferredRegion.length > 0) {
-        preferencesInput.preferred_regions = multiSelectValues.preferredRegion;
-      }
-      if (multiSelectValues.preferredSchoolSize.length > 0) {
-        preferencesInput.preferred_school_size = multiSelectValues.preferredSchoolSize;
-      }
-      if (multiSelectValues.partyScenePreference.length > 0) {
-        preferencesInput.party_scene_preference = multiSelectValues.partyScenePreference;
-      }
-      if (fields.minAcademicRating.trim()) {
-        preferencesInput.min_academic_rating = fields.minAcademicRating.trim();
-      }
-      if (fields.minAthleticsRating.trim()) {
-        preferencesInput.min_athletics_rating = fields.minAthleticsRating.trim();
-      }
-      if (maxBudget !== undefined) {
-        preferencesInput.max_budget = maxBudget;
-      }
-
-      const evaluationResponse = await fetch(`${API_BASE_URL}/evaluations/run`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
+      const payload = {
+        baseball_metrics: {
+          ...buildMLPayload(),
+          graduation_year: num(gradYear),
         },
-        body: JSON.stringify({
-          position_endpoint: positionEndpoint,
-          identity_input: {
-            name: identity.name,
-            state: identity.state,
-            primary_position: identity.primaryPosition,
-            graduating_class: identity.graduatingClass,
-          },
-          stats_input: statsFields.reduce<Record<string, string>>((acc, field) => {
-            acc[field.id] = fields[field.id];
-            return acc;
-          }, {}),
-          preferences_input: preferencesInput,
-          prediction_payload: predictionPayload,
-          preferences_payload: preferencesPayload,
-          use_llm_reasoning: true,
-        }),
+        ml_prediction: mlResult,
+        academic_input: {
+          gpa: Number(gpa),
+          sat_score: num(satScore) ?? null,
+          act_score: num(actScore) ?? null,
+          ap_courses: Number(apCourses) || 0,
+        },
+        preferences: {
+          regions: selectedRegions.length > 0 ? selectedRegions : null,
+          max_budget: budget,
+          ranking_priority: rankingPriority || null,
+        },
+      };
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (accessToken) {
+        headers["Authorization"] = `Bearer ${accessToken}`;
+      }
+
+      const res = await fetch(`${API}/evaluate/preview`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
       });
 
-      const evaluationData = (await evaluationResponse.json()) as
-        | EvaluationRunApiResponse
-        | { detail?: string | { error?: string; plan_tier?: string; monthly_limit?: number } };
-      if (!evaluationResponse.ok) {
-        const rawDetail =
-          typeof evaluationData === "object" && evaluationData && "detail" in evaluationData
-            ? evaluationData.detail
-            : "Evaluation request failed.";
-
-        if (typeof rawDetail === "string") {
-          throw new Error(rawDetail);
-        }
-
-        if (rawDetail && typeof rawDetail === "object" && rawDetail.error === "evaluation_quota_exceeded") {
-          const tier = rawDetail.plan_tier ?? "current";
-          const limit = rawDetail.monthly_limit ?? "?";
-          throw new Error(`Monthly evaluation limit reached for ${tier} plan (${limit}/month).`);
-        }
-
-        throw new Error("Evaluation request failed.");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || "Evaluation failed");
       }
 
-      const typedEvaluation = evaluationData as EvaluationRunApiResponse;
-      router.push(`/evaluations/${typedEvaluation.run_id}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to run evaluation.";
-      setSubmissionError(message);
+      const result = await res.json();
+      setSessionToken(result.session_token);
+      setPriceCents(result.price_cents);
+      setIsFirstEval(result.is_first_eval);
+
+      // Store session token in localStorage as backup
+      localStorage.setItem("bp_session_token", result.session_token);
+
+      setStep(4);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  function renderField(field: FieldConfig) {
-    if (field.type === "select") {
-      if (field.multiple) {
-        const selectedValues = multiSelectValues[field.id] || [];
-        const selectedLabels = (field.options || [])
-          .filter((option) => selectedValues.includes(option.value))
-          .map((option) => option.label);
-        const displayValue =
-          selectedLabels.length === 0
-            ? "Select option"
-            : selectedLabels.length === 1
-            ? selectedLabels[0]
-            : "Multiple Selected";
+  // ---------------------------------------------------------------------------
+  // Step 4: Payment handlers
+  // ---------------------------------------------------------------------------
 
-        return (
-          <div
-            key={field.id}
-            className="relative grid gap-2 text-sm font-medium"
-            ref={(node) => {
-              multiDropdownRefs.current[field.id] = node;
-            }}
-          >
-            <label>{field.label}</label>
-            <button
-              type="button"
-              className="form-control relative flex items-center justify-between pr-11 text-left"
-              onClick={() =>
-                setOpenMultiSelectId((current) => (current === field.id ? null : field.id))
-              }
-            >
-              <span>{displayValue}</span>
-              <span className="pointer-events-none absolute right-[0.95rem] top-1/2 -translate-y-1/2 text-[var(--foreground)]">
-                <svg
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-4 w-4"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M5 7.5L10 12.5L15 7.5"
-                    stroke="currentColor"
-                    strokeWidth="2.1"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </span>
-            </button>
-            {openMultiSelectId === field.id && (
-              <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-30 max-h-64 overflow-auto rounded-2xl border border-[var(--stroke)] bg-white shadow-soft">
-                {(field.options || []).map((option) => {
-                  const selected = selectedValues.includes(option.value);
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-[var(--sand)]/55"
-                      onClick={() => {
-                        const nextValues = selected
-                          ? selectedValues.filter((value) => value !== option.value)
-                          : [...selectedValues, option.value];
-                        setMultiSelectFieldValue(field.id, nextValues);
-                      }}
-                    >
-                      <span>{option.label}</span>
-                      <span
-                        className={`inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs ${
-                          selected
-                            ? "border-[var(--primary)] bg-[var(--primary)] text-white"
-                            : "border-[var(--stroke)] bg-white text-transparent"
-                        }`}
-                      >
-                        ✓
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      return (
-        <label key={field.id} className="grid gap-2 text-sm font-medium">
-          {field.label}
-          <select
-            value={fields[field.id]}
-            onChange={(event) => setFieldValue(field.id, event.target.value)}
-            className="form-control"
-          >
-            <option value="">Select option</option>
-            {(field.options || []).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      );
-    }
-
-    return (
-      <label key={field.id} className="grid gap-2 text-sm font-medium">
-        {field.label}
-        <input
-          type={field.type}
-          value={fields[field.id]}
-          min={field.min}
-          max={field.max}
-          step={field.step}
-          onChange={(event) => setFieldValue(field.id, event.target.value)}
-          placeholder={field.placeholder}
-          className="form-control"
-        />
-      </label>
-    );
+  function handlePayment() {
+    // All users (authenticated or not) go straight to checkout
+    router.push(`/predict/checkout?session_token=${sessionToken}`);
   }
 
-  if (authLoading || (Boolean(accessToken) && profileLoading)) {
+  // ---------------------------------------------------------------------------
+  // Validation
+  // ---------------------------------------------------------------------------
+
+  const step1Valid = useMemo(() => {
+    if (!position || !height || !weight || !gradYear) return false;
+    if (isPitcher(position)) {
+      return !!fbVeloMax;
+    }
+    if (!exitVelo || !sixtyTime) return false;
+    if (position === "C" && (!cVelo || !popTime)) return false;
+    if (position === "OF" && !ofVelo) return false;
+    if (["1B", "2B", "SS", "3B"].includes(position) && !infVelo) return false;
+    return true;
+  }, [position, height, weight, gradYear, fbVeloMax, exitVelo, sixtyTime, infVelo, ofVelo, cVelo, popTime]);
+
+  const step2Valid = useMemo(() => {
+    return !!gpa && (!!satScore || !!actScore) && apCourses !== "";
+  }, [gpa, satScore, actScore, apCourses]);
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  if (authLoading) {
     return (
       <div className="min-h-screen px-6 py-16">
         <div className="mx-auto max-w-3xl rounded-3xl border border-[var(--stroke)] bg-white/80 p-10 text-center">
-          <p className="text-sm text-[var(--muted)]">Loading account profile and prediction workspace...</p>
+          <p className="text-sm text-[var(--muted)]">Loading...</p>
         </div>
       </div>
     );
   }
 
+  // Price display helper
+  const displayPrice = priceCents
+    ? `$${(priceCents / 100).toFixed(0)}`
+    : isFirstEval === null
+      ? "$69"
+      : isFirstEval
+        ? "$69"
+        : "$29";
+
   return (
     <div className="min-h-screen">
-      {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
-      <main className="px-6 py-10 md:py-12">
-        <div className="mx-auto max-w-6xl">
-        <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.34em] text-[var(--muted)]">Prediction Pipeline</p>
-            <h1 className="display-font mt-4 text-4xl leading-tight md:text-6xl">
-              Find your best-fit schools in two quick steps.
-            </h1>
-            <p className="mt-3 max-w-2xl text-[var(--muted)]">
-              We use your saved profile details, then guide you through your performance stats and school preferences.
-            </p>
-          </div>
-          <Link
-            href="/dashboard"
-            className="inline-flex w-fit items-center rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)]"
-          >
-            Back to Dashboard
-          </Link>
-        </div>
+      {isAuthenticated && accessToken && (
+        <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />
+      )}
 
-        <div className="grid gap-8 lg:grid-cols-[1.12fr_0.88fr]">
-          <FadeOnScroll>
-            <section className="glass rounded-[30px] p-6 shadow-soft md:p-8">
-              <div className="mb-8 rounded-2xl border border-[var(--stroke)] bg-white/70 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">
-                    Step {step} of {stepSummary.length}
-                  </p>
-                  <p className="text-sm font-semibold text-[var(--navy)]">{stepSummary[step - 1].title}</p>
-                </div>
-                <div className="mt-3 h-2 rounded-full bg-[var(--sand)]">
-                  <div
-                    className="h-2 rounded-full bg-[var(--primary)] transition-all duration-500"
-                    style={{ width: `${(step / stepSummary.length) * 100}%` }}
-                  />
-                </div>
-              </div>
+      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
+        <div className="mx-auto max-w-2xl">
+          {/* Header */}
+          <h1 className="display-font mt-3 text-3xl md:text-4xl text-center">
+            Player Evaluation
+          </h1>
+          <p className="mt-2 text-center text-sm text-[var(--muted)]">
+            Get matched with the best college baseball programs for you.
+          </p>
 
-              <div className="mb-6 rounded-2xl border border-[var(--stroke)] bg-white/70 p-4">
-                <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">Saved Profile Details</p>
-                <p className="mt-2 text-sm text-[var(--muted)]">
-                  These fields are pulled from your account settings and applied to every prediction automatically.
-                </p>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <div className="rounded-xl border border-[var(--stroke)] bg-white/90 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Name</p>
-                    <p className="mt-1 font-semibold text-[var(--navy)]">{identity.name || "Not set"}</p>
-                  </div>
-                  <div className="rounded-xl border border-[var(--stroke)] bg-white/90 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">State</p>
-                    <p className="mt-1 font-semibold text-[var(--navy)]">{identity.state || "Not set"}</p>
-                  </div>
-                  <div className="rounded-xl border border-[var(--stroke)] bg-white/90 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Primary position</p>
-                    <p className="mt-1 font-semibold text-[var(--navy)]">{identity.primaryPosition || "Not set"}</p>
-                  </div>
-                  <div className="rounded-xl border border-[var(--stroke)] bg-white/90 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Graduating class</p>
-                    <p className="mt-1 font-semibold text-[var(--navy)]">{identity.graduatingClass || "Not set"}</p>
-                  </div>
-                </div>
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <Link
-                    href="/account"
-                    className="inline-flex rounded-full border border-[var(--stroke)] bg-white/80 px-4 py-2 text-xs font-semibold text-[var(--navy)]"
-                  >
-                    Edit in Account Settings
-                  </Link>
-                  {profileError && <p className="text-xs text-red-700">{profileError}</p>}
-                </div>
-              </div>
-
-              {!accountProfileComplete ? (
-                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
-                  <h2 className="text-xl font-semibold text-amber-900">Finish your account details to continue</h2>
-                  <p className="mt-2 text-sm text-amber-800">
-                    Missing profile fields: {missingProfileFields.join(", ")}.
-                  </p>
-                  <p className="mt-1 text-sm text-amber-800">
-                    Add these once in account settings, and we&apos;ll use them for every future prediction.
-                  </p>
-                  <Link
-                    href="/account"
-                    className="mt-4 inline-flex rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white"
-                  >
-                    Open Account Settings
-                  </Link>
-                </div>
-              ) : (
-                <>
-                  {step === 1 && (
-                    <div className="space-y-5">
-                      <h2 className="text-2xl font-semibold">Performance stats</h2>
-                      <p className="text-sm text-[var(--muted)]">
-                        Using your saved position:{" "}
-                        <span className="font-semibold text-[var(--navy)]">{identity.primaryPosition || "Not set"}</span>.
-                        Add your current numbers below.
-                      </p>
-                      {positionTrack === "Pitcher" ? (
-                        <div className="space-y-6">
-                          <div>
-                            <p className="mb-3 text-sm font-semibold text-[var(--navy)]">Core numbers</p>
-                            <div className="grid gap-4 md:grid-cols-2">{pitcherRequiredFields.map(renderField)}</div>
-                          </div>
-                          <div className="rounded-2xl border border-[var(--stroke)] bg-white/60 p-4">
-                            <p className="text-sm font-semibold text-[var(--navy)]">Additional pitch data (optional)</p>
-                            <p className="mt-1 text-sm text-[var(--muted)]">
-                              Include any extra pitch data you have. If you don&apos;t have it, leave it blank.
-                            </p>
-                            <div className="mt-4 grid gap-4 md:grid-cols-2">{pitcherOptionalFields.map(renderField)}</div>
-                          </div>
-                        </div>
+          {/* Step indicator */}
+          <div className="mt-6 mb-8 flex items-start justify-center">
+            {[1, 2, 3].map((s) => {
+              const label = s === 1 ? "Baseball" : s === 2 ? "Academics" : "Preferences";
+              return (
+                <div key={s} className="flex items-center">
+                  <div className="relative flex flex-col items-center">
+                    <div
+                      className="flex h-8 w-8 z-10 items-center justify-center rounded-full text-xs font-bold transition-colors"
+                      style={{
+                        background: step >= s ? "var(--primary)" : "var(--clay-mist)",
+                        color: step >= s ? "white" : "var(--muted)",
+                      }}
+                    >
+                      {step > 3 && s === 3 ? (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
                       ) : (
-                        <div className="grid gap-4 md:grid-cols-2">{statsFields.map(renderField)}</div>
+                        s
                       )}
                     </div>
-                  )}
-
-                  {step === 2 && (
-                    <div className="space-y-5">
-                      <h2 className="text-2xl font-semibold">School preferences</h2>
-                      <p className="text-sm text-[var(--muted)]">
-                        Add any preferences that matter to you. Leave anything blank if it doesn&apos;t matter right now.
-                      </p>
-                      <div className="grid gap-4 md:grid-cols-2">{preferenceFields.map(renderField)}</div>
-                    </div>
-                  )}
-
-                  <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={prevStep}
-                      disabled={step === 1 || submitting}
-                      className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)] disabled:cursor-not-allowed disabled:opacity-50"
+                    <span
+                      className={`absolute top-10 w-24 text-center text-xs ${step === s ? "font-semibold text-[var(--foreground)]" : "text-[var(--muted)]"
+                        }`}
                     >
-                      Back
-                    </button>
-
-                    {step < stepSummary.length ? (
-                      <button
-                        type="button"
-                        onClick={nextStep}
-                        disabled={!canMoveForward || submitting}
-                        className="rounded-full bg-[var(--primary)] px-6 py-2.5 text-sm font-semibold text-white shadow-strong disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Continue
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={runEvaluation}
-                        disabled={!canMoveForward || submitting || !accessToken}
-                        className="rounded-full bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white shadow-strong disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {submitting ? "Running..." : "See My Results"}
-                      </button>
-                    )}
+                      {label}
+                    </span>
                   </div>
-                </>
-              )}
-            </section>
-          </FadeOnScroll>
-
-          <div className="space-y-6">
-            <FadeOnScroll delayMs={70}>
-              <section className="rounded-[30px] bg-[var(--navy)] p-6 text-white shadow-strong">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/65">Step Overview</p>
-                <div className="mt-4 space-y-4">
-                  {stepSummary.map((item) => (
+                  {s < 3 && (
                     <div
-                      key={item.id}
-                      className={`rounded-2xl border p-4 transition duration-300 ${
-                        step === item.id ? "border-white/40 bg-white/16" : "border-white/15 bg-white/6"
-                      }`}
-                    >
-                      <p className="text-xs uppercase tracking-[0.28em] text-white/65">Step {item.id}</p>
-                      <p className="mt-1 font-semibold">{item.title}</p>
-                      <p className="mt-1 text-sm text-white/75">{item.detail}</p>
+                      className="mx-2 h-0.5 w-10 sm:w-16 sm:mx-3"
+                      style={{
+                        background: step > s ? "var(--primary)" : "var(--stroke)",
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {error && (
+            <div className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* ============================================================= */}
+          {/* STEP 1: Baseball Metrics */}
+          {/* ============================================================= */}
+          {step === 1 && (
+            <form onSubmit={handleStep1Submit} className="mt-6 space-y-5">
+              <div className="glass rounded-2xl p-6 shadow-soft space-y-4">
+                <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)]">
+                  Player Info
+                </p>
+
+                {/* Position */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Position</label>
+                  <select
+                    className="form-control"
+                    value={position}
+                    onChange={(e) => setPosition(e.target.value as PositionCode)}
+                    required
+                  >
+                    <option value="">Select position...</option>
+                    {POSITION_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Graduation year */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Graduation Year</label>
+                  <select className="form-control" value={gradYear} onChange={(e) => setGradYear(e.target.value)} required>
+                    <option value="">Select year...</option>
+                    {GRAD_YEARS.map((y) => (
+                      <option key={y.value} value={String(y.value)}>{y.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Height / Weight */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Height (inches)</label>
+                    <input type="number" className="form-control" value={height} onChange={(e) => setHeight(e.target.value)} min={60} max={84} step={1} placeholder="72" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Weight (lbs)</label>
+                    <input type="number" className="form-control" value={weight} onChange={(e) => setWeight(e.target.value)} min={120} max={320} step={1} placeholder="185" required />
+                  </div>
+                </div>
+
+                {/* Throwing / Hitting hand */}
+                {!isPitcher(position || "") && position && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Throwing Hand</label>
+                      <select className="form-control" value={throwingHand} onChange={(e) => setThrowingHand(e.target.value)}>
+                        <option value="R">Right</option>
+                        <option value="L">Left</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Hitting Handedness</label>
+                      <select className="form-control" value={hittingHand} onChange={(e) => setHittingHand(e.target.value)}>
+                        <option value="R">Right</option>
+                        <option value="L">Left</option>
+                        <option value="S">Switch</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Position-specific metrics */}
+              {position && (
+                <div className="glass rounded-2xl p-6 shadow-soft space-y-4">
+                  <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)]">
+                    {isPitcher(position) ? "Pitching Metrics" : "Hitting & Athletic Metrics"}
+                  </p>
+
+                  {isPitcher(position) ? (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Fastball Velocity Max (mph) *</label>
+                        <input type="number" className="form-control" value={fbVeloMax} onChange={(e) => setFbVeloMax(e.target.value)} min={60} max={105} step={0.1} placeholder="90.0" required />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Fastball Velocity Avg (mph)</label>
+                        <input type="number" className="form-control" value={fbVeloAvg} onChange={(e) => setFbVeloAvg(e.target.value)} min={60} max={105} step={0.1} placeholder="88.0" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Fastball Spin Rate (rpm)</label>
+                        <input type="number" className="form-control" value={fbSpin} onChange={(e) => setFbSpin(e.target.value)} min={1200} max={3500} step={1} placeholder="2200" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Curveball Velo (mph)</label>
+                          <input type="number" className="form-control" value={cbVelo} onChange={(e) => setCbVelo(e.target.value)} min={55} max={95} step={0.1} placeholder="74.0" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Curveball Spin (rpm)</label>
+                          <input type="number" className="form-control" value={cbSpin} onChange={(e) => setCbSpin(e.target.value)} min={1200} max={3500} step={1} placeholder="2200" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Slider Velo (mph)</label>
+                          <input type="number" className="form-control" value={slVelo} onChange={(e) => setSlVelo(e.target.value)} min={60} max={100} step={0.1} placeholder="78.0" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Slider Spin (rpm)</label>
+                          <input type="number" className="form-control" value={slSpin} onChange={(e) => setSlSpin(e.target.value)} min={1200} max={3500} step={1} placeholder="2250" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Changeup Velo (mph)</label>
+                          <input type="number" className="form-control" value={chVelo} onChange={(e) => setChVelo(e.target.value)} min={60} max={95} step={0.1} placeholder="80.0" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Changeup Spin (rpm)</label>
+                          <input type="number" className="form-control" value={chSpin} onChange={(e) => setChSpin(e.target.value)} min={800} max={3200} step={1} placeholder="1700" />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Exit Velocity (mph) *</label>
+                          <input type="number" className="form-control" value={exitVelo} onChange={(e) => setExitVelo(e.target.value)} min={50} max={130} step={0.1} placeholder="92" required />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">60-Yard Dash (sec) *</label>
+                          <input type="number" className="form-control" value={sixtyTime} onChange={(e) => setSixtyTime(e.target.value)} min={5.0} max={10.0} step={0.01} placeholder="6.85" required />
+                        </div>
+                      </div>
+
+                      {/* Position-specific defensive metric */}
+                      {["1B", "2B", "SS", "3B"].includes(position) && (
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Infield Velocity (mph) *</label>
+                          <input type="number" className="form-control" value={infVelo} onChange={(e) => setInfVelo(e.target.value)} min={50} max={100} step={0.1} placeholder="83" required />
+                        </div>
+                      )}
+                      {position === "OF" && (
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Outfield Velocity (mph) *</label>
+                          <input type="number" className="form-control" value={ofVelo} onChange={(e) => setOfVelo(e.target.value)} min={50} max={110} step={0.1} placeholder="88" required />
+                        </div>
+                      )}
+                      {position === "C" && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium mb-1">Catcher Velocity (mph) *</label>
+                            <input type="number" className="form-control" value={cVelo} onChange={(e) => setCVelo(e.target.value)} min={50} max={100} step={0.1} placeholder="78" required />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium mb-1">Pop Time (sec) *</label>
+                            <input type="number" className="form-control" value={popTime} onChange={(e) => setPopTime(e.target.value)} min={1.5} max={4.0} step={0.01} placeholder="1.95" required />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={!step1Valid}
+                className="w-full rounded-full bg-[var(--primary)] py-3 text-sm font-semibold !text-white shadow-strong disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Continue to Academics
+              </button>
+            </form>
+          )}
+
+          {/* ============================================================= */}
+          {/* STEP 2: Academic Input */}
+          {/* ============================================================= */}
+          {step === 2 && (
+            <form onSubmit={handleStep2Submit} className="mt-6 space-y-5">
+              {mlRunning && (
+                <div className="rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent)]/10 p-3 text-sm text-[var(--foreground)] text-center">
+                  Processing your baseball metrics in the background...
+                </div>
+              )}
+
+              <div className="glass rounded-2xl p-6 shadow-soft space-y-4">
+                <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)]">
+                  Academic Profile
+                </p>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">GPA (4.0 unweighted scale) *</label>
+                  <input type="number" className="form-control" value={gpa} onChange={(e) => setGpa(e.target.value)} min={0} max={4.0} step={0.01} placeholder="3.70" required />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SAT Score {!actScore.trim() ? "*" : ""}</label>
+                    <input type="number" className="form-control" value={satScore} onChange={(e) => setSatScore(e.target.value)} min={400} max={1600} step={10} placeholder="1350" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">ACT Score {!satScore.trim() ? "*" : ""}</label>
+                    <input type="number" className="form-control" value={actScore} onChange={(e) => setActScore(e.target.value)} min={1} max={36} step={1} placeholder="30" />
+                  </div>
+                </div>
+                <p className="text-xs text-[var(--muted)]">At least one test score is required.</p>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Number of AP/Honors Courses *</label>
+                  <input type="number" className="form-control" value={apCourses} onChange={(e) => setApCourses(e.target.value)} min={0} step={1} placeholder="5" required />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="flex-1 rounded-full border border-[var(--stroke)] py-3 text-sm font-semibold text-[var(--foreground)]"
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={!step2Valid}
+                  className="flex-1 rounded-full bg-[var(--primary)] py-3 text-sm font-semibold !text-white shadow-strong disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Continue to Preferences
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ============================================================= */}
+          {/* STEP 3: Preferences */}
+          {/* ============================================================= */}
+          {step === 3 && (
+            <form onSubmit={handleStep3Submit} className="mt-6 space-y-5">
+              <div className="glass rounded-2xl p-6 shadow-soft space-y-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)]">
+                  School Preferences
+                </p>
+
+                {/* Region map */}
+                <RegionMap selected={selectedRegions} onChange={setSelectedRegions} />
+
+                {/* Budget */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Maximum Annual Budget</label>
+                  <select className="form-control" value={budget} onChange={(e) => setBudget(e.target.value)}>
+                    {BUDGET_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Ranking Priority */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">What matters most to you?</label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { value: "", label: "Balanced", desc: "Equal weight across all factors" },
+                      { value: "playing_time", label: "Day 1 Playing Time", desc: "Prioritize roster opportunity" },
+                      { value: "baseball_fit", label: "Best Baseball Fit", desc: "Closest competitive match" },
+                      { value: "academics", label: "Best Academics", desc: "Strongest school you can play at" },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setRankingPriority(option.value)}
+                        className={`text-left rounded-xl border p-3 transition-all ${
+                          rankingPriority === option.value
+                            ? "border-[var(--primary)] bg-[var(--primary)]/5"
+                            : "border-[var(--stroke)] hover:border-[var(--muted)]"
+                        }`}
+                      >
+                        <p className="text-sm font-medium">{option.label}</p>
+                        <p className="text-xs text-[var(--muted)]">{option.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="flex-1 rounded-full border border-[var(--stroke)] py-3 text-sm font-semibold text-[var(--foreground)]"
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 rounded-full bg-[var(--primary)] py-3 text-sm font-semibold !text-white shadow-strong disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? "Analyzing your profile..." : "Get Results"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ============================================================= */}
+          {/* STEP 4: Results Ready — Payment Gate */}
+          {/* ============================================================= */}
+          {step === 4 && (
+            <div className="mt-6 space-y-6">
+              <div className="glass rounded-2xl p-8 shadow-soft text-center space-y-5">
+
+                <div>
+                  <h2 className="display-font text-2xl md:text-3xl">
+                    Your results are ready!
+                  </h2>
+                  <p className="mt-2 text-sm text-[var(--muted)] max-w-md mx-auto">
+                    Most players have no idea where they actually stand. 
+                    <br />
+                    Here&apos;s your honest answer, based purely on your metrics today.
+                  </p>
+                </div>
+
+                {/* What's included */}
+                <div className="text-left mx-auto max-w-sm space-y-2">
+                  <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)] text-center">
+                    Your evaluation includes
+                  </p>
+                  {[
+                    "10-15 best-fit school matches ranked for you",
+                    "A personalized breakdown of why each school fits your baseball and academic profile",
+                    "How your baseball metrics compare to players who committed at each level",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-2">
+                      <svg className="mt-0.5 h-4 w-4 shrink-0 text-[var(--sage)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-sm">{item}</span>
                     </div>
                   ))}
                 </div>
-              </section>
-            </FadeOnScroll>
 
-            <FadeOnScroll delayMs={120}>
-              <section className="glass rounded-[30px] p-6 shadow-soft">
-                <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">After You Submit</p>
-                <h3 className="mt-2 text-xl font-semibold">You&apos;ll get a full results report</h3>
+                {/* Price */}
+                <div className="rounded-xl border border-[var(--stroke)] bg-[var(--clay-mist)]/50 p-4">
+                  <p className="display-font text-3xl">{displayPrice}</p>
+                  <p className="text-xs text-[var(--muted)] mt-1">
+                    {isAuthenticated ? "Per evaluation" : "One payment. No subscription. No ongoing relationship to protect."}
+                  </p>
+                </div>
 
-                {submissionError && (
-                  <div className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">
-                    {submissionError}
-                  </div>
+                {/* CTA */}
+                <button
+                  onClick={handlePayment}
+                  className="w-full rounded-full bg-[var(--primary)] py-3.5 text-sm font-semibold !text-white shadow-strong"
+                >
+                  {`Unlock My Results`}
+                </button>
+
+                {!isAuthenticated && (
+                  <p className="text-xs text-[var(--muted)]">
+                    Already have an account?{" "}
+                    <a
+                      href={`/login?next=${encodeURIComponent(`/predict/checkout?session_token=${sessionToken}`)}`}
+                      className="underline text-[var(--primary)]"
+                    >
+                      Log in
+                    </a>
+                  </p>
                 )}
+              </div>
 
-                {!submissionError && (
-                  <div className="mt-4 space-y-4 text-sm text-[var(--muted)]">
-                    <p>After submission, we&apos;ll take you to your results page.</p>
-                    <p>You&apos;ll see your projected level, best-fit schools, playing-time outlook, and why each match fits.</p>
-                    <div className="flex flex-wrap gap-3">
-                      <Link
-                        href="/evaluations"
-                        className="inline-flex rounded-full border border-[var(--stroke)] bg-white/80 px-4 py-2 text-xs font-semibold text-[var(--navy)]"
-                      >
-                        View Past Evaluations
-                      </Link>
-                      <Link
-                        href="/dashboard"
-                        className="inline-flex rounded-full border border-[var(--stroke)] bg-white/80 px-4 py-2 text-xs font-semibold text-[var(--navy)]"
-                      >
-                        Back to Dashboard
-                      </Link>
-                    </div>
-                  </div>
-                )}
-              </section>
-            </FadeOnScroll>
-          </div>
-        </div>
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                className="w-full rounded-full border border-[var(--stroke)] py-3 text-sm font-semibold text-[var(--foreground)]"
+              >
+                Back to Preferences
+              </button>
+            </div>
+          )}
         </div>
       </main>
     </div>

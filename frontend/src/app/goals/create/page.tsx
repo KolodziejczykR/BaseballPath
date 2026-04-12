@@ -220,7 +220,7 @@ export default function GoalsCreatePage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 py-10 md:py-12">
+      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
         <div className="mx-auto max-w-4xl">
           <div className="flex items-end justify-between gap-3">
             <div>
@@ -241,7 +241,7 @@ export default function GoalsCreatePage() {
                   key={value}
                   type="button"
                   onClick={() => setStep(value)}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${step === value ? "bg-[var(--primary)] text-white" : "border border-[var(--stroke)] bg-white/80 text-[var(--navy)]"}`}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${step === value ? "bg-[var(--primary)] !text-white" : "border border-[var(--stroke)] bg-white/80 text-[var(--navy)]"}`}
                 >
                   Step {value}
                 </button>
@@ -286,7 +286,7 @@ export default function GoalsCreatePage() {
                   Import from Latest Evaluation
                 </button>
 
-                <button type="button" onClick={() => setStep(2)} className="rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white">
+                <button type="button" onClick={() => setStep(2)} className="rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-semibold !text-white">
                   Continue
                 </button>
               </div>
@@ -342,7 +342,7 @@ export default function GoalsCreatePage() {
                   ))}
                 </div>
 
-                <button type="button" onClick={() => setStep(3)} className="rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white">
+                <button type="button" onClick={() => setStep(3)} className="rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-semibold !text-white">
                   Continue
                 </button>
               </div>
@@ -358,7 +358,7 @@ export default function GoalsCreatePage() {
                   <input type="radio" checked={targetLevel === "Power 4 D1"} onChange={() => setTargetLevel("Power 4 D1")} />
                   Power 4 D1
                 </label>
-                <button type="button" onClick={() => setStep(4)} className="rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white">
+                <button type="button" onClick={() => setStep(4)} className="rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-semibold !text-white">
                   Continue
                 </button>
               </div>
@@ -374,7 +374,7 @@ export default function GoalsCreatePage() {
                   <p>Evaluation import: {evaluation ? "Yes" : "No"}</p>
                 </div>
                 <p className="text-xs text-[var(--muted)]">Initial sensitivity rankings will be available immediately after creation.</p>
-                <button type="button" onClick={() => setStep(5)} className="rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white">
+                <button type="button" onClick={() => setStep(5)} className="rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-semibold !text-white">
                   Continue
                 </button>
               </div>

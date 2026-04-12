@@ -119,7 +119,9 @@ class RecommendationSummary:
 def school_recommendation_from_dict(data: Dict[str, Any]) -> "SchoolRecommendation":
     return SchoolRecommendation(
         school_name=data.get("school_name"),
+        school_logo_image=data.get("school_logo_image"),
         division_group=data.get("division_group"),
+        division_label=data.get("division_label"),
         location=SchoolLocation(**(data.get("location") or {})),
         size=SchoolSize(**(data.get("size") or {})),
         academics=AcademicsInfo(**(data.get("academics") or {})),
@@ -153,7 +155,9 @@ def school_recommendation_from_dict(data: Dict[str, Any]) -> "SchoolRecommendati
 @dataclass
 class SchoolRecommendation:
     school_name: str
+    school_logo_image: Optional[str] = None
     division_group: Optional[str] = None
+    division_label: Optional[str] = None
     location: SchoolLocation = field(default_factory=SchoolLocation)
     size: SchoolSize = field(default_factory=SchoolSize)
     academics: AcademicsInfo = field(default_factory=AcademicsInfo)

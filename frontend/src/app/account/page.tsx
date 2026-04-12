@@ -34,31 +34,6 @@ type ProfileFormState = {
   primary_position: string;
 };
 
-const planCards = [
-  {
-    key: "starter",
-    name: "Starter",
-    price: "$0",
-    desc: "Good for initial school-fit testing.",
-    features: ["5 evaluations / month", "No LLM reasoning", "Saved run history"],
-  },
-  {
-    key: "pro",
-    name: "Pro",
-    price: "$29",
-    desc: "For active recruiting cycles and more comparisons.",
-    features: ["50 evaluations / month", "Advanced filtering", "Priority processing"],
-    highlight: true,
-  },
-  {
-    key: "elite",
-    name: "Elite",
-    price: "$59",
-    desc: "Unlimited evaluations with premium guidance.",
-    features: ["Unlimited evaluations", "LLM reasoning enabled", "Full analytics layer"],
-  },
-];
-
 const positionOptions = ["LHP", "RHP", "1B", "2B", "SS", "3B", "OF"];
 
 export default function AccountPage() {
@@ -66,7 +41,6 @@ export default function AccountPage() {
 
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [billingLoading, setBillingLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [account, setAccount] = useState<AccountResponse | null>(null);
@@ -125,8 +99,6 @@ export default function AccountPage() {
     };
   }, [accessToken]);
 
-  const currentPlanTier = (account?.plan?.tier || "starter").toLowerCase();
-
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!accessToken) return;
@@ -168,59 +140,6 @@ export default function AccountPage() {
     }
   }
 
-  async function startCheckout(planTier: string) {
-    if (!accessToken || planTier === "starter") return;
-
-    setBillingLoading(true);
-    setError("");
-    setNotice("");
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/billing/create-checkout-session`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ plan_tier: planTier }),
-      });
-      const data = (await response.json()) as { checkout_url?: string; detail?: string };
-      if (!response.ok || !data.checkout_url) {
-        throw new Error(data.detail || "Unable to start Stripe checkout.");
-      }
-      window.location.href = data.checkout_url;
-    } catch (checkoutError) {
-      setError(checkoutError instanceof Error ? checkoutError.message : "Unable to start checkout.");
-      setBillingLoading(false);
-    }
-  }
-
-  async function openBillingPortal() {
-    if (!accessToken) return;
-
-    setBillingLoading(true);
-    setError("");
-    setNotice("");
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/billing/create-portal-session`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      const data = (await response.json()) as { portal_url?: string; detail?: string };
-      if (!response.ok || !data.portal_url) {
-        throw new Error(data.detail || "Unable to open billing portal.");
-      }
-      window.location.href = data.portal_url;
-    } catch (portalError) {
-      setError(portalError instanceof Error ? portalError.message : "Unable to open billing portal.");
-      setBillingLoading(false);
-    }
-  }
-
   if (authLoading || loading) {
     return (
       <div className="min-h-screen px-6 py-16">
@@ -231,25 +150,27 @@ export default function AccountPage() {
     );
   }
 
+  const totalEvals = account?.usage?.eval_count ?? 0;
+
   return (
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 py-10 md:py-12">
+      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Account</p>
-              <h1 className="display-font mt-3 text-4xl md:text-5xl">Profile, plan, and billing settings.</h1>
-              <p className="mt-3 max-w-2xl text-[var(--muted)]">
-                Manage your recruiting account details and control plan access from one place.
+              <h1 className="display-font mt-3 text-4xl md:text-5xl">Your account settings.</h1>
+              <p className="mt-3 max-w-none pl-1 text-[var(--muted)]">
+                Manage your profile and view your evaluation history.
               </p>
             </div>
             <Link
-              href="/dashboard"
+              href="/predict"
               className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)]"
             >
-              Back to dashboard
+              Back to evaluate
             </Link>
           </div>
 
@@ -329,90 +250,20 @@ export default function AccountPage() {
             </form>
 
             <div className="glass rounded-2xl p-6 shadow-soft">
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Current entitlement</p>
-              <p className="mt-3 text-3xl font-semibold text-[var(--navy)]">{currentPlanTier.toUpperCase()}</p>
-              <p className="mt-2 text-sm text-[var(--muted)]">
-                Status: {(account?.plan?.status || "none").toUpperCase()}
-              </p>
+              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Evaluation history</p>
+              <p className="mt-3 text-3xl font-semibold text-[var(--navy)]">{totalEvals}</p>
               <p className="mt-1 text-sm text-[var(--muted)]">
-                {typeof account?.plan?.remaining_evals === "number" && typeof account?.plan?.monthly_eval_limit === "number"
-                  ? `${account.plan.remaining_evals}/${account.plan.monthly_eval_limit} evaluations remaining this month`
-                  : "Unlimited evaluations available"}
-              </p>
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                LLM reasoning: {account?.plan?.llm_enabled ? "Enabled" : "Disabled"}
+                {totalEvals === 1 ? "evaluation" : "evaluations"} completed
               </p>
               <p className="mt-4 text-sm text-[var(--muted)]">
-                Monthly usage: {account?.usage?.eval_count ?? 0} evaluations since{" "}
-                {account?.usage?.period_start
-                  ? new Date(`${account.usage.period_start}T00:00:00Z`).toLocaleDateString()
-                  : "current period start"}
+                {totalEvals === 0
+                  ? "Run your first evaluation to get matched with the best college programs for your profile."
+                  : "Next evaluation: $29 per report."}
               </p>
               <Link href="/predict" className="mt-5 inline-flex text-sm font-semibold text-[var(--primary)]">
-                Run another evaluation
+                {totalEvals === 0 ? "Start your first evaluation" : "Run another evaluation"}
               </Link>
             </div>
-          </section>
-
-          <section id="billing" className="mt-8">
-            <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Plans and billing</p>
-            <h2 className="mt-2 text-2xl font-semibold">Upgrade or manage your subscription</h2>
-            <p className="mt-2 text-sm text-[var(--muted)]">
-              New accounts start on Starter. Move to Pro or Elite whenever you need more monthly evaluations.
-            </p>
-
-            <div className="mt-6 grid gap-6 md:grid-cols-3">
-              {planCards.map((plan) => {
-                const isCurrent = currentPlanTier === plan.key;
-                return (
-                  <article
-                    key={plan.key}
-                    className={`rounded-3xl border p-6 shadow-soft ${
-                      plan.highlight ? "border-[var(--primary)] bg-white shadow-strong" : "border-[var(--stroke)] bg-white/75"
-                    }`}
-                  >
-                    <p className="text-sm uppercase tracking-[0.3em] text-[var(--muted)]">{plan.name}</p>
-                    <p className="mt-3 text-3xl font-semibold">{plan.price}</p>
-                    <p className="mt-2 text-sm text-[var(--muted)]">{plan.desc}</p>
-                    <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
-                      {plan.features.map((feature) => (
-                        <li key={feature}>- {feature}</li>
-                      ))}
-                    </ul>
-                    {isCurrent ? (
-                      <button
-                        disabled
-                        className="mt-6 w-full cursor-not-allowed rounded-full border border-[var(--stroke)] bg-[var(--sand)] px-4 py-2.5 text-sm font-semibold text-[var(--navy)] opacity-70"
-                      >
-                        Current Plan
-                      </button>
-                    ) : (
-                      <button
-                        disabled={billingLoading || plan.key === "starter"}
-                        onClick={() => startCheckout(plan.key)}
-                        className={`mt-6 w-full rounded-full px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
-                          plan.highlight
-                            ? "bg-[var(--primary)] text-white"
-                            : "border border-[var(--stroke)] text-[var(--navy)]"
-                        }`}
-                      >
-                        {plan.key === "starter" ? "Starter Included" : "Select Plan"}
-                      </button>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-
-            {currentPlanTier !== "starter" && (
-              <button
-                onClick={openBillingPortal}
-                disabled={billingLoading}
-                className="mt-6 rounded-full border border-[var(--stroke)] bg-white px-5 py-3 text-sm font-semibold text-[var(--navy)] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Manage Billing in Stripe
-              </button>
-            )}
           </section>
         </div>
       </main>

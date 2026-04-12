@@ -19,6 +19,8 @@ from api.routers.billing import router as billing_router
 from api.routers.player_card import router as player_card_router
 from api.routers.public_card import router as public_card_router
 from api.routers.goals import router as goals_router
+from api.routers.saved_schools import router as saved_schools_router
+from api.routers.evaluate import router as evaluate_router
 
 app = FastAPI(title="BaseballPath Backend")
 
@@ -50,6 +52,8 @@ app.include_router(billing_router, prefix="/billing")
 app.include_router(player_card_router, prefix="/cards", tags=["player-cards"])
 app.include_router(public_card_router, prefix="/p", tags=["public-cards"])
 app.include_router(goals_router, prefix="/goals", tags=["goals"])
+app.include_router(saved_schools_router, prefix="/saved-schools", tags=["saved-schools"])
+app.include_router(evaluate_router, prefix="/evaluate", tags=["evaluate"])
 
 @app.get("/")
 def read_root():

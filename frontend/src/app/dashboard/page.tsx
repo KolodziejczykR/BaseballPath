@@ -38,6 +38,9 @@ type EvaluationListResponse = {
 
 type GoalSummary = {
   id: string;
+  position_track?: string;
+  target_level?: string;
+  updated_at?: string;
   summary?: {
     current_probability?: number;
     top_leverage_stat?: string | null;
@@ -49,26 +52,48 @@ type GoalsListResponse = {
   items: GoalSummary[];
 };
 
-const gettingStartedSteps = [
-  {
-    title: "Complete your account profile",
-    desc: "Add graduating class and primary position so your recommendations have context.",
-    href: "/account",
-    cta: "Update account",
-  },
-  {
-    title: "Run your first evaluation",
-    desc: "Use the guided 3-step prediction workflow and save a full recommendation snapshot.",
-    href: "/predict",
-    cta: "Start evaluation",
-  },
-  {
-    title: "Review and compare past runs",
-    desc: "Track how school matches change as your inputs and priorities evolve.",
-    href: "/evaluations",
-    cta: "See history",
-  },
-];
+type SavedSchoolRecord = {
+  id: string;
+  school_name: string;
+  school_logo_image?: string | null;
+  created_at?: string;
+  school_data?: {
+    school_logo_image?: string | null;
+    division_group?: string;
+    division_label?: string;
+    match_analysis?: {
+      total_nice_to_have_matches?: number;
+    };
+  };
+};
+
+type SavedSchoolsResponse = {
+  items: SavedSchoolRecord[];
+  count?: number;
+};
+
+function getNcaLogoUrl(school: SavedSchoolRecord): string | null {
+  const logoKey = (school.school_logo_image || school.school_data?.school_logo_image || "").trim();
+  if (!logoKey) return null;
+  return `https://ncaa-api.henrygd.me/logo/${encodeURIComponent(logoKey)}.svg`;
+}
+
+function mapLegacyDivisionGroup(group: string | undefined): string | null {
+  if (!group) return null;
+  const lowered = group.trim().toLowerCase();
+  if (!lowered) return null;
+  if (lowered.includes("power") && lowered.includes("4")) return "Power 4";
+  if (lowered.includes("non-p4") || lowered.includes("non p4")) return "Division 1";
+  if (lowered.includes("non-d1") || lowered.includes("non d1")) return null;
+  if (lowered.includes("d3") || lowered.includes("division 3") || lowered.includes("division iii")) return "Division 3";
+  if (lowered.includes("d2") || lowered.includes("division 2") || lowered.includes("division ii")) return "Division 2";
+  if (lowered.includes("d1") || lowered.includes("division 1") || lowered.includes("division i")) return "Division 1";
+  return null;
+}
+
+function getDivisionBadgeLabel(school: SavedSchoolRecord): string | null {
+  return school.school_data?.division_label || mapLegacyDivisionGroup(school.school_data?.division_group);
+}
 
 export default function DashboardPage() {
   const { loading: authLoading, accessToken, user } = useRequireAuth("/dashboard");
@@ -77,6 +102,7 @@ export default function DashboardPage() {
   const [account, setAccount] = useState<AccountResponse | null>(null);
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>([]);
   const [goals, setGoals] = useState<GoalSummary[]>([]);
+  const [savedSchools, setSavedSchools] = useState<SavedSchoolRecord[]>([]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -91,15 +117,17 @@ export default function DashboardPage() {
           Authorization: `Bearer ${accessToken}`,
         };
 
-        const [accountResp, evaluationsResp, goalsResp] = await Promise.all([
+        const [accountResp, evaluationsResp, goalsResp, savedSchoolsResp] = await Promise.all([
           fetch(`${API_BASE_URL}/account/me`, { headers }),
           fetch(`${API_BASE_URL}/evaluations?limit=10&offset=0`, { headers }),
           fetch(`${API_BASE_URL}/goals`, { headers }),
+          fetch(`${API_BASE_URL}/saved-schools`, { headers }),
         ]);
 
         const accountData = (await accountResp.json()) as AccountResponse | { detail?: string };
         const evaluationsData = (await evaluationsResp.json()) as EvaluationListResponse | { detail?: string };
         const goalsData = (await goalsResp.json()) as GoalsListResponse | { detail?: string };
+        const savedSchoolsData = (await savedSchoolsResp.json()) as SavedSchoolsResponse | { detail?: string };
 
         if (!accountResp.ok) {
           throw new Error(
@@ -122,11 +150,19 @@ export default function DashboardPage() {
               : "Failed to load goals.",
           );
         }
+        if (!savedSchoolsResp.ok) {
+          throw new Error(
+            typeof savedSchoolsData === "object" && savedSchoolsData && "detail" in savedSchoolsData
+              ? savedSchoolsData.detail || "Failed to load saved schools."
+              : "Failed to load saved schools.",
+          );
+        }
 
         if (!mounted) return;
         setAccount(accountData as AccountResponse);
         setEvaluations(((evaluationsData as EvaluationListResponse).items || []) as EvaluationRecord[]);
         setGoals((goalsData as GoalsListResponse).items || []);
+        setSavedSchools((savedSchoolsData as SavedSchoolsResponse).items || []);
       } catch (loadError) {
         if (!mounted) return;
         setError(loadError instanceof Error ? loadError.message : "Unable to load dashboard.");
@@ -142,24 +178,10 @@ export default function DashboardPage() {
     };
   }, [accessToken]);
 
-  const lastRun = useMemo(() => (evaluations.length > 0 ? evaluations[0] : null), [evaluations]);
-  const savedSchools = useMemo(() => {
-    const names = new Set<string>();
-    for (const run of evaluations) {
-      for (const school of run.top_schools_snapshot || []) {
-        if (school.school_name) {
-          names.add(school.school_name);
-        }
-      }
-    }
-    return names.size;
-  }, [evaluations]);
-  const profileName = account?.profile?.full_name || user?.email?.split("@")[0] || "Player";
-  const planTier = (account?.plan?.tier || "starter").toUpperCase();
-  const usageLabel =
-    typeof account?.plan?.remaining_evals === "number" && typeof account?.plan?.monthly_eval_limit === "number"
-      ? `${account.plan.remaining_evals}/${account.plan.monthly_eval_limit} left this month`
-      : "Unlimited evaluations";
+  const savedSchoolCount = savedSchools.length;
+  const topSavedSchools = useMemo(() => savedSchools.slice(0, 3), [savedSchools]);
+  const fullName = account?.profile?.full_name || user?.email?.split("@")[0] || "Player";
+  const profileName = fullName.split(" ")[0];
 
   if (authLoading || loading) {
     return (
@@ -175,29 +197,21 @@ export default function DashboardPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 py-10 md:py-12">
+      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Logged-in Home</p>
-              <h1 className="display-font mt-3 text-4xl md:text-5xl">Welcome back, {profileName}.</h1>
-              <p className="mt-3 max-w-2xl text-[var(--muted)]">
-                This is your recruiting workspace for launching evaluations, reviewing past runs, and managing plan
-                access.
+              <h1 className="display-font mt-3 text-4xl md:text-5xl">Welcome back, {profileName}!</h1>
+              <p className="mt-3 max-w-none pl-1 text-[var(--muted)]">
+                This is your recruiting headquarters for managing past runs, viewing your current goals, and keeping your saved schools organized.
               </p>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex w-full justify-end md:w-auto">
               <Link
                 href="/predict"
-                className="rounded-full bg-[var(--primary)] px-6 py-3 text-sm font-semibold text-white shadow-strong"
+                className="whitespace-nowrap rounded-full bg-[var(--primary)] px-6 py-3 text-sm font-semibold !text-white shadow-strong"
               >
                 Start New Evaluation
-              </Link>
-              <Link
-                href="/account"
-                className="rounded-full border border-[var(--stroke)] bg-white/80 px-6 py-3 text-sm font-semibold text-[var(--navy)]"
-              >
-                Account & Plan
               </Link>
             </div>
           </div>
@@ -206,53 +220,51 @@ export default function DashboardPage() {
             <div className="mt-6 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div>
           )}
 
-          <section className="mt-8 grid gap-6 md:grid-cols-3">
-            <div className="glass rounded-2xl p-6 shadow-soft">
-              <p className="text-sm uppercase tracking-[0.3em] text-[var(--muted)]">Plan</p>
-              <p className="mt-3 text-2xl font-semibold">{planTier}</p>
-              <p className="mt-2 text-sm text-[var(--muted)]">{usageLabel}</p>
-              <Link
-                href="/account#billing"
-                className="mt-4 inline-flex rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold text-[var(--navy)]"
-              >
-                Manage plan
-              </Link>
-            </div>
-            <div className="glass rounded-2xl p-6 shadow-soft">
-              <p className="text-sm uppercase tracking-[0.3em] text-[var(--muted)]">Last run</p>
-              <p className="mt-3 text-xl font-semibold">
-                {lastRun?.prediction_response?.final_prediction || "No evaluations yet"}
-              </p>
-              <p className="mt-2 text-sm text-[var(--muted)]">
-                {lastRun?.created_at
-                  ? `Ran on ${new Date(lastRun.created_at).toLocaleString()}`
-                  : "Start your first evaluation to save your first recommendation snapshot."}
-              </p>
-            </div>
-            <div className="glass rounded-2xl p-6 shadow-soft">
-              <p className="text-sm uppercase tracking-[0.3em] text-[var(--muted)]">Saved schools</p>
-              <p className="mt-3 text-2xl font-semibold">{savedSchools}</p>
-              <p className="mt-2 text-sm text-[var(--muted)]">
-                Distinct top-school snapshots across your recent evaluations.
-              </p>
-            </div>
-          </section>
-
           <section className="mt-8 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
             <div className="glass rounded-2xl p-6 shadow-soft">
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">How to get started</p>
-              <div className="mt-4 grid gap-4">
-                {gettingStartedSteps.map((step, index) => (
-                  <div key={step.title} className="rounded-2xl border border-[var(--stroke)] bg-white/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Step {index + 1}</p>
-                    <p className="mt-1 font-semibold">{step.title}</p>
-                    <p className="mt-1 text-sm text-[var(--muted)]">{step.desc}</p>
-                    <Link href={step.href} className="mt-3 inline-flex text-sm font-semibold text-[var(--primary)]">
-                      {step.cta}
-                    </Link>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Goals tracker</p>
+                <Link
+                  href={goals.length > 0 ? "/goals" : "/goals/create"}
+                  className="rounded-full bg-[var(--primary)] px-3 py-1 text-xs font-semibold !text-white shadow-strong"
+                >
+                  {goals.length > 0 ? "View goals" : "Set goals"}
+                </Link>
               </div>
+
+              {goals.length > 0 ? (
+                <div className="mt-4 space-y-3">
+                  {goals.slice(0, 3).map((goal) => (
+                    <Link
+                      key={goal.id}
+                      href={`/goals/${goal.id}`}
+                      className="block rounded-2xl border border-[var(--stroke)] bg-white/75 p-4 transition hover:-translate-y-0.5"
+                    >
+                      <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Model outcome goal</p>
+                      <p className="mt-1 text-sm font-semibold text-[var(--navy)]">{goal.target_level || "D1"}</p>
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        Current probability:{" "}
+                        {typeof goal.summary?.current_probability === "number"
+                          ? `${(goal.summary.current_probability * 100).toFixed(1)}%`
+                          : "Not computed"}
+                      </p>
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        Top leverage: {goal.summary?.top_leverage_display || goal.summary?.top_leverage_stat || "Not available"}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        Updated: {goal.updated_at ? new Date(goal.updated_at).toLocaleString() : "Unknown"}
+                      </p>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-2xl border border-[var(--stroke)] bg-white/75 p-4">
+                  <p className="text-sm font-semibold text-[var(--navy)]">No goals created yet.</p>
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    Set improvement goals to track your model outcome and top leverage stats over time.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div id="history" className="glass rounded-2xl p-6 shadow-soft">
@@ -305,7 +317,6 @@ export default function DashboardPage() {
                         <p className="mt-1 text-sm text-[var(--muted)]">
                           {topSchool ? `Top match: ${topSchool}` : "No school snapshot attached to this run."}
                         </p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Open run ID: {run.id}</p>
                       </Link>
                     );
                   })}
@@ -315,40 +326,68 @@ export default function DashboardPage() {
           </section>
 
           <section className="mt-8">
-            <div className="glass rounded-2xl p-6 shadow-soft">
+            <div className="glass mx-auto w-full max-w-4xl rounded-2xl p-6 shadow-soft">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Goals snapshot</p>
+                <p className="text-sm uppercase tracking-[0.3em] text-[var(--muted)]">Saved schools</p>
                 <Link
-                  href={goals.length > 0 ? "/goals" : "/goals/create"}
+                  href="/saved-schools"
                   className="rounded-full border border-[var(--stroke)] bg-white/80 px-3 py-1 text-xs font-semibold text-[var(--navy)]"
                 >
-                  {goals.length > 0 ? "View goals" : "Set goals"}
+                  Open list
                 </Link>
               </div>
+              <p className="mt-3 text-2xl font-semibold">{savedSchoolCount}</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Schools you intentionally saved from evaluations.</p>
 
-              {goals.length > 0 ? (
-                <div className="mt-4 space-y-3">
-                  {goals.slice(0, 2).map((goal) => (
+              {topSavedSchools.length > 0 ? (
+                <div className="mt-4 space-y-2">
+                  {topSavedSchools.map((school) => {
+                    const logoUrl = getNcaLogoUrl(school);
+                    const divisionBadge = getDivisionBadgeLabel(school);
+                    return (
+                      <Link
+                        key={school.id}
+                        href="/saved-schools"
+                        className="block rounded-xl border border-[var(--stroke)] bg-white/75 p-2.5 transition hover:-translate-y-0.5"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold leading-none text-[var(--navy)]">{school.school_name}</p>
+                            <p className="mt-0.5 text-xs leading-tight text-[var(--muted)]">
+                              {divisionBadge ? `${divisionBadge} · ` : ""}Matching preferences:{" "}
+                              {school.school_data?.match_analysis?.total_nice_to_have_matches ?? 0}
+                            </p>
+                          </div>
+                          {logoUrl ? (
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={logoUrl}
+                                alt={`${school.school_name} logo`}
+                                loading="lazy"
+                                onError={(event) => {
+                                  event.currentTarget.style.display = "none";
+                                }}
+                                className="h-10 w-10 rounded-md border border-[var(--stroke)] bg-white/90 p-1 object-contain"
+                              />
+                            </>
+                          ) : null}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                  {savedSchoolCount > 3 ? (
                     <Link
-                      key={goal.id}
-                      href={`/goals/${goal.id}`}
-                      className="block rounded-2xl border border-[var(--stroke)] bg-white/75 p-4 transition hover:-translate-y-0.5"
+                      href="/saved-schools"
+                      className="inline-flex text-xs font-semibold text-[var(--primary)] hover:underline"
                     >
-                      <p className="text-sm font-semibold text-[var(--navy)]">
-                        {goal.summary?.top_leverage_display || goal.summary?.top_leverage_stat || "Leverage pending"}
-                      </p>
-                      <p className="mt-1 text-sm text-[var(--muted)]">
-                        Current probability: {typeof goal.summary?.current_probability === "number" ? `${(goal.summary.current_probability * 100).toFixed(1)}%` : "Not computed"}
-                      </p>
+                      And {savedSchoolCount - 3} more saved schools. Open full list.
                     </Link>
-                  ))}
+                  ) : null}
                 </div>
               ) : (
-                <div className="mt-4 rounded-2xl border border-[var(--stroke)] bg-white/75 p-4">
-                  <p className="text-sm font-semibold text-[var(--navy)]">No goals created yet.</p>
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    Set improvement goals to see leverage rankings and track progress over time.
-                  </p>
+                <div className="mt-4 rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
+                  <p className="text-sm text-[var(--muted)]">No saved schools yet. Save one from an evaluation report.</p>
                 </div>
               )}
             </div>

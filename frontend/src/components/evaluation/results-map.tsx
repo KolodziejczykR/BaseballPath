@@ -1,0 +1,219 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  STATE_PATHS,
+  STATE_SVG_CENTER,
+  REGION_STATES,
+  REGION_COLORS,
+  getStateRegion,
+} from "./us-states-data";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type SchoolPin = {
+  rank: number;
+  school_name: string;
+  state: string;
+};
+
+type ResultsMapProps = {
+  schools: SchoolPin[];
+  selectedRank: number | null;
+  onSelect: (rank: number) => void;
+  highlightedRegions?: string[] | null;
+};
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export function ResultsMap({ schools, selectedRank, onSelect, highlightedRegions }: ResultsMapProps) {
+  const [hoveredState, setHoveredState] = useState<string | null>(null);
+
+  // Group schools by state → { state: SchoolPin[] }
+  const schoolsByState = useMemo(() => {
+    const map: Record<string, SchoolPin[]> = {};
+    for (const s of schools) {
+      const st = s.state?.toUpperCase();
+      if (!st) continue;
+      if (!map[st]) map[st] = [];
+      map[st].push(s);
+    }
+    return map;
+  }, [schools]);
+
+  // Set of states that have schools
+  const schoolStates = useMemo(() => new Set(Object.keys(schoolsByState)), [schoolsByState]);
+
+  // Build set of highlighted region states
+  const highlightedStates = useMemo(() => {
+    if (!highlightedRegions || highlightedRegions.length === 0) return null;
+    const s = new Set<string>();
+    for (const region of highlightedRegions) {
+      const states = REGION_STATES[region];
+      if (states) states.forEach((st) => s.add(st));
+    }
+    return s;
+  }, [highlightedRegions]);
+
+  // Which state is selected (from selectedRank)
+  const selectedState = useMemo(() => {
+    if (selectedRank == null) return null;
+    const school = schools.find((s) => s.rank === selectedRank);
+    return school?.state?.toUpperCase() || null;
+  }, [selectedRank, schools]);
+
+  function handleStateClick(abbr: string) {
+    const stateSchools = schoolsByState[abbr];
+    if (!stateSchools || stateSchools.length === 0) return;
+    // If already viewing a school in this state, cycle to the next one
+    const currentIdx = stateSchools.findIndex((s) => s.rank === selectedRank);
+    const nextIdx = (currentIdx + 1) % stateSchools.length;
+    onSelect(stateSchools[nextIdx].rank);
+  }
+
+  return (
+    <div className="glass rounded-2xl p-4 shadow-soft">
+      <p className="mb-3 text-xs uppercase tracking-[0.3em] text-[var(--muted)]">School locations</p>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 959 593"
+        className="w-full"
+        style={{ maxHeight: 400 }}
+      >
+        {/* State outlines */}
+        <g>
+          {Object.entries(STATE_PATHS).map(([abbr, d]) => {
+            const hasSchool = schoolStates.has(abbr);
+            const region = getStateRegion(abbr);
+            const inHighlighted = highlightedStates ? highlightedStates.has(abbr) : true;
+            const regionColor = region ? REGION_COLORS[region] : "var(--stroke)";
+            const isHovered = hoveredState === abbr && hasSchool;
+            const isSelected = selectedState === abbr;
+
+            let fill: string;
+            let fillOpacity: number;
+            let stroke: string;
+
+            if (hasSchool) {
+              fill = regionColor;
+              fillOpacity = isSelected ? 0.5 : isHovered ? 0.4 : 0.25;
+              stroke = regionColor;
+            } else if (inHighlighted) {
+              fill = "var(--clay-mist)";
+              fillOpacity = 0.6;
+              stroke = "var(--stroke)";
+            } else {
+              fill = "var(--clay-mist)";
+              fillOpacity = 0.3;
+              stroke = "var(--stroke)";
+            }
+
+            return (
+              <path
+                key={abbr}
+                d={d}
+                fill={fill}
+                fillOpacity={fillOpacity}
+                stroke={stroke}
+                strokeWidth={isSelected ? 2 : hasSchool ? 1.2 : 0.7}
+                strokeLinejoin="round"
+                onClick={() => handleStateClick(abbr)}
+                onMouseEnter={() => hasSchool && setHoveredState(abbr)}
+                onMouseLeave={() => setHoveredState(null)}
+                style={{
+                  cursor: hasSchool ? "pointer" : "default",
+                  transition: "fill-opacity 150ms, stroke-width 150ms",
+                }}
+              />
+            );
+          })}
+        </g>
+
+        {/* Per-state school count labels */}
+        {Object.entries(schoolsByState).map(([abbr, stateSchools]) => {
+          const center = STATE_SVG_CENTER[abbr];
+          if (!center) return null;
+
+          const count = stateSchools.length;
+          const isHovered = hoveredState === abbr;
+          const isSelected = selectedState === abbr;
+          const region = getStateRegion(abbr);
+          const regionColor = region ? REGION_COLORS[region] : "var(--primary)";
+          const r = isSelected || isHovered ? 14 : 12;
+
+          return (
+            <g
+              key={`count-${abbr}`}
+              onClick={() => handleStateClick(abbr)}
+              onMouseEnter={() => setHoveredState(abbr)}
+              onMouseLeave={() => setHoveredState(null)}
+              style={{ cursor: "pointer" }}
+            >
+              {/* Background circle */}
+              <circle
+                cx={center[0]}
+                cy={center[1]}
+                r={r}
+                fill={regionColor}
+                fillOpacity={isSelected ? 1 : isHovered ? 0.9 : 0.8}
+                stroke="white"
+                strokeWidth={2}
+                style={{ transition: "r 150ms, fill-opacity 150ms" }}
+              />
+              {/* Count number */}
+              <text
+                x={center[0]}
+                y={center[1] + 1}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill="white"
+                fontSize={r > 12 ? "12" : "10"}
+                fontWeight="700"
+                style={{ pointerEvents: "none", userSelect: "none" }}
+              >
+                {count}
+              </text>
+
+              {/* Hover tooltip showing school names */}
+              {(isHovered || isSelected) && (
+                <g>
+                  <rect
+                    x={center[0] - 85}
+                    y={center[1] - 18 - count * 14 - 4}
+                    width={170}
+                    height={count * 14 + 8}
+                    rx={6}
+                    fill="var(--walnut)"
+                    fillOpacity={0.94}
+                  />
+                  {stateSchools.map((school, i) => {
+                    const label = `#${school.rank} ${school.school_name}`;
+                    return (
+                      <text
+                        key={school.rank}
+                        x={center[0]}
+                        y={center[1] - 18 - (count - 1 - i) * 14}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill={school.rank === selectedRank ? "var(--golden-sand)" : "white"}
+                        fontSize="9"
+                        fontWeight={school.rank === selectedRank ? "700" : "500"}
+                        style={{ pointerEvents: "none" }}
+                      >
+                        {label.length > 28 ? label.slice(0, 26) + "\u2026" : label}
+                      </text>
+                    );
+                  })}
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}

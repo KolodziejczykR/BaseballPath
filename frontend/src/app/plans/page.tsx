@@ -145,11 +145,11 @@ export default function PlansPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={userEmail} />}
 
-      <main className="px-6 py-10 md:py-12">
+      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Plans</p>
           <h1 className="display-font mt-4 text-4xl md:text-5xl">Choose the level of insight you need.</h1>
-          <p className="mt-4 text-[var(--muted)]">
+          <p className="mt-4 pl-1 text-[var(--muted)]">
             Pricing is placeholder for now. Each plan unlocks a different depth of analysis.
           </p>
           <p className="mt-2 text-sm text-[var(--muted)]">

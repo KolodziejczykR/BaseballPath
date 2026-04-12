@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -99,23 +100,13 @@ export default function Home() {
             <Link href="#pricing" className="hover:-translate-y-[1px] transition-transform text-[var(--muted)] hover:text-[var(--espresso)]">Pricing</Link>
           </div>
           <div className="hidden md:block">
-            {isAuthenticated ? (
-              <Link
-                href="/dashboard"
-                className="overflow-hidden relative group inline-block bg-[var(--burnt-sienna)] text-white rounded-full px-6 py-2.5 text-sm font-semibold transition-transform hover:scale-[1.03] duration-300"
-              >
-                <span className="relative z-10">Dashboard &rarr;</span>
-                <span className="absolute inset-0 bg-[var(--golden-sand)] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out z-0"></span>
-              </Link>
-            ) : (
-              <Link
-                href="/predict"
-                className="overflow-hidden relative group inline-block bg-[var(--burnt-sienna)] text-white rounded-full px-6 py-2.5 text-sm font-semibold transition-transform hover:scale-[1.03] duration-300"
-              >
-                <span className="relative z-10">Get Your Projection</span>
-                <span className="absolute inset-0 bg-[var(--golden-sand)] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out z-0"></span>
-              </Link>
-            )}
+            <Link
+              href="/predict"
+              className="overflow-hidden relative group inline-block bg-[var(--burnt-sienna)] text-white rounded-full px-6 py-2.5 text-sm font-semibold transition-transform hover:scale-[1.03] duration-300"
+            >
+              <span className="relative z-10">{isAuthenticated ? "New Evaluation" : "Get Your Projection"}</span>
+              <span className="absolute inset-0 bg-[var(--golden-sand)] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out z-0"></span>
+            </Link>
           </div>
           <button className="md:hidden text-[var(--espresso)]" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
             {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -128,11 +119,9 @@ export default function Home() {
           <Link href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>How It Works</Link>
           <Link href="#features" onClick={() => setMobileMenuOpen(false)}>Features</Link>
           <Link href="#pricing" onClick={() => setMobileMenuOpen(false)}>Pricing</Link>
-          {isAuthenticated ? (
-            <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)} className="bg-[var(--burnt-sienna)] text-white rounded-full px-8 py-3">Dashboard &rarr;</Link>
-          ) : (
-            <Link href="/predict" onClick={() => setMobileMenuOpen(false)} className="bg-[var(--burnt-sienna)] text-white rounded-full px-8 py-3">Get Your Projection</Link>
-          )}
+          <Link href="/predict" onClick={() => setMobileMenuOpen(false)} className="bg-[var(--burnt-sienna)] text-white rounded-full px-8 py-3">
+            {isAuthenticated ? "New Evaluation" : "Get Your Projection"}
+          </Link>
         </div>
       )}
 
@@ -162,7 +151,7 @@ export default function Home() {
               </ul>
               <div className="hero-stagger mt-10 flex flex-wrap gap-4 items-center">
                 <Link
-                  href={isAuthenticated ? "/dashboard" : "/predict"}
+                  href={"/predict"}
                   className="overflow-hidden relative group inline-flex items-center justify-center bg-[var(--burnt-sienna)] text-white rounded-full px-8 py-3.5 text-base font-semibold shadow-soft hover:-translate-y-1 transition-all duration-300"
                 >
                   <span className="relative z-10 transition-colors group-hover:text-white">Check my projection &rarr;</span>
@@ -182,7 +171,13 @@ export default function Home() {
 
               <div>
                 <div className="flex justify-between items-start mb-6">
-                  <img src="/BP-brown-logo-circle.png" alt="BaseballPath" className="w-12 h-12" />
+                  <Image
+                    src="/BP-brown-logo-circle.png"
+                    alt="BaseballPath"
+                    width={48}
+                    height={48}
+                    className="w-12 h-12"
+                  />
                   <div className="bg-[var(--sage-green)]/10 text-[var(--sage-green)] px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider backdrop-blur-md">Projected</div>
                 </div>
 
@@ -348,56 +343,46 @@ export default function Home() {
         {/* G. PRICING */}
         <section id="pricing" className="py-24 px-6 max-w-6xl mx-auto">
           <FadeOnScroll>
-            <h2 className="display-font text-3xl md:text-4xl text-center text-[var(--espresso)] font-bold mb-16">
-              Start free. Upgrade when you&apos;re ready.
+            <h2 className="display-font text-3xl md:text-4xl text-center text-[var(--espresso)] font-bold mb-4">
+              Simple, transparent pricing.
             </h2>
+            <p className="text-center text-[var(--muted)] mb-16 max-w-lg mx-auto">
+              No subscriptions. No commitments. Pay per evaluation and get a complete, AI-personalized report.
+            </p>
           </FadeOnScroll>
-          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto items-center">
+          <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto items-center">
 
             <FadeOnScroll delayMs={0}>
-              <div className="glass rounded-[2rem] p-8 shadow-soft flex flex-col h-full">
-                <h3 className="text-xl font-bold text-[var(--espresso)] mb-2">Starter</h3>
-                <p className="text-3xl font-bold text-[var(--walnut)] mb-6 font-mono">Free</p>
+              <div className="glass rounded-[2.5rem] p-8 shadow-strong ring-2 ring-[var(--golden-sand)] relative bg-[var(--parchment)] flex flex-col h-full">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--golden-sand)] text-[var(--espresso)] font-bold uppercase tracking-widest text-[10px] px-3 py-1 rounded-full whitespace-nowrap">First Evaluation</div>
+                <h3 className="text-xl font-bold text-[var(--espresso)] mb-2">Your First Report</h3>
+                <p className="text-4xl font-bold text-[var(--walnut)] mb-6 font-mono">$69</p>
                 <div className="flex-grow">
-                  <ul className="space-y-4 mb-8 text-sm text-[var(--muted)]">
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> 1 evaluation</li>
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Division projection</li>
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Basic school list</li>
+                  <ul className="space-y-4 mb-8 text-sm text-[var(--espresso)] font-medium">
+                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> ML-powered division projection</li>
+                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> 15 best-fit school matches</li>
+                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> AI-personalized fit summaries</li>
+                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Academic & athletic comparisons</li>
+                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Save & compare your schools</li>
                   </ul>
                 </div>
-                <Link href="/signup" className="block w-full text-center rounded-full border border-[var(--stroke)] px-6 py-3 font-semibold text-[var(--walnut)] hover:bg-[var(--stroke)]/20 transition-colors mt-auto">Start free</Link>
+                <Link href="/predict" className="block w-full text-center bg-[var(--burnt-sienna)] text-white rounded-full px-6 py-3 font-semibold shadow-soft hover:scale-[1.03] transition-transform mt-auto">Get Your Evaluation</Link>
               </div>
             </FadeOnScroll>
 
             <FadeOnScroll delayMs={150}>
-              <div className="glass rounded-[2.5rem] p-8 shadow-strong ring-2 ring-[var(--golden-sand)] relative transform md:scale-105 bg-[var(--parchment)] z-10 flex flex-col h-full">
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--golden-sand)] text-[var(--espresso)] font-bold uppercase tracking-widest text-[10px] px-3 py-1 rounded-full whitespace-nowrap">Most Popular</div>
-                <h3 className="text-xl font-bold text-[var(--espresso)] mb-2">Pro</h3>
-                <p className="text-3xl font-bold text-[var(--walnut)] mb-6 font-mono">$19<span className="text-base text-[var(--muted)] font-sans font-normal">/mo</span></p>
-                <div className="flex-grow">
-                  <ul className="space-y-4 mb-8 text-sm text-[var(--espresso)] font-medium">
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Unlimited evaluations</li>
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Full school rankings</li>
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Leverage-based goals</li>
-                  </ul>
-                </div>
-                <Link href="/signup?plan=pro" className="block w-full text-center bg-[var(--burnt-sienna)] text-white rounded-full px-6 py-3 font-semibold shadow-soft hover:scale-[1.03] transition-transform mt-auto">Go Pro</Link>
-              </div>
-            </FadeOnScroll>
-
-            <FadeOnScroll delayMs={300}>
               <div className="glass rounded-[2rem] p-8 shadow-soft flex flex-col h-full">
-                <h3 className="text-xl font-bold text-[var(--espresso)] mb-2">Elite</h3>
-                <p className="text-3xl font-bold text-[var(--walnut)] mb-6 font-mono">$49<span className="text-base text-[var(--muted)] font-sans font-normal">/mo</span></p>
+                <h3 className="text-xl font-bold text-[var(--espresso)] mb-2">Additional Evaluations</h3>
+                <p className="text-4xl font-bold text-[var(--walnut)] mb-6 font-mono">$29<span className="text-base text-[var(--muted)] font-sans font-normal"> each</span></p>
                 <div className="flex-grow">
                   <ul className="space-y-4 mb-8 text-sm text-[var(--muted)]">
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Everything in Pro</li>
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Priority model access</li>
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Advanced analytics</li>
-                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Coach outreach templates</li>
+                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Same full evaluation report</li>
+                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Update your metrics anytime</li>
+                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Track your progress over time</li>
+                    <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Adjust preferences & compare</li>
                   </ul>
                 </div>
-                <Link href="/signup?plan=elite" className="block w-full text-center rounded-full bg-[var(--burnt-sienna)] text-white px-6 py-3 font-semibold shadow-soft hover:scale-[1.03] transition-transform mt-auto">Go Elite</Link>
+                <Link href="/predict" className="block w-full text-center rounded-full border border-[var(--stroke)] px-6 py-3 font-semibold text-[var(--walnut)] hover:bg-[var(--stroke)]/20 transition-colors mt-auto">Run Another Evaluation</Link>
               </div>
             </FadeOnScroll>
 
@@ -416,14 +401,14 @@ export default function Home() {
                 Two minutes. Real data. <span className="text-[var(--burnt-sienna)] italic font-semibold">No credit card.</span>
               </p>
               <Link
-                href={isAuthenticated ? "/dashboard" : "/predict"}
-                className="inline-block overflow-hidden relative group bg-[var(--burnt-sienna)] text-[var(--warm-cream)] rounded-full px-10 py-4 text-lg font-semibold shadow-strong hover:scale-105 transition-transform duration-300"
+                href={"/predict"}
+                className="inline-block overflow-hidden relative group bg-[var(--burnt-sienna)] text-white rounded-full px-10 py-4 text-lg font-semibold shadow-strong hover:scale-105 transition-transform duration-300"
               >
                 <span className="relative z-10">Check my projection &rarr;</span>
                 <span className="absolute inset-0 bg-[var(--primary-dark)] translate-y-full group-hover:translate-y-0 transition-transform duration-400 ease-out z-0"></span>
               </Link>
               <p className="text-sm text-[var(--muted)] mt-6 font-medium">
-                Join 200+ recruits already using BaseballPath
+                Be the next recruit to join BaseballPath
               </p>
             </FadeOnScroll>
           </div>

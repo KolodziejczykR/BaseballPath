@@ -149,7 +149,7 @@ export default function GoalDetailPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 py-10 md:py-12">
+      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -163,7 +163,7 @@ export default function GoalDetailPage() {
                   key={value}
                   type="button"
                   onClick={() => setTab(value)}
-                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${tab === value ? "bg-[var(--primary)] text-white" : "border border-[var(--stroke)] bg-white/80 text-[var(--navy)]"}`}
+                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${tab === value ? "bg-[var(--primary)] !text-white" : "border border-[var(--stroke)] bg-white/80 text-[var(--navy)]"}`}
                 >
                   {value}
                 </button>

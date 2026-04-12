@@ -10,20 +10,40 @@ export default function nextConfig(phase: string): NextConfig {
     async redirects() {
       return [
         {
-          source: "/",
+          source: "/waitlist",
           destination: "/prelaunch",
+          permanent: true,
+        },
+        {
+          source: "/waitlist/:path+",
+          destination: "/prelaunch",
+          permanent: true,
+        },
+        {
+          source: "/dashboard",
+          destination: "/predict",
           permanent: false,
         },
-        ...['/account', '/dashboard', '/evaluations', '/goals', '/login', '/plans', '/predict', '/signup', '/waitlist'].map((path) => ({
-          source: path,
-          destination: "/prelaunch",
+        {
+          source: "/goals/:path*",
+          destination: "/predict",
           permanent: false,
-        })),
-        ...['/account/:path*', '/dashboard/:path*', '/evaluations/:path*', '/goals/:path*', '/waitlist/:path*'].map((path) => ({
-          source: path,
-          destination: "/prelaunch",
+        },
+        {
+          source: "/goals",
+          destination: "/predict",
           permanent: false,
-        })),
+        },
+        {
+          source: "/plans/:path*",
+          destination: "/account",
+          permanent: false,
+        },
+        {
+          source: "/plans",
+          destination: "/account",
+          permanent: false,
+        },
       ];
     },
     experimental: {
