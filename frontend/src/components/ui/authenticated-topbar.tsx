@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -31,30 +32,22 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
   const router = useRouter();
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [account, setAccount] = useState<AccountMeResponse | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
     async function loadAccount() {
-      setLoading(true);
-      try {
-        const response = await fetch(`${API_BASE_URL}/account/me`, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-        if (!response.ok) return;
-        const data = (await response.json()) as AccountMeResponse;
-        if (!mounted) return;
-        setAccount(data);
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
+      const response = await fetch(`${API_BASE_URL}/account/me`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      if (!response.ok) return;
+      const data = (await response.json()) as AccountMeResponse;
+      if (!mounted) return;
+      setAccount(data);
     }
     loadAccount();
     return () => {
@@ -95,7 +88,13 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
     <header className="sticky top-0 z-40 border-b border-[var(--stroke)]/30 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link href="/predict" className="flex items-center gap-3">
-          <img src="/BP-brown-logo-circle.png" alt="BaseballPath" className="h-11 w-11" />
+          <Image
+            src="/BP-brown-logo-circle.png"
+            alt="BaseballPath"
+            width={44}
+            height={44}
+            className="h-11 w-11"
+          />
           <div className="leading-tight">
             <p className="text-xs uppercase tracking-[0.34em] text-[var(--muted)]">BaseballPath</p>
             <p className="text-base font-semibold">Recruitment Assistant</p>

@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { useState } from "react"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -61,7 +62,13 @@ export default function WaitlistPage() {
       <header className="sticky top-0 z-30 backdrop-blur-md border-b border-[var(--stroke)]/30">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <img src="/BP-brown-logo-circle.png" alt="BaseballPath" className="h-10 w-10" />
+            <Image
+              src="/BP-brown-logo-circle.png"
+              alt="BaseballPath"
+              width={40}
+              height={40}
+              className="h-10 w-10"
+            />
             <div className="leading-tight">
               <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">
                 BaseballPath

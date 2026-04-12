@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useOptionalAuth } from "@/hooks/useOptionalAuth";
 
@@ -148,6 +148,14 @@ function formatCost(cost: number | null | undefined): string {
 // ---------------------------------------------------------------------------
 
 export default function ResultsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen px-6 py-16" />}>
+      <ResultsContent />
+    </Suspense>
+  );
+}
+
+function ResultsContent() {
   const { loading: authLoading, accessToken, isAuthenticated } = useOptionalAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -476,12 +484,15 @@ export default function ResultsPage() {
                       {/* Logo + name */}
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {logoUrl && (
-                          <img
-                            src={logoUrl}
-                            alt=""
-                            className="h-8 w-8 shrink-0 object-contain"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                          />
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={logoUrl}
+                              alt=""
+                              className="h-8 w-8 shrink-0 object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          </>
                         )}
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-[var(--foreground)] truncate">

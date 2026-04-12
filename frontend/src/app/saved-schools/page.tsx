@@ -325,15 +325,18 @@ export default function SavedSchoolsPage() {
 
                         <div className="flex flex-col items-end gap-2">
                           {logoUrl ? (
-                            <img
-                              src={logoUrl}
-                              alt={`${getDisplaySchoolName(record)} logo`}
-                              loading="lazy"
-                              onError={(event) => {
-                                event.currentTarget.style.display = "none";
-                              }}
-                              className="h-14 w-14 rounded-md border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
-                            />
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={logoUrl}
+                                alt={`${getDisplaySchoolName(record)} logo`}
+                                loading="lazy"
+                                onError={(event) => {
+                                  event.currentTarget.style.display = "none";
+                                }}
+                                className="h-14 w-14 rounded-md border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
+                              />
+                            </>
                           ) : null}
                           {getDivisionBadgeLabel(detail) && (
                             <span className="whitespace-nowrap rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">

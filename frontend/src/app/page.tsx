@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -170,7 +171,13 @@ export default function Home() {
 
               <div>
                 <div className="flex justify-between items-start mb-6">
-                  <img src="/BP-brown-logo-circle.png" alt="BaseballPath" className="w-12 h-12" />
+                  <Image
+                    src="/BP-brown-logo-circle.png"
+                    alt="BaseballPath"
+                    width={48}
+                    height={48}
+                    className="w-12 h-12"
+                  />
                   <div className="bg-[var(--sage-green)]/10 text-[var(--sage-green)] px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider backdrop-blur-md">Projected</div>
                 </div>
 

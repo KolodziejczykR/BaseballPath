@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   STATE_PATHS,
-  REGION_STATES,
   REGION_COLORS,
   getStateRegion,
 } from "./us-states-data";

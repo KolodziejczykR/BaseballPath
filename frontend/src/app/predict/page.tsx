@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useOptionalAuth } from "@/hooks/useOptionalAuth";
 import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
@@ -109,6 +109,14 @@ function num(v: string): number | undefined {
 // ---------------------------------------------------------------------------
 
 export default function PredictPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen px-6 py-16" />}>
+      <PredictContent />
+    </Suspense>
+  );
+}
+
+function PredictContent() {
   const { loading: authLoading, accessToken, user, isAuthenticated } = useOptionalAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -778,7 +786,7 @@ export default function PredictPage() {
                   <p className="mt-2 text-sm text-[var(--muted)] max-w-md mx-auto">
                     Most players have no idea where they actually stand. 
                     <br />
-                    Here's your honest answer, based purely on your metrics today.
+                    Here&apos;s your honest answer, based purely on your metrics today.
                   </p>
                 </div>
 

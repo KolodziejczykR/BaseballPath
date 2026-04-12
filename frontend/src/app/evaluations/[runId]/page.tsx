@@ -859,13 +859,16 @@ export default function EvaluationDetailPage() {
                           </div>
 
                           {logoUrl && (
-                            <img
-                              src={logoUrl}
-                              alt=""
-                              loading="lazy"
-                              onError={(e) => { e.currentTarget.style.display = "none"; }}
-                              className="h-12 w-12 shrink-0 rounded-lg border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
-                            />
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={logoUrl}
+                                alt=""
+                                loading="lazy"
+                                onError={(e) => { e.currentTarget.style.display = "none"; }}
+                                className="h-12 w-12 shrink-0 rounded-lg border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
+                              />
+                            </>
                           )}
                         </div>
                       </button>
@@ -909,12 +912,15 @@ export default function EvaluationDetailPage() {
                           </div>
                         </div>
                         {getNcaLogoUrl(selectedSchool.school_logo_image) && (
-                          <img
-                            src={getNcaLogoUrl(selectedSchool.school_logo_image)!}
-                            alt=""
-                            onError={(e) => { e.currentTarget.style.display = "none"; }}
-                            className="h-14 w-14 shrink-0 rounded-lg border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
-                          />
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={getNcaLogoUrl(selectedSchool.school_logo_image)!}
+                              alt=""
+                              onError={(e) => { e.currentTarget.style.display = "none"; }}
+                              className="h-14 w-14 shrink-0 rounded-lg border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
+                            />
+                          </>
                         )}
                       </div>
 

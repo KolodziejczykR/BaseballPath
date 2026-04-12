@@ -359,15 +359,18 @@ export default function DashboardPage() {
                             </p>
                           </div>
                           {logoUrl ? (
-                            <img
-                              src={logoUrl}
-                              alt={`${school.school_name} logo`}
-                              loading="lazy"
-                              onError={(event) => {
-                                event.currentTarget.style.display = "none";
-                              }}
-                              className="h-10 w-10 rounded-md border border-[var(--stroke)] bg-white/90 p-1 object-contain"
-                            />
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={logoUrl}
+                                alt={`${school.school_name} logo`}
+                                loading="lazy"
+                                onError={(event) => {
+                                  event.currentTarget.style.display = "none";
+                                }}
+                                className="h-10 w-10 rounded-md border border-[var(--stroke)] bg-white/90 p-1 object-contain"
+                              />
+                            </>
                           ) : null}
                         </div>
                       </Link>

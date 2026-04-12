@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useOptionalAuth } from "@/hooks/useOptionalAuth";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen px-6 py-16" />}>
+      <CheckoutContent />
+    </Suspense>
+  );
+}
+
+function CheckoutContent() {
   const { loading: authLoading, accessToken, isAuthenticated } = useOptionalAuth();
   const searchParams = useSearchParams();
 
