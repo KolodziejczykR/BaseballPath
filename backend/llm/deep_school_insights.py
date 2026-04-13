@@ -930,7 +930,7 @@ class DeepSchoolInsightService:
         return httpx.AsyncClient(
             timeout=httpx.Timeout(20.0, connect=10.0),
             follow_redirects=True,
-            verify=False,
+            max_redirects=5,
             headers={
                 "User-Agent": (
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "

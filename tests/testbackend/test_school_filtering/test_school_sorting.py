@@ -2,7 +2,7 @@ import copy
 
 import pytest
 
-from backend.api import preferences_router
+from backend.api.routers import preferences as preferences_router
 from backend.utils.preferences_types import VALID_GRADES
 from backend.utils.recommendation_types import SchoolRecommendation, SortScores
 

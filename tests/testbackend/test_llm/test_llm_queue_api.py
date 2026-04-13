@@ -115,6 +115,9 @@ def test_preferences_filter_queues_llm_job(monkeypatch):
         "_format_playing_time",
         lambda _: PlayingTimeInfo(available=False),
     )
+    monkeypatch.setattr(pref_mod, "get_cached_reasoning", lambda _hash: None)
+    monkeypatch.setattr(pref_mod, "get_inflight_job_id", lambda _hash: None)
+    monkeypatch.setattr(pref_mod, "set_inflight_job_id", lambda *_args, **_kw: None)
 
     captured = {}
 

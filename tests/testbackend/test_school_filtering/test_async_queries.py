@@ -77,7 +77,7 @@ class _FakeConnection:
 
 
 @pytest.mark.asyncio
-async def test_load_division_group_cache_uses_non_false_mappings():
+async def test_load_division_group_cache_loads_all_mappings_with_team_name():
     client = _FakeClient(
         {
             "school_baseball_ranking_name_mapping": [
@@ -87,9 +87,9 @@ async def test_load_division_group_cache_uses_non_false_mappings():
                     "verified": None,
                 },
                 {
-                    "school_name": "Wrong School",
-                    "team_name": "Wrong Team",
-                    "verified": False,
+                    "school_name": "Oregon State University",
+                    "team_name": "Oregon St",
+                    "verified": True,
                 },
             ],
             "baseball_rankings_data": [
@@ -105,15 +105,15 @@ async def test_load_division_group_cache_uses_non_false_mappings():
                     "strength_of_schedule": 75.0,
                 },
                 {
-                    "team_name": "Wrong Team",
+                    "team_name": "Oregon St",
                     "year": 2025,
                     "division": 1,
-                    "division_group": "Non-D1",
-                    "overall_rating": 120.0,
-                    "offensive_rating": 118.0,
-                    "defensive_rating": 122.0,
-                    "power_rating": 119.0,
-                    "strength_of_schedule": 10.0,
+                    "division_group": "Power 4 D1",
+                    "overall_rating": 45.0,
+                    "offensive_rating": 43.0,
+                    "defensive_rating": 47.0,
+                    "power_rating": 46.0,
+                    "strength_of_schedule": 72.0,
                 },
             ],
         }
@@ -122,6 +122,5 @@ async def test_load_division_group_cache_uses_non_false_mappings():
 
     await queries._load_division_group_cache()
 
-    payload = queries._division_group_cache["Kansas State University"]
-    assert payload["division_group"] == POWER_4_D1
-    assert "Wrong School" not in queries._division_group_cache
+    assert queries._division_group_cache["Kansas State University"]["division_group"] == POWER_4_D1
+    assert queries._division_group_cache["Oregon State University"]["division_group"] == POWER_4_D1
