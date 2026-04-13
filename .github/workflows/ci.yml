@@ -29,6 +29,10 @@ jobs:
       - name: Run pytest
         env:
           PYTHONPATH: ${{ github.workspace }}
+          # CI placeholders only — supabase-py never connects during unit tests.
+          # .invalid is reserved (RFC 2606) and cannot resolve.
+          SUPABASE_URL: https://ci-placeholder.invalid
+          SUPABASE_SERVICE_KEY: ci-placeholder-not-a-real-key
         run: python -m pytest tests/ -v
 
       - name: Dependency audit (warn-only)
@@ -60,7 +64,9 @@ jobs:
 
       - name: Build
         env:
-          NEXT_PUBLIC_SUPABASE_URL: https://dummy.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy_anon_key
+          # CI placeholders only — never hit at build time.
+          # .invalid is reserved (RFC 2606) and cannot resolve.
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.invalid
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-not-a-real-key
           NEXT_PUBLIC_API_URL: http://localhost:8000
         run: npm run build
