@@ -191,7 +191,3 @@ class AsyncSupabaseConnection:
         AsyncSupabaseConnection._connection_semaphore = None
 
         logger.info("Async Supabase connection closed")
-
-
-# Global instance for dependency injection
-async_db_connection = AsyncSupabaseConnection()
