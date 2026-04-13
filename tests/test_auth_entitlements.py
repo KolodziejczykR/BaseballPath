@@ -1,19 +1,14 @@
-from datetime import date
+"""Auth gating checks for protected routers."""
 
-import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.routers.account import router as account_router
-from backend.api.services.plan_service import (
-    EffectivePlan,
-    UsageSnapshot,
-    enforce_evaluation_quota,
-    remaining_evaluations,
-)
+from backend.api.routers.evaluations import router as evaluations_router
+from backend.api.routers.billing import router as billing_router
 
 
-def test_account_endpoint_requires_bearer_token():
+def test_account_me_requires_bearer_token():
     app = FastAPI()
     app.include_router(account_router, prefix="/account")
     client = TestClient(app)
@@ -22,33 +17,34 @@ def test_account_endpoint_requires_bearer_token():
     assert response.status_code == 401
 
 
-def test_remaining_evaluations_for_limited_plan():
-    effective_plan = EffectivePlan(
-        plan_tier="starter",
-        status="none",
-        subscription=None,
-        monthly_eval_limit=5,
-        llm_enabled=False,
+def test_evaluations_list_requires_bearer_token():
+    app = FastAPI()
+    app.include_router(evaluations_router, prefix="/evaluations")
+    client = TestClient(app)
+
+    response = client.get("/evaluations")
+    assert response.status_code == 401
+
+
+def test_evaluations_finalize_requires_bearer_token():
+    app = FastAPI()
+    app.include_router(evaluations_router, prefix="/evaluations")
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations/finalize",
+        json={"session_token": "abc", "purchase_id": "xyz"},
     )
-    usage = UsageSnapshot(period_start=date(2026, 2, 1), eval_count=3, llm_count=0)
-    assert remaining_evaluations(effective_plan, usage) == 2
+    assert response.status_code == 401
 
 
-def test_enforce_evaluation_quota_blocks_over_limit(monkeypatch):
-    def fake_usage(_user_id: str, _period_start=None):
-        return UsageSnapshot(period_start=date(2026, 2, 1), eval_count=5, llm_count=0)
+def test_billing_create_eval_checkout_requires_bearer_token():
+    app = FastAPI()
+    app.include_router(billing_router, prefix="/billing")
+    client = TestClient(app)
 
-    monkeypatch.setattr("backend.api.services.plan_service.get_monthly_usage", fake_usage)
-
-    effective_plan = EffectivePlan(
-        plan_tier="starter",
-        status="none",
-        subscription=None,
-        monthly_eval_limit=5,
-        llm_enabled=False,
+    response = client.post(
+        "/billing/create-eval-checkout",
+        json={"session_token": "abc"},
     )
-
-    with pytest.raises(HTTPException) as exc:
-        enforce_evaluation_quota("user-123", effective_plan)
-
-    assert exc.value.status_code == 429
+    assert response.status_code == 401

@@ -1,315 +1,154 @@
 """
-Authenticated evaluation orchestration endpoints.
+Evaluation HTTP endpoints.
 
-This router runs ML prediction + school filtering, enforces plan quotas, and persists
-the full evaluation result for the authenticated user.
+Three flows live here:
+  * POST /evaluations/preview — anonymous, runs the evaluation and stores a
+    pending row. Returns a session_token and 3 randomly-selected teaser
+    schools from the top 10.
+  * POST /evaluations/finalize — authenticated. Requires a purchase_id and
+    session_token, runs the full consideration-pool pipeline, persists a
+    prediction_runs row, and enqueues deep research.
+  * GET /evaluations/result — token-gated public poll used by the results
+    page before the user is logged in.
+
+Plus the authenticated list/get/delete endpoints for a user's runs.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from ..clients.supabase import require_supabase_admin_client
-from ..deps.auth import AuthenticatedUser, get_current_user
-from ..services.plan_service import (
-    enforce_evaluation_quota,
-    get_effective_plan,
-    get_profile,
-    increment_usage,
-    remaining_evaluations,
+from ..deps.auth import AuthenticatedUser, get_current_user, get_optional_user
+from ..services import evaluation_service
+from ..services.evaluation_service import (
+    DISCLAIMER_TEXT,
+    EvaluateRequest,
+    EvaluationInputError,
+    LegacyPositionTrackConstraintError,
+    PendingEvaluationNotFound,
+    PredictionRunPersistError,
+    PurchaseNotFound,
 )
-from .preferences import filter_schools_by_preferences
-
-from backend.ml.router.catcher_router import CatcherInput
-from backend.ml.router.catcher_router import pipeline as catcher_pipeline
-from backend.ml.router.infielder_router import InfielderInput
-from backend.ml.router.infielder_router import pipeline as infielder_pipeline
-from backend.ml.router.outfielder_router import OutfielderInput
-from backend.ml.router.outfielder_router import pipeline as outfielder_pipeline
-from backend.ml.router.pitcher_router import PitcherInput
-from backend.ml.router.pitcher_router import pipeline as pitcher_pipeline
-from backend.utils.position_tracks import (
-    CATCHER_PRIMARY_POSITIONS,
-    normalize_primary_position,
-)
-from backend.utils.player_types import (
-    PlayerCatcher,
-    PlayerInfielder,
-    PlayerOutfielder,
-    PlayerPitcher,
-)
+from ..services.pricing_service import get_eval_price
 
 router = APIRouter()
 
 
-class EvaluationRunRequest(BaseModel):
-    position_endpoint: Literal["pitcher", "infielder", "outfielder", "catcher"]
-    identity_input: Dict[str, Any]
-    stats_input: Dict[str, Any]
-    preferences_input: Dict[str, Any]
-    prediction_payload: Dict[str, Any]
-    preferences_payload: Dict[str, Any]
-    use_llm_reasoning: bool = False
+class FinalizeRequest(BaseModel):
+    session_token: str
+    purchase_id: str
 
 
-def _run_prediction(position_endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    if position_endpoint == "pitcher":
-        if pitcher_pipeline is None:
-            raise HTTPException(status_code=500, detail="Pitcher pipeline not available")
-        validated = PitcherInput(**payload).model_dump(exclude_none=True)
-        player = PlayerPitcher(
-            height=validated["height"],
-            weight=validated["weight"],
-            primary_position=validated["primary_position"],
-            throwing_hand=validated.get("throwing_hand", "R"),
-            region=validated["player_region"],
-            fastball_velo_range=validated.get("fastball_velo_range"),
-            fastball_velo_max=validated.get("fastball_velo_max"),
-            fastball_spin=validated.get("fastball_spin"),
-            changeup_velo=validated.get("changeup_velo"),
-            changeup_spin=validated.get("changeup_spin"),
-            curveball_velo=validated.get("curveball_velo"),
-            curveball_spin=validated.get("curveball_spin"),
-            slider_velo=validated.get("slider_velo"),
-            slider_spin=validated.get("slider_spin"),
-        )
-        return pitcher_pipeline.predict(player).get_api_response()
-
-    if position_endpoint == "outfielder":
-        if outfielder_pipeline is None:
-            raise HTTPException(status_code=500, detail="Outfielder pipeline not available")
-        validated = OutfielderInput(**payload).model_dump(exclude_none=True)
-        player = PlayerOutfielder(
-            height=validated["height"],
-            weight=validated["weight"],
-            primary_position=validated["primary_position"],
-            hitting_handedness=validated["hitting_handedness"],
-            throwing_hand=validated["throwing_hand"],
-            region=validated["player_region"],
-            exit_velo_max=validated["exit_velo_max"],
-            of_velo=validated["of_velo"],
-            sixty_time=validated["sixty_time"],
-        )
-        return outfielder_pipeline.predict(player).get_api_response()
-
-    if position_endpoint == "catcher":
-        if catcher_pipeline is None:
-            raise HTTPException(status_code=500, detail="Catcher pipeline not available")
-        validated = CatcherInput(**payload).model_dump(exclude_none=True)
-        catcher_position = normalize_primary_position(validated.get("primary_position"))
-        canonical_primary_position = (
-            "C" if catcher_position in CATCHER_PRIMARY_POSITIONS else validated["primary_position"]
-        )
-        player = PlayerCatcher(
-            height=validated["height"],
-            weight=validated["weight"],
-            primary_position=canonical_primary_position,
-            hitting_handedness=validated["hitting_handedness"],
-            throwing_hand=validated["throwing_hand"],
-            region=validated["player_region"],
-            exit_velo_max=validated["exit_velo_max"],
-            c_velo=validated["c_velo"],
-            pop_time=validated["pop_time"],
-            sixty_time=validated["sixty_time"],
-        )
-        return catcher_pipeline.predict(player).get_api_response()
-
-    if position_endpoint == "infielder":
-        if infielder_pipeline is None:
-            raise HTTPException(status_code=500, detail="Infielder pipeline not available")
-        validated = InfielderInput(**payload).model_dump(exclude_none=True)
-        player = PlayerInfielder(
-            height=validated["height"],
-            weight=validated["weight"],
-            primary_position=validated["primary_position"],
-            hitting_handedness=validated["hitting_handedness"],
-            throwing_hand=validated["throwing_hand"],
-            region=validated["player_region"],
-            exit_velo_max=validated["exit_velo_max"],
-            inf_velo=validated["inf_velo"],
-            sixty_time=validated["sixty_time"],
-        )
-        return infielder_pipeline.predict(player).get_api_response()
-
-    raise HTTPException(status_code=400, detail=f"Unsupported position_endpoint: {position_endpoint}")
+# ---------------------------------------------------------------------------
+# POST /evaluations/preview — anonymous
+# ---------------------------------------------------------------------------
 
 
-def _ml_results_from_prediction(prediction_response: Dict[str, Any]) -> Dict[str, Any]:
-    d1_details = prediction_response.get("d1_details") or {}
-    p4_details = prediction_response.get("p4_details")
-    return {
-        "d1_results": {
-            "d1_probability": d1_details.get("probability", prediction_response.get("d1_probability", 0)),
-            "d1_prediction": d1_details.get("prediction", False),
-            "confidence": d1_details.get("confidence", "Medium"),
-            "model_version": d1_details.get("model_version", "unknown"),
-        },
-        "p4_results": (
-            {
-                "p4_probability": p4_details.get("probability", prediction_response.get("p4_probability", 0)),
-                "p4_prediction": p4_details.get("prediction", False),
-                "confidence": p4_details.get("confidence", "Medium"),
-                "is_elite": p4_details.get("is_elite", False),
-                "model_version": p4_details.get("model_version", "unknown"),
-            }
-            if p4_details
-            else None
-        ),
-    }
-
-
-def _extract_top_schools(preferences_response: Dict[str, Any], limit: int = 3) -> Any:
-    schools = preferences_response.get("schools") or []
-    return schools[:limit]
-
-
-def _resolve_identity_input(
-    *,
-    incoming_identity: Dict[str, Any],
-    profile: Dict[str, Any],
-    fallback_email: Optional[str],
+@router.post("/preview")
+async def preview_evaluation(
+    payload: EvaluateRequest,
+    current_user: Optional[AuthenticatedUser] = Depends(get_optional_user),
 ) -> Dict[str, Any]:
-    resolved = dict(incoming_identity or {})
+    try:
+        core = await evaluation_service.run_preview_core(
+            payload.baseball_metrics,
+            payload.ml_prediction,
+            payload.academic_input,
+            payload.preferences,
+        )
+    except EvaluationInputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
 
-    full_name = profile.get("full_name") or resolved.get("name")
-    if not full_name and fallback_email:
-        full_name = fallback_email.split("@")[0]
+    session_token = evaluation_service.create_pending_session_token()
+    try:
+        evaluation_service.store_pending_evaluation(
+            session_token=session_token,
+            payload=payload,
+            core=core,
+            user_id=current_user.user_id if current_user else None,
+        )
+    except PredictionRunPersistError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
 
-    state = profile.get("state") or resolved.get("state")
-    primary_position = profile.get("primary_position") or resolved.get("primary_position")
-    graduating_class = profile.get("grad_year") or resolved.get("graduating_class")
+    teaser_schools = evaluation_service.build_teaser(core)
 
-    if full_name:
-        resolved["name"] = str(full_name)
-    if state:
-        resolved["state"] = str(state).upper()
-    if primary_position:
-        resolved["primary_position"] = str(primary_position).upper()
-    if graduating_class is not None:
-        resolved["graduating_class"] = graduating_class
+    price_cents: Optional[int] = None
+    is_first_eval: Optional[bool] = None
+    if current_user:
+        pricing = get_eval_price(current_user.user_id)
+        price_cents = pricing["price_cents"]
+        is_first_eval = pricing["is_first_eval"]
 
-    return resolved
-
-
-def _persist_evaluation_run(
-    *,
-    user_id: str,
-    payload: EvaluationRunRequest,
-    prediction_response: Dict[str, Any],
-    preferences_response: Dict[str, Any],
-) -> str:
-    supabase = require_supabase_admin_client()
-    recommendation_summary = preferences_response.get("recommendation_summary") or {}
-    llm_job_id = recommendation_summary.get("llm_job_id")
-    llm_status = recommendation_summary.get("llm_status")
-
-    insert_payload = {
-        "user_id": user_id,
-        "position_track": payload.position_endpoint,
-        "identity_input": payload.identity_input,
-        "stats_input": payload.stats_input,
-        "preferences_input": payload.preferences_input,
-        "prediction_response": prediction_response,
-        "preferences_response": preferences_response,
-        "top_schools_snapshot": _extract_top_schools(preferences_response),
-        "llm_reasoning_status": llm_status,
-        "llm_job_id": llm_job_id,
+    return {
+        "session_token": session_token,
+        "teaser_schools": teaser_schools,
+        "price_cents": price_cents,
+        "is_first_eval": is_first_eval,
     }
-    response = (
-        supabase.table("prediction_runs")
-        .insert(insert_payload)
-        .execute()
-    )
-    if not response.data:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to persist evaluation run",
-        )
-    run = response.data[0]
-    run_id = run.get("id")
-    if not run_id:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Persisted evaluation run did not return an id",
-        )
-    return str(run_id)
 
 
-@router.post("/run")
-async def run_evaluation(
-    payload: EvaluationRunRequest,
+# ---------------------------------------------------------------------------
+# POST /evaluations/finalize — authenticated
+# ---------------------------------------------------------------------------
+
+
+@router.post("/finalize")
+async def finalize_evaluation(
+    payload: FinalizeRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    # Ensure profile exists for every authenticated user
-    profile = get_profile(current_user.user_id, current_user.email)
-    payload.identity_input = _resolve_identity_input(
-        incoming_identity=payload.identity_input,
-        profile=profile,
-        fallback_email=current_user.email,
-    )
-
-    effective_plan = get_effective_plan(current_user.user_id)
-    usage_before = enforce_evaluation_quota(current_user.user_id, effective_plan)
-
-    if payload.use_llm_reasoning and not effective_plan.llm_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "error": "llm_reasoning_not_available_for_plan",
-                "plan_tier": effective_plan.plan_tier,
-            },
+    try:
+        return await evaluation_service.finalize_paid_evaluation(
+            user_id=current_user.user_id,
+            user_email=current_user.email,
+            session_token=payload.session_token,
+            purchase_id=payload.purchase_id,
         )
+    except PurchaseNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PendingEvaluationNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except LegacyPositionTrackConstraintError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
+    except PredictionRunPersistError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
 
-    prediction_response = _run_prediction(payload.position_endpoint, payload.prediction_payload)
 
-    preferences_payload = dict(payload.preferences_payload)
-    user_preferences = dict(preferences_payload.get("user_preferences") or {})
-    state_value = payload.identity_input.get("state")
-    graduating_class = payload.identity_input.get("graduating_class")
-    if state_value:
-        user_preferences["user_state"] = state_value
-    if graduating_class not in (None, ""):
-        try:
-            user_preferences["hs_graduation_year"] = int(graduating_class)
-        except (TypeError, ValueError):
-            pass
-    preferences_payload["user_preferences"] = user_preferences
-    preferences_payload["ml_results"] = _ml_results_from_prediction(prediction_response)
-    if payload.use_llm_reasoning:
-        preferences_payload["use_llm_reasoning"] = True
-    else:
-        preferences_payload.pop("use_llm_reasoning", None)
+# ---------------------------------------------------------------------------
+# GET /evaluations/result — token-gated public poll
+# ---------------------------------------------------------------------------
 
-    preferences_response = await filter_schools_by_preferences(preferences_payload)
 
-    run_id = _persist_evaluation_run(
-        user_id=current_user.user_id,
-        payload=payload,
-        prediction_response=prediction_response,
-        preferences_response=preferences_response,
-    )
+@router.get("/result")
+async def get_public_finalized_result(
+    run_id: str = Query(...),
+    purchase_id: str = Query(...),
+    session_token: str = Query(...),
+) -> Dict[str, Any]:
+    try:
+        return evaluation_service.get_public_result(
+            run_id=run_id, purchase_id=purchase_id, session_token=session_token
+        )
+    except PendingEvaluationNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PurchaseNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
-    usage_after = increment_usage(
-        current_user.user_id,
-        evaluation_increment=1,
-        llm_increment=1 if payload.use_llm_reasoning else 0,
-    )
 
-    return {
-        "run_id": run_id,
-        "prediction_response": prediction_response,
-        "preferences_response": preferences_response,
-        "entitlement": {
-            "plan_tier": effective_plan.plan_tier,
-            "monthly_eval_limit": effective_plan.monthly_eval_limit,
-            "remaining_evals": remaining_evaluations(effective_plan, usage_after),
-            "usage_before": usage_before.eval_count,
-            "usage_after": usage_after.eval_count,
-        },
-    }
+# ---------------------------------------------------------------------------
+# Authenticated run history
+# ---------------------------------------------------------------------------
 
 
 @router.get("")
@@ -318,22 +157,7 @@ async def list_evaluations(
     offset: int = Query(default=0, ge=0),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    supabase = require_supabase_admin_client()
-    end_index = offset + limit - 1
-    response = (
-        supabase.table("prediction_runs")
-        .select("*", count="exact")
-        .eq("user_id", current_user.user_id)
-        .order("created_at", desc=True)
-        .range(offset, end_index)
-        .execute()
-    )
-    return {
-        "items": response.data or [],
-        "limit": limit,
-        "offset": offset,
-        "total": response.count if hasattr(response, "count") else None,
-    }
+    return evaluation_service.list_runs(current_user.user_id, limit=limit, offset=offset)
 
 
 @router.get("/{run_id}")
@@ -341,18 +165,10 @@ async def get_evaluation(
     run_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    supabase = require_supabase_admin_client()
-    response = (
-        supabase.table("prediction_runs")
-        .select("*")
-        .eq("id", run_id)
-        .eq("user_id", current_user.user_id)
-        .limit(1)
-        .execute()
-    )
-    if not response.data:
+    run = evaluation_service.get_run(current_user.user_id, run_id)
+    if run is None:
         raise HTTPException(status_code=404, detail="Evaluation run not found")
-    return response.data[0]
+    return run
 
 
 @router.delete("/{run_id}")
@@ -360,19 +176,8 @@ async def delete_evaluation(
     run_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    supabase = require_supabase_admin_client()
-    existing = (
-        supabase.table("prediction_runs")
-        .select("id")
-        .eq("id", run_id)
-        .eq("user_id", current_user.user_id)
-        .limit(1)
-        .execute()
-    )
-    if not existing.data:
+    if not evaluation_service.delete_run(current_user.user_id, run_id):
         raise HTTPException(status_code=404, detail="Evaluation run not found")
-
-    supabase.table("prediction_runs").delete().eq("id", run_id).eq("user_id", current_user.user_id).execute()
     return {"deleted": True, "run_id": run_id}
 
 
@@ -386,19 +191,5 @@ async def delete_all_evaluations(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Pass confirm=true to delete all evaluation runs for this account",
         )
-
-    supabase = require_supabase_admin_client()
-    count_response = (
-        supabase.table("prediction_runs")
-        .select("id", count="exact")
-        .eq("user_id", current_user.user_id)
-        .limit(1)
-        .execute()
-    )
-    deleted_count = count_response.count if hasattr(count_response, "count") and count_response.count is not None else 0
-
-    if deleted_count == 0:
-        return {"deleted": True, "deleted_count": 0}
-
-    supabase.table("prediction_runs").delete().eq("user_id", current_user.user_id).execute()
-    return {"deleted": True, "deleted_count": int(deleted_count)}
+    deleted_count = evaluation_service.delete_all_runs(current_user.user_id)
+    return {"deleted": True, "deleted_count": deleted_count}

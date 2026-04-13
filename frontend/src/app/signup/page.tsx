@@ -13,10 +13,16 @@ export default function SignupPage() {
   );
 }
 
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 function SignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/predict";
+  const sessionToken = searchParams.get("session_token") || "";
+  const defaultNext = sessionToken
+    ? `/predict/checkout?session_token=${sessionToken}`
+    : "/predict";
+  const nextPath = searchParams.get("next") || defaultNext;
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
   const [fullName, setFullName] = useState("");
@@ -26,18 +32,49 @@ function SignupContent() {
   const [error, setError] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
 
+  async function routeAfterSession(accessToken: string) {
+    if (!sessionToken) {
+      router.replace(nextPath);
+      return;
+    }
+    try {
+      const res = await fetch(`${API}/billing/create-eval-checkout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ session_token: sessionToken }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || "Failed to start checkout");
+      }
+      const payload = await res.json();
+      if (payload?.checkout_url) {
+        window.location.href = payload.checkout_url as string;
+        return;
+      }
+      throw new Error("Checkout URL missing from response");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start checkout");
+      router.replace(nextPath);
+    }
+  }
+
   useEffect(() => {
     let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
-      if (data.session) {
-        router.replace(nextPath);
+      if (data.session?.access_token) {
+        void routeAfterSession(data.session.access_token);
       }
     });
     return () => {
       mounted = false;
     };
-  }, [nextPath, router, supabase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextPath, router, supabase, sessionToken]);
 
   async function submitSignup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,8 +93,8 @@ function SignupContent() {
       });
 
       if (signUpError) throw signUpError;
-      if (data.session) {
-        router.replace(nextPath);
+      if (data.session?.access_token) {
+        await routeAfterSession(data.session.access_token);
         return;
       }
 
@@ -93,15 +130,17 @@ function SignupContent() {
           <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Create Your Account</p>
           <h1 className="display-font mt-4 text-4xl md:text-5xl">Start your recruiting workspace.</h1>
           <p className="mt-4 pl-1 text-[var(--muted)]">
-            New accounts are automatically created on the Starter (free) plan. You can upgrade later from Plans.
+            {sessionToken
+              ? "Create your account to unlock your full evaluation. You'll be taken straight to checkout."
+              : "Create an account to save your evaluations and revisit them anytime."}
           </p>
           <div className="mt-8 grid gap-4">
             <div className="glass rounded-2xl p-4">
-              <p className="text-sm font-semibold">Starter includes</p>
+              <p className="text-sm font-semibold">Your account includes</p>
               <ul className="mt-2 text-sm text-[var(--muted)]">
-                <li>• Account + evaluation history</li>
-                <li>• Plan-based monthly usage tracking</li>
-                <li>• Upgrade path anytime from the Plans page</li>
+                <li>• Save and revisit every evaluation you run</li>
+                <li>• Pay per evaluation — no subscription</li>
+                <li>• Deep roster and recruiting research on each match</li>
               </ul>
             </div>
           </div>
@@ -109,7 +148,7 @@ function SignupContent() {
 
         <div className="glass shadow-strong rounded-3xl p-8">
           <h2 className="text-xl font-semibold">Create account</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">No plan selection required at signup.</p>
+          <p className="mt-2 text-sm text-[var(--muted)]">Pay per evaluation — no subscription.</p>
           <form className="mt-6 grid gap-4" onSubmit={submitSignup}>
             <label className="grid gap-2 text-sm">
               Full name

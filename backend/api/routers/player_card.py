@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from ..clients.supabase import require_supabase_admin_client
 from ..deps.auth import AuthenticatedUser, get_current_user
-from ..services.plan_service import get_profile
+from ..services.profile_service import get_profile
 from utils.storage import signed_photo_url
 
 router = APIRouter()

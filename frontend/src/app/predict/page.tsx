@@ -25,6 +25,30 @@ type MLPrediction = {
   player_info?: Record<string, unknown>;
 };
 
+type TeaserSchool = {
+  school_name: string;
+  display_school_name?: string | null;
+  division_group?: string | null;
+  division_label?: string | null;
+  baseball_division?: number | null;
+  school_logo_image?: string | null;
+};
+
+function getNcaLogoUrl(logoKey: string | null | undefined): string | null {
+  const key = (logoKey || "").trim();
+  if (!key) return null;
+  return `https://ncaa-api.henrygd.me/logo/${encodeURIComponent(key)}.svg`;
+}
+
+function teaserDivisionLabel(school: TeaserSchool): string {
+  if (school.division_label) return school.division_label;
+  if (school.division_group?.includes("Power 4")) return "Power 4";
+  if (school.division_group?.includes("Non-P4")) return "Division 1";
+  if (school.baseball_division === 2) return "Division 2";
+  if (school.baseball_division === 3) return "Division 3";
+  return school.division_group || "";
+}
+
 // ---------------------------------------------------------------------------
 // Position helpers
 // ---------------------------------------------------------------------------
@@ -179,6 +203,7 @@ function PredictContent() {
   const [sessionToken, setSessionToken] = useState("");
   const [priceCents, setPriceCents] = useState<number | null>(null);
   const [isFirstEval, setIsFirstEval] = useState<boolean | null>(null);
+  const [teaserSchools, setTeaserSchools] = useState<TeaserSchool[]>([]);
 
   // Load profile state (only if authenticated)
   useEffect(() => {
@@ -325,7 +350,7 @@ function PredictContent() {
         headers["Authorization"] = `Bearer ${accessToken}`;
       }
 
-      const res = await fetch(`${API}/evaluate/preview`, {
+      const res = await fetch(`${API}/evaluations/preview`, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),
@@ -340,6 +365,7 @@ function PredictContent() {
       setSessionToken(result.session_token);
       setPriceCents(result.price_cents);
       setIsFirstEval(result.is_first_eval);
+      setTeaserSchools(Array.isArray(result.teaser_schools) ? result.teaser_schools : []);
 
       // Store session token in localStorage as backup
       localStorage.setItem("bp_session_token", result.session_token);
@@ -357,8 +383,13 @@ function PredictContent() {
   // ---------------------------------------------------------------------------
 
   function handlePayment() {
-    // All users (authenticated or not) go straight to checkout
-    router.push(`/predict/checkout?session_token=${sessionToken}`);
+    if (isAuthenticated) {
+      router.push(`/predict/checkout?session_token=${sessionToken}`);
+      return;
+    }
+    // Anonymous users must create an account before paying.
+    const next = `/predict/checkout?session_token=${sessionToken}`;
+    router.push(`/signup?session_token=${sessionToken}&next=${encodeURIComponent(next)}`);
   }
 
   // ---------------------------------------------------------------------------
@@ -781,19 +812,53 @@ function PredictContent() {
 
                 <div>
                   <h2 className="display-font text-2xl md:text-3xl">
-                    Your results are ready!
+                    You fit at schools like these
                   </h2>
                   <p className="mt-2 text-sm text-[var(--muted)] max-w-md mx-auto">
-                    Most players have no idea where they actually stand. 
-                    <br />
-                    Here&apos;s your honest answer, based purely on your metrics today.
+                    Unlock your full evaluation to see the complete list with deep analysis.
                   </p>
                 </div>
+
+                {/* Teaser schools */}
+                {teaserSchools.length > 0 && (
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {teaserSchools.map((school, idx) => {
+                      const logo = getNcaLogoUrl(school.school_logo_image);
+                      const displayName = school.display_school_name || school.school_name;
+                      const level = teaserDivisionLabel(school);
+                      return (
+                        <div
+                          key={`${school.school_name}-${idx}`}
+                          className="rounded-2xl border border-[var(--stroke)] bg-white/70 p-4 flex flex-col items-center text-center gap-2"
+                        >
+                          <div className="h-12 w-12 flex items-center justify-center">
+                            {logo ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={logo}
+                                alt={displayName}
+                                className="max-h-12 max-w-12 object-contain"
+                              />
+                            ) : (
+                              <div className="h-12 w-12 rounded-full bg-[var(--clay-mist)]" />
+                            )}
+                          </div>
+                          <p className="text-sm font-semibold text-[var(--foreground)] leading-tight">
+                            {displayName}
+                          </p>
+                          {level && (
+                            <p className="text-xs text-[var(--muted)]">{level}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* What's included */}
                 <div className="text-left mx-auto max-w-sm space-y-2">
                   <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)] text-center">
-                    Your evaluation includes
+                    Your full evaluation includes
                   </p>
                   {[
                     "10-15 best-fit school matches ranked for you",
@@ -813,7 +878,7 @@ function PredictContent() {
                 <div className="rounded-xl border border-[var(--stroke)] bg-[var(--clay-mist)]/50 p-4">
                   <p className="display-font text-3xl">{displayPrice}</p>
                   <p className="text-xs text-[var(--muted)] mt-1">
-                    {isAuthenticated ? "Per evaluation" : "One payment. No subscription. No ongoing relationship to protect."}
+                    {isAuthenticated ? "Per evaluation" : "One payment. No subscription."}
                   </p>
                 </div>
 
@@ -822,7 +887,7 @@ function PredictContent() {
                   onClick={handlePayment}
                   className="w-full rounded-full bg-[var(--primary)] py-3.5 text-sm font-semibold !text-white shadow-strong"
                 >
-                  {`Unlock My Results`}
+                  {isAuthenticated ? "Unlock My Results" : "Create account & unlock results"}
                 </button>
 
                 {!isAuthenticated && (

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useOptionalAuth } from "@/hooks/useOptionalAuth";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -16,6 +16,7 @@ export default function CheckoutPage() {
 
 function CheckoutContent() {
   const { loading: authLoading, accessToken, isAuthenticated } = useOptionalAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [sessionToken, setSessionToken] = useState("");
@@ -30,33 +31,24 @@ function CheckoutContent() {
 
   useEffect(() => {
     if (authLoading || !sessionToken || initiated.current) return;
+
+    // Auth is now required before checkout. Redirect anonymous users to signup.
+    if (!isAuthenticated || !accessToken) {
+      const next = `/predict/checkout?session_token=${sessionToken}`;
+      router.replace(`/signup?session_token=${sessionToken}&next=${encodeURIComponent(next)}`);
+      return;
+    }
+
     initiated.current = true;
 
     async function startCheckout() {
       try {
-        // If authenticated, claim the pending evaluation for this user
-        if (isAuthenticated && accessToken) {
-          await fetch(`${API}/evaluate/claim`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify({ session_token: sessionToken }),
-          });
-        }
-
-        // Create Stripe checkout session (auth optional)
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-        };
-        if (accessToken) {
-          headers["Authorization"] = `Bearer ${accessToken}`;
-        }
-
         const res = await fetch(`${API}/billing/create-eval-checkout`, {
           method: "POST",
-          headers,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
           body: JSON.stringify({ session_token: sessionToken }),
         });
 
@@ -77,7 +69,7 @@ function CheckoutContent() {
     }
 
     startCheckout();
-  }, [authLoading, accessToken, isAuthenticated, sessionToken]);
+  }, [authLoading, accessToken, isAuthenticated, sessionToken, router]);
 
   if (!sessionToken) {
     return (

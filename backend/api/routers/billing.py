@@ -1,27 +1,22 @@
 """
-Stripe billing integration router.
+Stripe billing integration router — per-evaluation payments only.
+
+There is a single checkout flow (`/billing/create-eval-checkout`) and the
+webhook only cares about `checkout.session.completed` for `eval_purchase`.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-import logging
-
 from ..clients.supabase import require_supabase_admin_client
-from ..deps.auth import AuthenticatedUser, get_current_user, get_optional_user
-from ..services.plan_service import (
-    PLAN_ELITE,
-    PLAN_PRO,
-    PLAN_STARTER,
-    VALID_PLAN_TIERS,
-    get_profile,
-)
+from ..deps.auth import AuthenticatedUser, get_current_user
 from ..services.pricing_service import get_eval_price
 
 logger = logging.getLogger(__name__)
@@ -51,187 +46,8 @@ def _require_stripe() -> Any:
     return stripe
 
 
-def _stripe_price_ids() -> Dict[str, str]:
-    plan_to_price = {
-        PLAN_PRO: os.getenv("STRIPE_PRICE_ID_PRO", ""),
-        PLAN_ELITE: os.getenv("STRIPE_PRICE_ID_ELITE", ""),
-    }
-    return {k: v for k, v in plan_to_price.items() if v}
-
-
-def _to_iso(ts: Optional[int]) -> Optional[str]:
-    if not ts:
-        return None
-    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
-
-
-def _get_subscription_by_user(user_id: str) -> Optional[Dict[str, Any]]:
-    supabase = require_supabase_admin_client()
-    response = (
-        supabase.table("subscriptions")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("updated_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-    if not response.data:
-        return None
-    return dict(response.data[0])
-
-
-def _get_subscription_by_customer(customer_id: str) -> Optional[Dict[str, Any]]:
-    supabase = require_supabase_admin_client()
-    response = (
-        supabase.table("subscriptions")
-        .select("*")
-        .eq("stripe_customer_id", customer_id)
-        .order("updated_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-    if not response.data:
-        return None
-    return dict(response.data[0])
-
-
-def _upsert_subscription(user_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
-    supabase = require_supabase_admin_client()
-    existing = _get_subscription_by_user(user_id)
-    if existing:
-        response = (
-            supabase.table("subscriptions")
-            .update(fields)
-            .eq("id", existing["id"])
-            .execute()
-        )
-    else:
-        payload = dict(fields)
-        payload["user_id"] = user_id
-        response = (
-            supabase.table("subscriptions")
-            .insert(payload)
-            .execute()
-        )
-    if not response.data:
-        raise HTTPException(status_code=500, detail="Failed to write subscription row")
-    return dict(response.data[0])
-
-
-def _plan_tier_from_subscription_obj(subscription: Dict[str, Any]) -> str:
-    price_id_to_plan = {v: k for k, v in _stripe_price_ids().items()}
-    items = (((subscription.get("items") or {}).get("data")) or [])
-    for item in items:
-        price = item.get("price") or {}
-        price_id = price.get("id")
-        if price_id in price_id_to_plan:
-            return price_id_to_plan[price_id]
-    return PLAN_STARTER
-
-
-def _sync_from_subscription_object(subscription: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
-    customer_id = subscription.get("customer")
-    sub_id = subscription.get("id")
-    status_value = subscription.get("status", "unknown")
-    plan_tier = _plan_tier_from_subscription_obj(subscription)
-
-    resolved_user_id = user_id
-    if not resolved_user_id and customer_id:
-        existing = _get_subscription_by_customer(str(customer_id))
-        if existing:
-            resolved_user_id = existing.get("user_id")
-
-    if not resolved_user_id:
-        metadata = subscription.get("metadata") or {}
-        resolved_user_id = metadata.get("user_id")
-
-    if not resolved_user_id:
-        raise HTTPException(status_code=400, detail="Unable to map Stripe subscription to user")
-
-    return _upsert_subscription(
-        str(resolved_user_id),
-        {
-            "plan_tier": plan_tier,
-            "status": status_value,
-            "stripe_customer_id": str(customer_id) if customer_id else None,
-            "stripe_subscription_id": str(sub_id) if sub_id else None,
-            "current_period_start": _to_iso(subscription.get("current_period_start")),
-            "current_period_end": _to_iso(subscription.get("current_period_end")),
-            "cancel_at_period_end": bool(subscription.get("cancel_at_period_end", False)),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        },
-    )
-
-
-class CreateCheckoutSessionRequest(BaseModel):
-    plan_tier: str = Field(..., description="Target plan tier: pro or elite")
-    success_url: Optional[str] = None
-    cancel_url: Optional[str] = None
-
-
-@router.post("/create-checkout-session")
-async def create_checkout_session(
-    payload: CreateCheckoutSessionRequest,
-    current_user: AuthenticatedUser = Depends(get_current_user),
-) -> Dict[str, Any]:
-    stripe_client = _require_stripe()
-    get_profile(current_user.user_id, current_user.email)
-
-    requested_tier = payload.plan_tier.lower()
-    if requested_tier not in VALID_PLAN_TIERS or requested_tier == PLAN_STARTER:
-        raise HTTPException(status_code=400, detail="plan_tier must be `pro` or `elite`")
-
-    price_ids = _stripe_price_ids()
-    price_id = price_ids.get(requested_tier)
-    if not price_id:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Stripe price id is not configured for plan `{requested_tier}`",
-        )
-
-    current_sub = _get_subscription_by_user(current_user.user_id) or {}
-    customer_id = current_sub.get("stripe_customer_id")
-    if not customer_id:
-        customer = stripe_client.Customer.create(
-            email=current_user.email,
-            metadata={"user_id": current_user.user_id},
-        )
-        customer_id = customer.get("id")
-        _upsert_subscription(
-            current_user.user_id,
-            {
-                "plan_tier": PLAN_STARTER,
-                "status": "incomplete",
-                "stripe_customer_id": customer_id,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-
-    origin = os.getenv("APP_BASE_URL", "http://localhost:3000").rstrip("/")
-    success_url = payload.success_url or f"{origin}/plans?checkout=success"
-    cancel_url = payload.cancel_url or f"{origin}/plans?checkout=cancelled"
-
-    session = stripe_client.checkout.Session.create(
-        mode="subscription",
-        customer=customer_id,
-        line_items=[{"price": price_id, "quantity": 1}],
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={
-            "user_id": current_user.user_id,
-            "plan_tier": requested_tier,
-        },
-        client_reference_id=current_user.user_id,
-    )
-    return {"checkout_url": session.url, "session_id": session.id}
-
-
-# ---------------------------------------------------------------------------
-# Per-evaluation one-time payment checkout
-# ---------------------------------------------------------------------------
-
 class CreateEvalCheckoutRequest(BaseModel):
-    session_token: str = Field(..., description="Session token from /evaluate/preview")
+    session_token: str = Field(..., description="Session token from /evaluations/preview")
     success_url: Optional[str] = None
     cancel_url: Optional[str] = None
 
@@ -239,36 +55,29 @@ class CreateEvalCheckoutRequest(BaseModel):
 @router.post("/create-eval-checkout")
 async def create_eval_checkout(
     payload: CreateEvalCheckoutRequest,
-    current_user: Optional[AuthenticatedUser] = Depends(get_optional_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Create a Stripe Checkout Session for a one-time evaluation payment. Auth optional."""
+    """Create a Stripe Checkout Session for a one-time evaluation payment. Auth required."""
     stripe_client = _require_stripe()
 
-    # Determine price: if authenticated, check purchase history; otherwise first-eval price
-    if current_user:
-        pricing = get_eval_price(current_user.user_id)
-        price_cents = pricing["price_cents"]
-        is_first = pricing["is_first_eval"]
-        user_id = current_user.user_id
-        customer_email = current_user.email
-    else:
-        from ..services.pricing_service import FIRST_EVAL_PRICE_CENTS
-        price_cents = FIRST_EVAL_PRICE_CENTS
-        is_first = True
-        user_id = None
-        customer_email = None  # Stripe will collect email on checkout page
+    pricing = get_eval_price(current_user.user_id)
+    price_cents = pricing["price_cents"]
+    is_first = pricing["is_first_eval"]
 
-    # Create eval_purchases row (status=pending, user_id may be NULL)
     supabase = require_supabase_admin_client()
-    purchase_insert = {
-        "amount_cents": price_cents,
-        "currency": "usd",
-        "status": "pending",
-        "is_first_eval": is_first,
-    }
-    if user_id:
-        purchase_insert["user_id"] = user_id
-    purchase_result = supabase.table("eval_purchases").insert(purchase_insert).execute()
+    purchase_result = (
+        supabase.table("eval_purchases")
+        .insert(
+            {
+                "user_id": current_user.user_id,
+                "amount_cents": price_cents,
+                "currency": "usd",
+                "status": "pending",
+                "is_first_eval": is_first,
+            }
+        )
+        .execute()
+    )
     if not purchase_result.data:
         raise HTTPException(status_code=500, detail="Failed to create purchase record")
     purchase_id = purchase_result.data[0]["id"]
@@ -282,64 +91,42 @@ async def create_eval_checkout(
 
     label = "BaseballPath Evaluation (First)" if is_first else "BaseballPath Evaluation"
 
-    checkout_kwargs: Dict[str, Any] = {
-        "mode": "payment",
-        "line_items": [{
-            "price_data": {
-                "currency": "usd",
-                "unit_amount": price_cents,
-                "product_data": {"name": label},
-            },
-            "quantity": 1,
-        }],
-        "success_url": success_url,
-        "cancel_url": cancel_url,
-        "metadata": {
+    session = stripe_client.checkout.Session.create(
+        mode="payment",
+        line_items=[
+            {
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": price_cents,
+                    "product_data": {"name": label},
+                },
+                "quantity": 1,
+            }
+        ],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        customer_email=current_user.email,
+        client_reference_id=current_user.user_id,
+        metadata={
             "purchase_id": purchase_id,
             "session_token": payload.session_token,
             "payment_type": "eval_purchase",
+            "user_id": current_user.user_id,
         },
-    }
-    if customer_email:
-        checkout_kwargs["customer_email"] = customer_email
-    if user_id:
-        checkout_kwargs["metadata"]["user_id"] = user_id
-        checkout_kwargs["client_reference_id"] = user_id
+    )
 
-    session = stripe_client.checkout.Session.create(**checkout_kwargs)
-
-    # Store Stripe session ID on the purchase row
-    supabase.table("eval_purchases").update({
-        "stripe_checkout_session_id": session.id,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", purchase_id).execute()
+    supabase.table("eval_purchases").update(
+        {
+            "stripe_checkout_session_id": session.id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", purchase_id).execute()
 
     return {
         "checkout_url": session.url,
         "session_id": session.id,
         "purchase_id": purchase_id,
     }
-
-
-# ---------------------------------------------------------------------------
-# Legacy subscription checkout & portal
-# ---------------------------------------------------------------------------
-
-@router.post("/create-portal-session")
-async def create_portal_session(
-    current_user: AuthenticatedUser = Depends(get_current_user),
-) -> Dict[str, Any]:
-    stripe_client = _require_stripe()
-    sub = _get_subscription_by_user(current_user.user_id)
-    if not sub or not sub.get("stripe_customer_id"):
-        raise HTTPException(status_code=404, detail="No Stripe customer is linked to this account")
-
-    origin = os.getenv("APP_BASE_URL", "http://localhost:3000").rstrip("/")
-    session = stripe_client.billing_portal.Session.create(
-        customer=sub["stripe_customer_id"],
-        return_url=f"{origin}/plans",
-    )
-    return {"portal_url": session.url}
 
 
 @router.post("/webhook")
@@ -364,39 +151,24 @@ async def billing_webhook(request: Request) -> Dict[str, Any]:
 
     if event_type == "checkout.session.completed":
         metadata = event_data.get("metadata") or {}
-        payment_type = metadata.get("payment_type")
+        if metadata.get("payment_type") != "eval_purchase":
+            return {"received": True, "ignored": True}
 
-        if payment_type == "eval_purchase":
-            # --- Per-evaluation one-time payment ---
-            purchase_id = metadata.get("purchase_id")
-            if purchase_id:
-                supabase = require_supabase_admin_client()
-                payment_intent_id = event_data.get("payment_intent")
-                supabase.table("eval_purchases").update({
-                    "status": "completed",
-                    "stripe_payment_intent_id": str(payment_intent_id) if payment_intent_id else None,
-                    "stripe_checkout_session_id": event_data.get("id"),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }).eq("id", purchase_id).execute()
-                logger.info(f"Eval purchase {purchase_id} marked completed")
-        else:
-            # --- Legacy subscription checkout ---
-            user_id = metadata.get("user_id") or event_data.get("client_reference_id")
-            subscription_id = event_data.get("subscription")
-            customer_id = event_data.get("customer")
-            if subscription_id:
-                subscription = stripe_client.Subscription.retrieve(subscription_id)
-                _sync_from_subscription_object(subscription, user_id=user_id)
-            elif user_id:
-                _upsert_subscription(
-                    str(user_id),
-                    {
-                        "status": "active",
-                        "stripe_customer_id": str(customer_id) if customer_id else None,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
-    elif event_type in {"customer.subscription.updated", "customer.subscription.deleted"}:
-        _sync_from_subscription_object(event_data)
+        purchase_id = metadata.get("purchase_id")
+        if not purchase_id:
+            logger.warning("checkout.session.completed missing purchase_id in metadata")
+            return {"received": True}
+
+        supabase = require_supabase_admin_client()
+        payment_intent_id = event_data.get("payment_intent")
+        supabase.table("eval_purchases").update(
+            {
+                "status": "completed",
+                "stripe_payment_intent_id": str(payment_intent_id) if payment_intent_id else None,
+                "stripe_checkout_session_id": event_data.get("id"),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", purchase_id).execute()
+        logger.info("Eval purchase %s marked completed", purchase_id)
 
     return {"received": True}

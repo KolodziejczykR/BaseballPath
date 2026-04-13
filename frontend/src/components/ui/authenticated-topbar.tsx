@@ -12,14 +12,11 @@ type AccountMeResponse = {
   profile?: {
     full_name?: string | null;
   };
-  plan?: {
-    tier?: string;
-    remaining_evals?: number | null;
-    monthly_eval_limit?: number | null;
-  };
-  usage?: {
-    eval_count?: number;
-  };
+};
+
+type EvaluationsListResponse = {
+  items?: unknown[];
+  total?: number | null;
 };
 
 type AuthenticatedTopBarProps = {
@@ -33,23 +30,36 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [menuOpen, setMenuOpen] = useState(false);
   const [account, setAccount] = useState<AccountMeResponse | null>(null);
+  const [hasPastEvals, setHasPastEvals] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    async function loadAccount() {
-      const response = await fetch(`${API_BASE_URL}/account/me`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      if (!response.ok) return;
-      const data = (await response.json()) as AccountMeResponse;
-      if (!mounted) return;
-      setAccount(data);
+    async function load() {
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      };
+      const [accountResp, runsResp] = await Promise.all([
+        fetch(`${API_BASE_URL}/account/me`, { headers }),
+        fetch(`${API_BASE_URL}/evaluations?limit=1`, { headers }),
+      ]);
+      if (accountResp.ok) {
+        const data = (await accountResp.json()) as AccountMeResponse;
+        if (mounted) setAccount(data);
+      }
+      if (runsResp.ok) {
+        const data = (await runsResp.json()) as EvaluationsListResponse;
+        const count =
+          typeof data.total === "number"
+            ? data.total
+            : Array.isArray(data.items)
+              ? data.items.length
+              : 0;
+        if (mounted) setHasPastEvals(count > 0);
+      }
     }
-    loadAccount();
+    load();
     return () => {
       mounted = false;
     };
@@ -67,7 +77,6 @@ export function AuthenticatedTopBar({ accessToken, userEmail }: AuthenticatedTop
   }, [menuOpen]);
 
   const fullName = account?.profile?.full_name || "";
-  const hasPastEvals = (account?.usage?.eval_count ?? 0) > 0;
   const displayEmail = userEmail || "Signed in";
   const avatarLabel = (fullName || displayEmail || "U").trim().charAt(0).toUpperCase();
 

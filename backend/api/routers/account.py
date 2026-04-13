@@ -10,13 +10,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from ..deps.auth import AuthenticatedUser, get_current_user
-from ..services.plan_service import (
-    get_effective_plan,
-    get_monthly_usage,
-    get_profile,
-    remaining_evaluations,
-    update_profile,
-)
+from ..services.profile_service import get_profile, update_profile
 
 router = APIRouter()
 
@@ -28,30 +22,14 @@ class ProfilePatchRequest(BaseModel):
     primary_position: Optional[str] = Field(default=None, max_length=10)
 
 
-def _build_account_response(profile: Dict[str, Any], user_id: str) -> Dict[str, Any]:
-    effective_plan = get_effective_plan(user_id)
-    usage = get_monthly_usage(user_id)
-    return {
-        "profile": profile,
-        "plan": {
-            "tier": effective_plan.plan_tier,
-            "status": effective_plan.status,
-            "monthly_eval_limit": effective_plan.monthly_eval_limit,
-            "llm_enabled": effective_plan.llm_enabled,
-            "remaining_evals": remaining_evaluations(effective_plan, usage),
-        },
-        "usage": {
-            "period_start": usage.period_start.isoformat(),
-            "eval_count": usage.eval_count,
-            "llm_count": usage.llm_count,
-        },
-    }
+def _build_account_response(profile: Dict[str, Any]) -> Dict[str, Any]:
+    return {"profile": profile}
 
 
 @router.get("/me")
 async def get_me(current_user: AuthenticatedUser = Depends(get_current_user)) -> Dict[str, Any]:
     profile = get_profile(current_user.user_id, current_user.email)
-    return _build_account_response(profile, current_user.user_id)
+    return _build_account_response(profile)
 
 
 @router.patch("/me")
@@ -68,4 +46,4 @@ async def patch_me(
         profile = update_profile(current_user.user_id, updates)
     else:
         profile = get_profile(current_user.user_id, current_user.email)
-    return _build_account_response(profile, current_user.user_id)
+    return _build_account_response(profile)

@@ -20,5 +20,5 @@
 - protected pages:
   - `src/app/predict/page.tsx`
   - `src/app/dashboard/page.tsx`
-  - `src/app/plans/page.tsx`
+  - `src/app/account/page.tsx`
 

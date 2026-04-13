@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
@@ -11,14 +11,6 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
  * newly authenticated user, then redirects to the full evaluation detail page.
  */
 export default function ClaimResultsPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen px-6 py-16" />}>
-      <ClaimResultsContent />
-    </Suspense>
-  );
-}
-
-function ClaimResultsContent() {
   const { loading: authLoading, accessToken } = useRequireAuth("/predict/claim-results");
   const router = useRouter();
   const searchParams = useSearchParams();

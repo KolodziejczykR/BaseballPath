@@ -1,11 +1,11 @@
 from types import SimpleNamespace
 
-from fastapi import HTTPException
+import pytest
 
-from backend.api.routers.evaluate import (
+from backend.api.services.evaluation_service import (
+    LegacyPositionTrackConstraintError,
     _insert_prediction_run,
     _is_prediction_runs_position_track_constraint_error,
-    _position_endpoint,
 )
 
 
@@ -20,7 +20,9 @@ class _FakeInsert:
             self._supabase.fail_first_catcher_insert
             and self._payload.get("position_track") == "catcher"
         ):
-            raise Exception('{"message":"violates check constraint prediction_runs_position_track_check"}')
+            raise Exception(
+                '{"message":"violates check constraint prediction_runs_position_track_check"}'
+            )
         return SimpleNamespace(data=[{"id": "run-1"}])
 
 
@@ -48,16 +50,14 @@ def test_detects_position_track_constraint_error():
     assert _is_prediction_runs_position_track_constraint_error(Exception("different error")) is False
 
 
-def test_insert_raises_clean_http_error_for_legacy_position_track_constraint():
+def test_insert_raises_legacy_constraint_error_for_catcher():
     supabase = _FakeSupabase(fail_first_catcher_insert=True)
     payload = {"position_track": "catcher", "stats_input": {}}
 
-    try:
+    with pytest.raises(LegacyPositionTrackConstraintError) as exc:
         _insert_prediction_run(supabase, payload)
-        assert False, "Expected HTTPException for legacy schema mismatch"
-    except HTTPException as exc:
-        assert exc.status_code == 500
-        assert "20260327_prediction_runs_add_catcher.sql" in str(exc.detail)
+
+    assert "20260327_prediction_runs_add_catcher.sql" in str(exc.value)
     assert len(supabase.calls) == 1
     assert supabase.calls[0]["position_track"] == "catcher"
 
@@ -71,11 +71,3 @@ def test_insert_succeeds_without_retry_when_constraint_is_not_hit():
     assert response.data == [{"id": "run-1"}]
     assert len(supabase.calls) == 1
     assert supabase.calls[0]["position_track"] == "outfielder"
-
-
-def test_position_endpoint_handles_catcher_aliases_and_known_tracks():
-    assert _position_endpoint("C") == "catcher"
-    assert _position_endpoint("catcher") == "catcher"
-    assert _position_endpoint("OF") == "outfielder"
-    assert _position_endpoint("rhp") == "pitcher"
-    assert _position_endpoint("SS") == "infielder"

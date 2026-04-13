@@ -13,14 +13,6 @@ type AccountResponse = {
     grad_year?: number | null;
     primary_position?: string | null;
   };
-  plan?: {
-    tier?: string;
-    remaining_evals?: number | null;
-    monthly_eval_limit?: number | null;
-  };
-  usage?: {
-    eval_count?: number;
-  };
 };
 
 type EvaluationRecord = {
@@ -34,6 +26,7 @@ type EvaluationRecord = {
 
 type EvaluationListResponse = {
   items: EvaluationRecord[];
+  total?: number | null;
 };
 
 type GoalSummary = {
@@ -101,6 +94,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [account, setAccount] = useState<AccountResponse | null>(null);
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>([]);
+  const [totalEvals, setTotalEvals] = useState(0);
   const [goals, setGoals] = useState<GoalSummary[]>([]);
   const [savedSchools, setSavedSchools] = useState<SavedSchoolRecord[]>([]);
 
@@ -160,7 +154,11 @@ export default function DashboardPage() {
 
         if (!mounted) return;
         setAccount(accountData as AccountResponse);
-        setEvaluations(((evaluationsData as EvaluationListResponse).items || []) as EvaluationRecord[]);
+        const evalList = evaluationsData as EvaluationListResponse;
+        setEvaluations((evalList.items || []) as EvaluationRecord[]);
+        setTotalEvals(
+          typeof evalList.total === "number" ? evalList.total : (evalList.items || []).length,
+        );
         setGoals((goalsData as GoalsListResponse).items || []);
         setSavedSchools((savedSchoolsData as SavedSchoolsResponse).items || []);
       } catch (loadError) {
@@ -272,7 +270,7 @@ export default function DashboardPage() {
                 <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Past evaluations</p>
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">
-                    {account?.usage?.eval_count ?? 0} this month
+                    {totalEvals} total
                   </span>
                   <Link
                     href="/evaluations"

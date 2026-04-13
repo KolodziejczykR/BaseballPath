@@ -86,8 +86,8 @@ function LoginContent() {
               <p className="text-sm font-semibold">What you get</p>
               <ul className="mt-2 text-sm text-[var(--muted)]">
                 <li>• Saved evaluations and fit history</li>
-                <li>• Plan-based monthly quotas and upgrade path</li>
-                <li>• Stripe-powered subscription management</li>
+                <li>• Pay per evaluation — no subscription</li>
+                <li>• Deep roster and recruiting research on each match</li>
               </ul>
             </div>
           </div>

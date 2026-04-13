@@ -2,26 +2,35 @@
 
 This directory contains reusable business logic that routers call.
 
-## `plan_service.py`
+## `profile_service.py`
 
-Responsibilities:
-- Ensure profile exists.
-- Resolve effective user plan from subscription state.
-- Read and increment monthly usage counters.
-- Enforce quota limits for evaluations.
-- Compute remaining evaluations for UI/API responses.
+Profile row helpers for `public.profiles`.
 
-Core constants:
-- `PLAN_STARTER`, `PLAN_PRO`, `PLAN_ELITE`
-- `PLAN_EVAL_LIMITS`
-- `PLAN_LLM_ENABLED`
+- `ensure_profile_exists(user_id, email=None)`
+- `get_profile(user_id, email=None)` — alias used by routers
+- `update_profile(user_id, updates)`
 
-Important helper functions:
-- `get_effective_plan(user_id)`
-- `get_monthly_usage(user_id, period_start=None)`
-- `increment_usage(user_id, evaluation_increment=0, llm_increment=0)`
-- `enforce_evaluation_quota(user_id, effective_plan)`
+## `evaluation_service.py`
 
-For plan/price/tier change instructions, read:
-- `PAYMENT_PLANS.md`
+Orchestration for the preview → finalize evaluation pipeline.
 
+- `run_preview_core(...)` — academic + baseball scoring + school matching
+- `build_teaser(core)` — 3 randomly-selected schools from the top 10 for the
+  unpaid teaser card
+- `store_pending_evaluation(...)` — inserts into `pending_evaluations`
+- `finalize_paid_evaluation(user_id, session_token, purchase_id)` — verifies
+  purchase, re-runs matching over the consideration pool, persists a
+  `prediction_runs` row
+- `list_runs` / `get_run` / `delete_run` / `delete_all_runs` — per-user CRUD
+- `get_public_result(...)` — token-gated public poll for the results page
+
+## `llm_insight_service.py`
+
+Wraps the synchronous summary LLM call and the Celery deep-research enqueue.
+
+- `apply_basic_school_insights(...)`
+- `enqueue_deep_school_research(...)`
+
+## `pricing_service.py`
+
+First-eval vs. subsequent-eval price lookup.

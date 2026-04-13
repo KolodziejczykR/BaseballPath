@@ -14,17 +14,11 @@ type AccountResponse = {
     grad_year?: number | null;
     primary_position?: string | null;
   };
-  plan?: {
-    tier?: string;
-    status?: string;
-    remaining_evals?: number | null;
-    monthly_eval_limit?: number | null;
-    llm_enabled?: boolean;
-  };
-  usage?: {
-    period_start?: string;
-    eval_count?: number;
-  };
+};
+
+type EvaluationsListResponse = {
+  items?: unknown[];
+  total?: number | null;
 };
 
 type ProfileFormState = {
@@ -43,7 +37,7 @@ export default function AccountPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [account, setAccount] = useState<AccountResponse | null>(null);
+  const [totalEvals, setTotalEvals] = useState(0);
   const [profileForm, setProfileForm] = useState<ProfileFormState>({
     full_name: "",
     state: "",
@@ -60,14 +54,23 @@ export default function AccountPage() {
       setError("");
 
       try {
-        const response = await fetch(`${API_BASE_URL}/account/me`, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-        const data = (await response.json()) as AccountResponse | { detail?: string };
-        if (!response.ok) {
+        const [accountResp, runsResp] = await Promise.all([
+          fetch(`${API_BASE_URL}/account/me`, {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }),
+          fetch(`${API_BASE_URL}/evaluations?limit=1`, {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }),
+        ]);
+
+        const data = (await accountResp.json()) as AccountResponse | { detail?: string };
+        if (!accountResp.ok) {
           throw new Error(
             typeof data === "object" && data && "detail" in data
               ? data.detail || "Unable to load account."
@@ -76,13 +79,23 @@ export default function AccountPage() {
         }
         if (!mounted) return;
         const typedData = data as AccountResponse;
-        setAccount(typedData);
         setProfileForm({
           full_name: typedData.profile?.full_name || "",
           state: typedData.profile?.state || "",
           grad_year: typedData.profile?.grad_year ? String(typedData.profile.grad_year) : "",
           primary_position: typedData.profile?.primary_position || "",
         });
+
+        if (runsResp.ok) {
+          const runsData = (await runsResp.json()) as EvaluationsListResponse;
+          const count =
+            typeof runsData.total === "number"
+              ? runsData.total
+              : Array.isArray(runsData.items)
+                ? runsData.items.length
+                : 0;
+          setTotalEvals(count);
+        }
       } catch (loadError) {
         if (!mounted) return;
         setError(loadError instanceof Error ? loadError.message : "Unable to load account.");
@@ -131,7 +144,12 @@ export default function AccountPage() {
         );
       }
       const typedData = data as AccountResponse;
-      setAccount(typedData);
+      setProfileForm({
+        full_name: typedData.profile?.full_name || "",
+        state: typedData.profile?.state || "",
+        grad_year: typedData.profile?.grad_year ? String(typedData.profile.grad_year) : "",
+        primary_position: typedData.profile?.primary_position || "",
+      });
       setNotice("Profile saved.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save profile.");
@@ -149,8 +167,6 @@ export default function AccountPage() {
       </div>
     );
   }
-
-  const totalEvals = account?.usage?.eval_count ?? 0;
 
   return (
     <div className="min-h-screen">
@@ -258,7 +274,7 @@ export default function AccountPage() {
               <p className="mt-4 text-sm text-[var(--muted)]">
                 {totalEvals === 0
                   ? "Run your first evaluation to get matched with the best college programs for your profile."
-                  : "Next evaluation: $29 per report."}
+                  : "Run another evaluation anytime — each one is priced per report."}
               </p>
               <Link href="/predict" className="mt-5 inline-flex text-sm font-semibold text-[var(--primary)]">
                 {totalEvals === 0 ? "Start your first evaluation" : "Run another evaluation"}
