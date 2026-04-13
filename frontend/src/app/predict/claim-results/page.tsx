@@ -1,16 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-/**
- * Thin redirect page: after signup, claims the anonymous evaluation for the
- * newly authenticated user, then redirects to the full evaluation detail page.
- */
-export default function ClaimResultsPage() {
+function ClaimResultsContent() {
   const { loading: authLoading, accessToken } = useRequireAuth("/predict/claim-results");
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -93,5 +89,22 @@ export default function ClaimResultsPage() {
         <p className="text-sm text-[var(--muted)]">Saving your results to your account...</p>
       </div>
     </div>
+  );
+}
+
+export default function ClaimResultsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen px-6 py-16">
+          <div className="mx-auto max-w-md rounded-3xl border border-[var(--stroke)] bg-white/80 p-8 text-center space-y-4">
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+            <p className="text-sm text-[var(--muted)]">Loading...</p>
+          </div>
+        </div>
+      }
+    >
+      <ClaimResultsContent />
+    </Suspense>
   );
 }

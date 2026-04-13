@@ -12,8 +12,8 @@ if project_root not in sys.path:
 
 load_dotenv()
 
-MODEL_DIR_D1 = os.path.join(project_root, os.getenv('C_MODEL_DIR_D1'))
-MODEL_DIR_P4 = os.path.join(project_root, os.getenv('C_MODEL_DIR_P4'))
+MODEL_DIR_D1 = os.path.join(project_root, os.getenv('C_MODEL_DIR_D1', 'backend/ml/models/models_c/models_d1_or_not_c/version_08182025'))
+MODEL_DIR_P4 = os.path.join(project_root, os.getenv('C_MODEL_DIR_P4', 'backend/ml/models/models_c/models_p4_or_not_c/version_08202025'))
 
 from backend.utils.player_types import PlayerCatcher
 from backend.utils.prediction_types import MLPipelineResults
