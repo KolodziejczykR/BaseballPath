@@ -24,6 +24,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
+          pip install pytest pytest-asyncio
 
       - name: Run pytest
         env:
@@ -58,4 +59,8 @@ jobs:
         run: npm run lint
 
       - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://dummy.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy_anon_key
+          NEXT_PUBLIC_API_URL: http://localhost:8000
         run: npm run build

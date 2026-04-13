@@ -214,7 +214,6 @@ def compute_evidence(
     )
 
     remaining_family = [m for m in same_family if not _will_depart(m)]
-    remaining_exact = [m for m in same_exact if not _will_depart(m)]
 
     def _projected_year(m: MatchedPlayer) -> int:
         return (m.player.normalized_class_year or 0) + years_out
