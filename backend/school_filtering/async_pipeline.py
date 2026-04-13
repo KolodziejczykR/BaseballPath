@@ -317,7 +317,3 @@ class AsyncSchoolFilteringPipeline:
         if self.db_queries:
             await self.db_queries.close()
         logger.info("Async pipeline closed")
-
-
-# Global instance for dependency injection
-async_pipeline = AsyncSchoolFilteringPipeline()

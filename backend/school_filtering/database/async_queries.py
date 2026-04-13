@@ -706,7 +706,3 @@ class AsyncSchoolDataQueries:
         """Clean up database connections"""
         if self.connection:
             await self.connection.close()
-
-
-# Global instance for dependency injection
-async_school_queries = AsyncSchoolDataQueries()

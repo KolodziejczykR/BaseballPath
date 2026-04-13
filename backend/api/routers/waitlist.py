@@ -3,26 +3,14 @@ Waitlist API Router for BaseballPath
 Supports the current waitlist flow: simple join + health check.
 """
 
-import os
 from typing import Optional
 
-from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
-from supabase import Client, create_client
 
-load_dotenv()
+from ..clients.supabase import require_supabase_admin_client
 
 router = APIRouter()
-
-# Initialize Supabase client with service role key
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_service_key = os.getenv("SUPABASE_SERVICE_KEY")
-
-if not supabase_url or not supabase_service_key:
-    raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
-
-supabase: Client = create_client(supabase_url, supabase_service_key)
 
 
 class SimpleWaitlistEntry(BaseModel):
@@ -51,6 +39,7 @@ async def join_waitlist(entry: SimpleWaitlistEntry) -> WaitlistResponse:
     `raffle_entries` columns.
     """
     try:
+        supabase = require_supabase_admin_client()
         check_response = (
             supabase.table("waitlist")
             .select("email")
