@@ -7,6 +7,7 @@ import json
 import os
 import hashlib
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict
 
@@ -208,6 +209,11 @@ def generate_deep_school_research(payload: Dict[str, Any]) -> Dict[str, Any]:
         ).eq("id", run_id).execute()
         return {"status": "skipped", "run_id": run_id}
 
+    t_task_start = time.monotonic()
+    logger.info(
+        "[TIMING] deep_school_task start run_id=%s schools=%d final_limit=%s",
+        run_id, len(schools), final_limit,
+    )
     try:
         enriched_schools = asyncio.run(
             service.enrich_and_rerank(
@@ -218,6 +224,10 @@ def generate_deep_school_research(payload: Dict[str, Any]) -> Dict[str, Any]:
                 final_limit=final_limit,
                 ranking_priority=ranking_priority,
             )
+        )
+        logger.info(
+            "[TIMING] deep_school_task enrich_done run_id=%s elapsed=%.2fs",
+            run_id, time.monotonic() - t_task_start,
         )
 
         current_run = (
@@ -254,6 +264,10 @@ def generate_deep_school_research(payload: Dict[str, Any]) -> Dict[str, Any]:
             }
         ).eq("id", run_id).execute()
 
+        logger.info(
+            "[TIMING] deep_school_task done run_id=%s status=%s total=%.2fs",
+            run_id, llm_status, time.monotonic() - t_task_start,
+        )
         return {
             "status": llm_status,
             "run_id": run_id,

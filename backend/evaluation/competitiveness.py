@@ -47,9 +47,9 @@ SCI_METRIC_KEYS: Tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 TIER_PCI_BANDS: Dict[str, Tuple[float, float]] = {
-    POWER_4_D1: (65.0, 100.0),
-    NON_P4_D1: (30.0, 72.0),
-    NON_D1: (0.0, 40.0),
+    POWER_4_D1: (69.0, 100.0),
+    NON_P4_D1: (35.0, 88.0),
+    NON_D1: (0.0, 45.0),
 }
 
 BENCHMARK_ANCHORS: Dict[str, float] = {
@@ -162,6 +162,32 @@ def normalize_predicted_tier(value: Any) -> str:
     if "non-d1" in lowered or "non d1" in lowered or lowered in {"d2", "d3"}:
         return NON_D1
     return str(value).strip()
+
+
+def effective_tier(
+    predicted_tier: Any,
+    d1_probability: Optional[float],
+    p4_probability: Optional[float],
+    *,
+    p4_floor: float = 0.55,
+    d1_floor: float = 0.50,
+) -> str:
+    """Demote a ML-predicted tier when the underlying probabilities don't back it.
+
+    The ML pipeline can return ``Power 4 D1`` at ``p4_probability`` well below
+    0.5 (the per-position P4 model uses an elite-feature override threshold).
+    For downstream matching, treating a <50% P4 call as a hard P4 classification
+    puts the player in the wrong tier band and inflates their PCI by ~15 points.
+
+    This helper only ever demotes — never promotes — so it is safe to apply
+    unconditionally at consumer call sites.
+    """
+    tier = normalize_predicted_tier(predicted_tier)
+    if tier == POWER_4_D1 and (p4_probability is None or float(p4_probability) < p4_floor):
+        tier = NON_P4_D1
+    if tier == NON_P4_D1 and (d1_probability is None or float(d1_probability) < d1_floor):
+        tier = NON_D1
+    return tier
 
 
 def normalize_hitter_position(value: Any) -> str:
@@ -392,9 +418,10 @@ def ml_based_pci(
     elif tier == NON_P4_D1 and d1_prob is not None:
         base += (float(d1_prob) - 0.65) * 6.0
     elif tier == NON_D1 and d1_prob is not None:
-        # Non-D1 players still get a light adjustment for how close they are
-        # to the D1 cutoff, but the effect is intentionally small.
-        base += (float(d1_prob) - 0.25) * 4.0
+        # Within the Non-D1 tier, d1_prob carries the cross-tier "how close to
+        # D1 are they" signal. A stronger slope lets high-d1_prob Non-D1
+        # players reach top-D3 SCIs without pulling in tier-agnostic metrics.
+        base += (float(d1_prob) - 0.15) * 25.0
 
     return _clamp(base, 0.0, 100.0)
 
@@ -675,10 +702,15 @@ def benchmark_pci(
     )
 
 
-def final_pci(ml_pci: float, benchmark_pci_value: Optional[float]) -> float:
-    if benchmark_pci_value is None:
-        return _clamp(float(ml_pci), 0.0, 100.0)
-    return _clamp((0.60 * float(ml_pci)) + (0.40 * float(benchmark_pci_value)), 0.0, 100.0)
+def final_pci(ml_pci: float) -> float:
+    """Final PCI is the tier-aware ml_pci.
+
+    The legacy blend with a tier-agnostic benchmark_pci was dropped because a
+    single elite metric (e.g. a fast 60-time) could hijack the benchmark and
+    pull a Non-D1 player into top-D3 Fit territory. Cross-tier awareness now
+    lives in ``ml_based_pci`` via the d1_prob / p4_prob nudge.
+    """
+    return _clamp(float(ml_pci), 0.0, 100.0)
 
 
 def compute_fit_delta(player_pci: float, school_sci: float) -> float:

@@ -55,7 +55,6 @@ def _core_with_schools(n: int) -> CoreEvaluation:
         player_percentile=72.0,
         player_pci=68.0,
         ml_pci=64.0,
-        benchmark_pci=60.0,
         is_pitcher=False,
         ranked_schools=schools,
     )
@@ -146,7 +145,6 @@ def test_baseball_assessment_shape():
         "within_tier_percentile": 72.0,
         "player_competitiveness_index": 68.0,
         "ml_pci": 64.0,
-        "benchmark_pci": 60.0,
         "d1_probability": 0.81,
         "p4_probability": 0.45,
     }
@@ -349,7 +347,6 @@ def _pending_row() -> Dict[str, Any]:
                 "within_tier_percentile": 72.0,
                 "player_competitiveness_index": 68.0,
                 "ml_pci": 64.0,
-                "benchmark_pci": 60.0,
                 "d1_probability": 0.81,
                 "p4_probability": 0.45,
             },

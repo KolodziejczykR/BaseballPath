@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import httpx
@@ -57,18 +58,26 @@ async def fetch_and_parse_roster(
         )
 
     school_name = school.get("display_school_name") or school.get("school_name") or "Unknown"
+    t_start = time.monotonic()
     try:
         async with make_httpx_client() as client:
             resp = await client.get(roster_url)
             resp.raise_for_status()
     except Exception as exc:
-        logger.info("Roster page fetch failed for %s (%s): %s", school_name, roster_url, exc)
+        logger.info(
+            "[TIMING] roster_fetch school=%r status=failed elapsed=%.2fs err=%s",
+            school_name, time.monotonic() - t_start, exc,
+        )
         return [], roster_url
+    t_fetched = time.monotonic()
 
     soup = clean_soup(resp.text)
     players = parse_roster_players(soup)
+    t_parsed = time.monotonic()
     logger.info(
-        "Parsed %d players from roster for %s (%s)", len(players), school_name, roster_url,
+        "[TIMING] roster_fetch school=%r status=ok players=%d http=%.2fs parse=%.2fs total=%.2fs",
+        school_name, len(players),
+        t_fetched - t_start, t_parsed - t_fetched, t_parsed - t_start,
     )
     return players, roster_url
 
@@ -87,23 +96,30 @@ async def fetch_and_parse_stats(school: Dict[str, Any]) -> List[ParsedStatLine]:
     stats_url = roster_url.replace("/roster", "/stats")
     school_name = school.get("display_school_name") or school.get("school_name") or "Unknown"
 
+    t_start = time.monotonic()
     async with make_httpx_client() as client:
         for attempt in range(2):
             try:
                 resp = await client.get(stats_url)
                 if resp.status_code == 404:
-                    logger.info("Stats page 404 for %s, skipping", school_name)
+                    logger.info(
+                        "[TIMING] stats_fetch school=%r status=404 elapsed=%.2fs",
+                        school_name, time.monotonic() - t_start,
+                    )
                     return []
                 resp.raise_for_status()
             except Exception as exc:
                 if attempt == 0:
                     logger.info(
-                        "Stats fetch attempt 1 failed for %s (%s): %s — retrying in 10s",
-                        school_name, stats_url, exc,
+                        "[TIMING] stats_fetch school=%r attempt=1 status=err elapsed=%.2fs err=%s — sleeping 4s",
+                        school_name, time.monotonic() - t_start, exc,
                     )
-                    await asyncio.sleep(10.0)
+                    await asyncio.sleep(4.0)
                     continue
-                logger.info("Stats fetch failed for %s after retry: %s", school_name, exc)
+                logger.info(
+                    "[TIMING] stats_fetch school=%r status=failed elapsed=%.2fs err=%s",
+                    school_name, time.monotonic() - t_start, exc,
+                )
                 return []
 
             soup = clean_soup(resp.text)
@@ -111,20 +127,23 @@ async def fetch_and_parse_stats(school: Dict[str, Any]) -> List[ParsedStatLine]:
 
             if records:
                 logger.info(
-                    "Parsed %d stat lines for %s from %s",
-                    len(records), school_name, stats_url,
+                    "[TIMING] stats_fetch school=%r status=ok records=%d elapsed=%.2fs",
+                    school_name, len(records), time.monotonic() - t_start,
                 )
                 return records
 
             if attempt == 0:
                 logger.info(
-                    "Stats page for %s had no stat tables on attempt 1 — retrying in 10s",
-                    school_name,
+                    "[TIMING] stats_fetch school=%r attempt=1 status=empty_tables elapsed=%.2fs — sleeping 4s",
+                    school_name, time.monotonic() - t_start,
                 )
-                await asyncio.sleep(10.0)
+                await asyncio.sleep(4.0)
                 continue
 
-            logger.info("Stats page for %s had no usable stat tables after retry", school_name)
+            logger.info(
+                "[TIMING] stats_fetch school=%r status=no_tables elapsed=%.2fs",
+                school_name, time.monotonic() - t_start,
+            )
             return []
 
     return []
@@ -138,9 +157,15 @@ async def gather_evidence(
     """Gather evidence deterministically: fetch, parse, match, compute."""
     school_name = school.get("display_school_name") or school.get("school_name") or "Unknown School"
 
+    t_gather_start = time.monotonic()
     roster_coro = fetch_and_parse_roster(school)
     stats_coro = fetch_and_parse_stats(school)
     (players, roster_url), stats = await asyncio.gather(roster_coro, stats_coro)
+    t_gather_done = time.monotonic()
+    logger.info(
+        "[TIMING] gather_evidence_io school=%r elapsed=%.2fs",
+        school_name, t_gather_done - t_gather_start,
+    )
 
     if not players:
         logger.info("No players parsed for %s — returning empty evidence", school_name)

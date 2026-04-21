@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import httpx
@@ -63,8 +64,8 @@ class DeepSchoolInsightService:
     def __init__(
         self,
         client: Optional[AsyncOpenAI] = None,
-        initial_batch_size: int = 1,
-        batch_size: int = 1,
+        initial_batch_size: int = 10,
+        batch_size: int = 10,
         max_schools: Optional[int] = None,
         llm_timeout_s: float = 90.0,
     ):
@@ -129,6 +130,11 @@ class DeepSchoolInsightService:
         if not self.enabled or self.client is None or not schools:
             return schools
 
+        t_enrich_start = time.monotonic()
+        logger.info(
+            "[TIMING] enrich_and_rerank start schools=%d initial_batch=%d batch=%d",
+            len(schools), self.initial_batch_size, self.batch_size,
+        )
         schools_copy = [dict(s) for s in schools]
         research_limit = len(schools_copy)
         # Finalized runs should research the entire consideration pool before
@@ -147,6 +153,7 @@ class DeepSchoolInsightService:
 
         researched_ids: set[int] = set()
         batch_size = self.initial_batch_size
+        batch_index = 0
 
         while True:
             schools_copy.sort(
@@ -167,6 +174,14 @@ class DeepSchoolInsightService:
             for school in next_batch:
                 school["research_status"] = "attempted"
 
+            batch_index += 1
+            t_batch_start = time.monotonic()
+            logger.info(
+                "[TIMING] batch start idx=%d size=%d schools=%s",
+                batch_index,
+                len(next_batch),
+                [s.get("school_name") for s in next_batch],
+            )
             tasks = [
                 self._enrich_single_school(
                     school=school,
@@ -177,6 +192,10 @@ class DeepSchoolInsightService:
                 for school in next_batch
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            logger.info(
+                "[TIMING] batch done idx=%d size=%d elapsed=%.2fs",
+                batch_index, len(next_batch), time.monotonic() - t_batch_start,
+            )
             for school, result in zip(next_batch, results):
                 researched_ids.add(int(school["_research_id"]))
                 if isinstance(result, DeepSchoolInsight):
@@ -245,6 +264,13 @@ class DeepSchoolInsightService:
             len(researched_ids),
             len(schools_copy),
             status_counts,
+        )
+        logger.info(
+            "[TIMING] enrich_and_rerank done researched=%d final=%d batches=%d total=%.2fs",
+            len(researched_ids),
+            len(schools_copy),
+            batch_index,
+            time.monotonic() - t_enrich_start,
         )
         return schools_copy
 
@@ -315,9 +341,20 @@ class DeepSchoolInsightService:
                 research_status="unavailable",
             )
 
+        school_name = school.get("display_school_name") or school.get("school_name") or "Unknown"
+        t_school_start = time.monotonic()
         trusted_domains = _trusted_domains_for_school(school)
         evidence = await self._gather_evidence(school, player_stats, trusted_domains)
+        t_evidence_done = time.monotonic()
+        logger.info(
+            "[TIMING] enrich_single evidence school=%r elapsed=%.2fs",
+            school_name, t_evidence_done - t_school_start,
+        )
         if not _has_meaningful_evidence(evidence):
+            logger.info(
+                "[TIMING] enrich_single school=%r status=insufficient_evidence total=%.2fs",
+                school_name, time.monotonic() - t_school_start,
+            )
             return DeepSchoolInsight(
                 school_name=school.get("school_name", ""),
                 evidence=evidence,
@@ -341,7 +378,16 @@ class DeepSchoolInsightService:
                 research_status="insufficient_evidence",
             )
 
+        t_review_start = time.monotonic()
         review = await self._review_school(school, player_stats, baseball_assessment, academic_score, evidence)
+        t_review_done = time.monotonic()
+        logger.info(
+            "[TIMING] enrich_single review school=%r elapsed=%.2fs status=%s total=%.2fs",
+            school_name,
+            t_review_done - t_review_start,
+            "ok" if review is not None else "failed",
+            t_review_done - t_school_start,
+        )
         if review is None:
             # Reviewer failed but evidence is valid — use a conservative fallback
             # that still captures opportunity/competition/roster-opening signals

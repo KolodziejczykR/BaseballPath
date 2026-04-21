@@ -57,7 +57,6 @@ def _fake_core(n: int = 10) -> CoreEvaluation:
         player_percentile=72.0,
         player_pci=68.0,
         ml_pci=64.0,
-        benchmark_pci=60.0,
         is_pitcher=False,
         ranked_schools=_fake_ranked_schools(n),
     )

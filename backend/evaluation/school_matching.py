@@ -14,12 +14,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from backend.constants import DIVISION_BENCHMARKS, PITCHER_DIVISION_BENCHMARKS, get_position_benchmarks
 from backend.evaluation.competitiveness import (
     DEFAULT_DIVISION_MAX_RANKS,
-    benchmark_pci,
     classify_fit,
     compute_fit_delta,
     final_pci,
     ml_based_pci,
-    normalize_hitter_position,
     normalize_predicted_tier,
     rank_to_percentile,
     to_legacy_fit_label,
@@ -147,6 +145,107 @@ def _normal_cdf(z: float) -> float:
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
 
+def _average_benchmarks(
+    bench_a: Dict[str, Dict[str, float]],
+    bench_b: Dict[str, Dict[str, float]],
+) -> Dict[str, Dict[str, float]]:
+    """Average mean/std from two benchmark dicts (e.g. D2 + D3 for Non-D1)."""
+    result: Dict[str, Dict[str, float]] = {}
+    all_keys = set(bench_a) | set(bench_b)
+    for key in all_keys:
+        a = bench_a.get(key)
+        b = bench_b.get(key)
+        if a and b:
+            result[key] = {
+                "mean": (a["mean"] + b["mean"]) / 2.0,
+                "std": (a["std"] + b["std"]) / 2.0,
+            }
+        elif a:
+            result[key] = dict(a)
+        elif b:
+            result[key] = dict(b)
+    return result
+
+
+def _resolve_tier_benchmarks_for_percentile(
+    tier: str,
+    is_pitcher: bool,
+    player_position: str,
+) -> Dict[str, Dict[str, float]]:
+    """Resolve the benchmark dict for a given tier, averaging D2+D3 for Non-D1."""
+    benchmark_key = {
+        POWER_4_D1: "P4",
+        NON_P4_D1: "Non-P4 D1",
+    }.get(tier)
+
+    if is_pitcher:
+        if tier == NON_D1:
+            d2 = PITCHER_DIVISION_BENCHMARKS.get("D2", {})
+            d3 = PITCHER_DIVISION_BENCHMARKS.get("D3", {})
+            return _average_benchmarks(d2, d3)
+        return PITCHER_DIVISION_BENCHMARKS.get(
+            benchmark_key, PITCHER_DIVISION_BENCHMARKS.get("Non-P4 D1", {})
+        )
+
+    pos_benchmarks = get_position_benchmarks(player_position)
+    if tier == NON_D1:
+        d2 = pos_benchmarks.get("D2", {})
+        d3 = pos_benchmarks.get("D3", {})
+        return _average_benchmarks(d2, d3)
+    return pos_benchmarks.get(
+        benchmark_key, pos_benchmarks.get("Non-P4 D1", {})
+    )
+
+
+# ---------------------------------------------------------------------------
+# Position-group z-score weights for hitter percentile calculation.
+# Raw weights are normalized at runtime — only the ratios matter.
+# Pitchers use equal weighting (no position-group variation).
+# ---------------------------------------------------------------------------
+
+_HITTER_Z_WEIGHTS: Dict[str, Dict[str, float]] = {
+    "OF": {
+        "exit_velo": 1.0,
+        "sixty_time": 1.0,   # neutral — OF need balanced tools
+        "of_velo": 1.0,
+    },
+    "MIF": {
+        "exit_velo": 1.0,
+        "sixty_time": 1.0,   # neutral — MIF need all tools
+        "inf_velo": 1.0,
+    },
+    "CIF": {
+        "exit_velo": 1.2,    # power matters more for corner guys
+        "sixty_time": 0.6,   # slow 3B/1B is acceptable
+        "inf_velo": 1.0,
+    },
+    "C": {
+        "exit_velo": 1.0,
+        "sixty_time": 1.0,
+        "c_velo": 1.0,
+        "pop_time": 1.0,
+    },
+}
+
+_OF_POSITIONS = frozenset({"OF", "CF", "RF", "LF", "OUTFIELDER"})
+_MIF_POSITIONS = frozenset({"SS", "2B", "MIF"})
+_CIF_POSITIONS = frozenset({"3B", "1B"})
+_C_POSITIONS = frozenset({"C", "CATCHER"})
+
+
+def _hitter_position_group(player_position: str) -> str:
+    pos = player_position.strip().upper() if player_position else ""
+    if pos in _OF_POSITIONS:
+        return "OF"
+    if pos in _MIF_POSITIONS:
+        return "MIF"
+    if pos in _CIF_POSITIONS:
+        return "CIF"
+    if pos in _C_POSITIONS:
+        return "C"
+    return "MIF"
+
+
 def compute_within_tier_percentile(
     player_stats: Dict[str, Any],
     predicted_tier: str,
@@ -156,18 +255,16 @@ def compute_within_tier_percentile(
     """
     Compute a within-tier percentile (0-100) by averaging stat z-scores against
     the benchmark means/stds for the predicted tier.
+
+    For hitters, z-scores are weighted by position group so that the most
+    recruitable tools for each position carry more influence.
     """
     tier = normalize_predicted_tier(predicted_tier)
-    benchmark_key = {
-        POWER_4_D1: "P4",
-        NON_P4_D1: "Non-P4 D1",
-        NON_D1: "Non D1",
-    }.get(tier, "Non-P4 D1")
+    benchmarks = _resolve_tier_benchmarks_for_percentile(
+        tier, is_pitcher, player_position,
+    )
 
     if is_pitcher:
-        benchmarks = PITCHER_DIVISION_BENCHMARKS.get(
-            benchmark_key, PITCHER_DIVISION_BENCHMARKS.get("Non-P4 D1", {})
-        )
         stat_map = {
             "FastballVelocity (max)": player_stats.get("fastball_velo_max"),
             "FastballVelo Range": player_stats.get("fastball_velo_range"),
@@ -180,10 +277,6 @@ def compute_within_tier_percentile(
             "Slider Spin Rate (avg)": player_stats.get("slider_spin"),
         }
     else:
-        pos_benchmarks = get_position_benchmarks(player_position)
-        benchmarks = pos_benchmarks.get(
-            benchmark_key, pos_benchmarks.get("Non-P4 D1", {})
-        )
         stat_map = {
             "exit_velo": player_stats.get("exit_velo_max"),
             "sixty_time": player_stats.get("sixty_time"),
@@ -197,7 +290,12 @@ def compute_within_tier_percentile(
             if player_stats.get("pop_time") is not None:
                 stat_map["pop_time"] = player_stats["pop_time"]
 
-    z_scores: List[float] = []
+    # Compute z-scores with position-aware weighting for hitters.
+    pos_group = _hitter_position_group(player_position) if not is_pitcher else ""
+    z_weights = _HITTER_Z_WEIGHTS.get(pos_group, {})
+
+    weighted_z_sum = 0.0
+    total_weight = 0.0
     for stat_name, player_value in stat_map.items():
         if player_value is None:
             continue
@@ -213,12 +311,15 @@ def compute_within_tier_percentile(
         z = (float(player_value) - float(mean)) / float(std)
         if stat_name in ("sixty_time", "pop_time"):
             z = -z  # lower is better
-        z_scores.append(z)
 
-    if not z_scores:
+        w = z_weights.get(stat_name, 1.0)
+        weighted_z_sum += z * w
+        total_weight += w
+
+    if total_weight <= 0:
         return 50.0
 
-    avg_z = sum(z_scores) / len(z_scores)
+    avg_z = weighted_z_sum / total_weight
     percentile = _normal_cdf(avg_z) * 100.0
     return round(min(max(percentile, 0.0), 100.0), 1)
 
@@ -234,15 +335,45 @@ def compute_player_pci(
     p4_probability: Optional[float],
     is_pitcher: bool,
 ) -> Dict[str, Optional[float]]:
-    """Compute ML PCI, benchmark PCI, and blended final PCI."""
+    """Compute tier-aware player PCI from ML percentile + d1/p4 probability.
+
+    Includes stat-based demotion: if a player's measurable metrics place them
+    in the bottom of their predicted tier, the tier is demoted and the
+    percentile recalculated against the lower tier's benchmarks. This catches
+    cases where the ML model is confident but the stats don't support the call.
+    """
     normalized_tier = normalize_predicted_tier(predicted_tier)
     player_position = player_stats.get("primary_position", "") or ""
+    demotion_threshold = 15.0 if is_pitcher else 20.0
+
     within_tier_percentile = compute_within_tier_percentile(
         player_stats=player_stats,
         predicted_tier=normalized_tier,
         is_pitcher=is_pitcher,
         player_position=player_position,
     )
+
+    # Stat-based demotion: if metrics place the player in the bottom of their
+    # predicted tier, demote and recalculate against lower-tier benchmarks.
+    # Demotion chain: P4 -> Non-P4 D1 -> Non-D1 (stops at Non-D1).
+    _DEMOTION_CHAIN = {POWER_4_D1: NON_P4_D1, NON_P4_D1: NON_D1}
+    next_tier = _DEMOTION_CHAIN.get(normalized_tier)
+    while next_tier and within_tier_percentile < demotion_threshold:
+        logger.info(
+            "Stat-based demotion: %s -> %s (within_tier_pct=%.1f < %.1f)",
+            normalized_tier,
+            next_tier,
+            within_tier_percentile,
+            demotion_threshold,
+        )
+        normalized_tier = next_tier
+        within_tier_percentile = compute_within_tier_percentile(
+            player_stats=player_stats,
+            predicted_tier=normalized_tier,
+            is_pitcher=is_pitcher,
+            player_position=player_position,
+        )
+        next_tier = _DEMOTION_CHAIN.get(normalized_tier)
 
     ml_pci = ml_based_pci(
         predicted_tier=normalized_tier,
@@ -251,29 +382,13 @@ def compute_player_pci(
         p4_prob=p4_probability,
     )
 
-    if is_pitcher:
-        benchmark_pci_value = benchmark_pci(
-            player_metrics=player_stats,
-            player_type="pitcher",
-            player_position="P",
-            predicted_tier=normalized_tier,
-        )
-    else:
-        benchmark_pci_value = benchmark_pci(
-            player_metrics=player_stats,
-            player_type="hitter",
-            player_position=normalize_hitter_position(player_stats.get("primary_position")),
-            predicted_tier=normalized_tier,
-        )
-
-    blended = final_pci(ml_pci, benchmark_pci_value)
+    player_pci_value = final_pci(ml_pci)
 
     return {
         "predicted_tier": normalized_tier,
         "within_tier_percentile": round(within_tier_percentile, 1),
         "ml_pci": round(ml_pci, 2),
-        "benchmark_pci": (round(benchmark_pci_value, 2) if benchmark_pci_value is not None else None),
-        "player_pci": round(blended, 2),
+        "player_pci": round(player_pci_value, 2),
     }
 
 

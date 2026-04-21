@@ -1,0 +1,67 @@
+{
+  "model_version": "of_p4_xgb_cal_version_04202026",
+  "creation_date": "2026-04-20T14:07:27.680630",
+  "model_type": "calibrated_xgboost_outfielder_p4",
+  "calibration_method": "isotonic",
+  "threshold": 0.32,
+  "features": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "of_velo",
+    "bat_speed_max",
+    "d1_prob"
+  ],
+  "requires_d1_prob": true,
+  "hyperparameters": {
+    "n_estimators": 300,
+    "max_depth": 3,
+    "learning_rate": 0.03,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 1.5,
+    "reg_lambda": 5.0,
+    "min_child_weight": 8,
+    "scale_pos_weight": 3.5245
+  },
+  "performance_metrics": {
+    "auc_roc": 0.7016,
+    "brier_score": 0.1568,
+    "max_calibration_gap": 0.246,
+    "p4_precision": 0.4366,
+    "p4_recall": 0.3163,
+    "p4_f1": 0.3669,
+    "accuracy": 0.759,
+    "threshold_used": 0.32
+  },
+  "dataset_info": {
+    "total_samples": 2217,
+    "train_samples": 1773,
+    "test_samples": 444,
+    "p4_rate": 0.221,
+    "d1_only": true,
+    "stale_cleaning": "Option B multi-pass (stale outliers only, +/-2 std + >24mo)"
+  },
+  "calibration_curve": {
+    "predicted": [
+      0.0792,
+      0.1868,
+      0.286,
+      0.4256,
+      0.5515,
+      0.6706,
+      0.754
+    ],
+    "actual": [
+      0.0795,
+      0.181,
+      0.3298,
+      0.3684,
+      0.5,
+      0.6667,
+      1.0
+    ]
+  }
+}

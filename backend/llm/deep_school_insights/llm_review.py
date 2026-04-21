@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from .evidence import (
@@ -127,6 +128,7 @@ async def review_school(
     review_model: str,
 ) -> Optional[DeepSchoolReview]:
     school_name = school.get("display_school_name") or school.get("school_name") or "Unknown School"
+    t_start = time.monotonic()
     try:
         response = await responses_parse(
             model=review_model,
@@ -142,6 +144,13 @@ async def review_school(
             max_output_tokens=2500,
         )
     except Exception as exc:
-        logger.warning("Deep school reviewer failed for %s: %s", school_name, exc)
+        logger.warning(
+            "[TIMING] llm_review school=%r status=failed elapsed=%.2fs err=%s",
+            school_name, time.monotonic() - t_start, exc,
+        )
         return None
+    logger.info(
+        "[TIMING] llm_review school=%r status=ok elapsed=%.2fs",
+        school_name, time.monotonic() - t_start,
+    )
     return getattr(response, "output_parsed", None)

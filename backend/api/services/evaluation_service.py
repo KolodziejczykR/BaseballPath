@@ -36,6 +36,7 @@ from .llm_insight_service import (
 from .profile_service import get_profile
 
 from backend.evaluation.academic_scoring import compute_academic_score
+from backend.evaluation.competitiveness import effective_tier
 from backend.evaluation.school_matching import (
     BUDGET_RANGES,
     compute_player_pci,
@@ -131,7 +132,6 @@ class CoreEvaluation:
     player_percentile: float
     player_pci: float
     ml_pci: Optional[float]
-    benchmark_pci: Optional[float]
     is_pitcher: bool
     ranked_schools: List[Dict[str, Any]]
 
@@ -141,7 +141,6 @@ class CoreEvaluation:
             "within_tier_percentile": self.player_percentile,
             "player_competitiveness_index": self.player_pci,
             "ml_pci": self.ml_pci,
-            "benchmark_pci": self.benchmark_pci,
             "d1_probability": ml.d1_probability,
             "p4_probability": ml.p4_probability,
         }
@@ -200,7 +199,14 @@ async def run_preview_core(
     )
 
     player_stats = metrics.model_dump(exclude_none=True)
-    predicted_tier = ml.final_prediction
+    # Demote low-confidence P4/D1 calls so borderline players don't get matched
+    # against top-tier schools just because the ML layer used an elite-feature
+    # override. effective_tier only ever demotes; a confident call is unchanged.
+    predicted_tier = effective_tier(
+        ml.final_prediction,
+        d1_probability=ml.d1_probability,
+        p4_probability=ml.p4_probability,
+    )
     player_competitiveness = compute_player_pci(
         player_stats=player_stats,
         predicted_tier=predicted_tier,
@@ -244,7 +250,6 @@ async def run_preview_core(
         player_percentile=player_percentile,
         player_pci=player_pci,
         ml_pci=player_competitiveness.get("ml_pci"),
-        benchmark_pci=player_competitiveness.get("benchmark_pci"),
         is_pitcher=is_pitcher_flag,
         ranked_schools=ranked_schools,
     )
@@ -465,7 +470,6 @@ async def finalize_paid_evaluation(
             "within_tier_percentile": baseball_assessment["within_tier_percentile"],
             "player_competitiveness_index": baseball_assessment.get("player_competitiveness_index"),
             "ml_pci": baseball_assessment.get("ml_pci"),
-            "benchmark_pci": baseball_assessment.get("benchmark_pci"),
             "d1_probability": baseball_assessment.get("d1_probability"),
             "p4_probability": baseball_assessment.get("p4_probability"),
             "confidence": ml_data.get("confidence"),

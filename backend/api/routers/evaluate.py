@@ -31,6 +31,7 @@ from ..services.plan_service import (
 from ..services.pricing_service import get_eval_price
 
 from backend.evaluation.academic_scoring import compute_academic_score
+from backend.evaluation.competitiveness import effective_tier
 from backend.evaluation.school_matching import (
     BUDGET_RANGES,
     compute_player_pci,
@@ -431,7 +432,14 @@ async def _run_core_evaluation(
     )
 
     player_stats = metrics.model_dump(exclude_none=True)
-    predicted_tier = ml.final_prediction
+    # Demote low-confidence P4/D1 calls so borderline players don't get matched
+    # against top-tier schools just because the ML layer used an elite-feature
+    # override. effective_tier only ever demotes; a confident call is unchanged.
+    predicted_tier = effective_tier(
+        ml.final_prediction,
+        d1_probability=ml.d1_probability,
+        p4_probability=ml.p4_probability,
+    )
     player_competitiveness = compute_player_pci(
         player_stats=player_stats,
         predicted_tier=predicted_tier,
@@ -475,7 +483,6 @@ async def _run_core_evaluation(
         "player_percentile": player_percentile,
         "player_pci": player_pci,
         "ml_pci": player_competitiveness.get("ml_pci"),
-        "benchmark_pci": player_competitiveness.get("benchmark_pci"),
         "is_pitcher": is_pitcher_flag,
         "ranked_schools": ranked_schools,
     }
@@ -513,7 +520,6 @@ async def preview_evaluation(
             "within_tier_percentile": core["player_percentile"],
             "player_competitiveness_index": core["player_pci"],
             "ml_pci": core.get("ml_pci"),
-            "benchmark_pci": core.get("benchmark_pci"),
             "d1_probability": payload.ml_prediction.d1_probability,
             "p4_probability": payload.ml_prediction.p4_probability,
         },
@@ -765,7 +771,6 @@ async def finalize_evaluation(
             "within_tier_percentile": baseball_assessment["within_tier_percentile"],
             "player_competitiveness_index": baseball_assessment.get("player_competitiveness_index"),
             "ml_pci": baseball_assessment.get("ml_pci"),
-            "benchmark_pci": baseball_assessment.get("benchmark_pci"),
             "d1_probability": baseball_assessment.get("d1_probability"),
             "p4_probability": baseball_assessment.get("p4_probability"),
             "confidence": ml_data.get("confidence"),
@@ -872,7 +877,6 @@ async def run_evaluation(
     player_percentile = core["player_percentile"]
     player_pci = core.get("player_pci")
     ml_pci = core.get("ml_pci")
-    benchmark_pci = core.get("benchmark_pci")
     metrics = payload.baseball_metrics
     ml = payload.ml_prediction
     acad = payload.academic_input
@@ -886,7 +890,6 @@ async def run_evaluation(
         "within_tier_percentile": player_percentile,
         "player_competitiveness_index": player_pci,
         "ml_pci": ml_pci,
-        "benchmark_pci": benchmark_pci,
         "d1_probability": ml.d1_probability,
         "p4_probability": ml.p4_probability,
     }
@@ -949,7 +952,6 @@ async def run_evaluation(
             "within_tier_percentile": player_percentile,
             "player_competitiveness_index": player_pci,
             "ml_pci": ml_pci,
-            "benchmark_pci": benchmark_pci,
             "d1_probability": ml.d1_probability,
             "p4_probability": ml.p4_probability,
             "confidence": ml.confidence,
