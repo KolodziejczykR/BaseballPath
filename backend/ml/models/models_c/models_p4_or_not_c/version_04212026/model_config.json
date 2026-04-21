@@ -1,0 +1,69 @@
+{
+  "model_type": "XGBClassifier + CalibratedClassifierCV (isotonic)",
+  "task": "P4 vs Non-P4 D1 \u2014 Catchers",
+  "version": "version_04212026",
+  "created": "2026-04-21T12:14:12.503542",
+  "threshold": 0.35,
+  "n_features": 9,
+  "features": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "c_velo",
+    "pop_time",
+    "bat_speed_max",
+    "d1_prob"
+  ],
+  "hyperparameters": {
+    "n_estimators": 300,
+    "max_depth": 3,
+    "learning_rate": 0.03,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 1.5,
+    "reg_lambda": 5.0,
+    "min_child_weight": 8,
+    "scale_pos_weight": 4.426
+  },
+  "calibration": {
+    "method": "isotonic",
+    "cv": 5
+  },
+  "metrics": {
+    "holdout_auc_roc": 0.7127,
+    "holdout_brier_raw": 0.2006,
+    "holdout_brier_calibrated": 0.1349,
+    "max_calibration_gap": 0.1557,
+    "cv_test_auc_mean": 0.6539,
+    "cv_test_auc_std": 0.0318,
+    "cv_train_auc_mean": 0.8973,
+    "overfit_gap_auc": 0.2434
+  },
+  "calibration_curve": {
+    "predicted": [
+      0.092,
+      0.1852,
+      0.2985,
+      0.4221,
+      0.553,
+      0.6557
+    ],
+    "actual": [
+      0.0602,
+      0.1807,
+      0.2903,
+      0.5,
+      0.5455,
+      0.5
+    ]
+  },
+  "training_data": {
+    "total_d1_players": 1503,
+    "p4_players": 277,
+    "non_p4_d1_players": 1226,
+    "stale_outliers_removed": 469,
+    "stale_cleaning_passes": 5
+  }
+}

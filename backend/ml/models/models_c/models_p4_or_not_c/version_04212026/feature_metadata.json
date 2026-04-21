@@ -1,0 +1,43 @@
+{
+  "features": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "c_velo",
+    "pop_time",
+    "bat_speed_max",
+    "d1_prob"
+  ],
+  "n_features": 9,
+  "meta_features": {
+    "d1_prob": {
+      "source": "Out-of-fold predictions from catcher D1 model (CalibratedClassifierCV, isotonic, cv=3)",
+      "generation": "cross_val_predict with StratifiedKFold(n_splits=5) on full catcher dataset (D1 + Non-D1)",
+      "note": "Leak-free OOF probabilities \u2014 each player's d1_prob was predicted by a model that never saw that player in training"
+    }
+  },
+  "feature_importance": {
+    "exit_velo_max": 0.1458,
+    "pop_time": 0.1219,
+    "d1_prob": 0.1203,
+    "height": 0.1174,
+    "weight": 0.1081,
+    "c_velo": 0.1004,
+    "sixty_time": 0.0969,
+    "distance_max": 0.0953,
+    "bat_speed_max": 0.0939
+  },
+  "position": "C",
+  "core_features": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "c_velo",
+    "pop_time",
+    "bat_speed_max"
+  ]
+}
