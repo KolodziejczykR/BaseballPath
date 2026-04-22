@@ -1,0 +1,74 @@
+{
+  "model_version": "p_d1_xgb_cal_version_04212026",
+  "creation_date": "2026-04-21T13:42:54.160404",
+  "model_type": "calibrated_xgboost_pitcher_d1",
+  "calibration_method": "isotonic",
+  "threshold": 0.45,
+  "features": [
+    "height",
+    "weight",
+    "fastball_velo_max",
+    "fastball_velo_range",
+    "fastball_spin",
+    "changeup_velo_range",
+    "changeup_spin",
+    "curveball_velo_range",
+    "curveball_spin",
+    "slider_velo_range",
+    "slider_spin"
+  ],
+  "hyperparameters": {
+    "n_estimators": 500,
+    "max_depth": 4,
+    "learning_rate": 0.01,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 1.0,
+    "reg_lambda": 3.0,
+    "min_child_weight": 5,
+    "scale_pos_weight": 1.9135
+  },
+  "performance_metrics": {
+    "auc_roc": 0.8125,
+    "brier_score": 0.1645,
+    "max_calibration_gap": 0.0446,
+    "d1_precision": 0.6226,
+    "d1_recall": 0.6082,
+    "d1_f1": 0.6153,
+    "accuracy": 0.7391,
+    "threshold_used": 0.45
+  },
+  "dataset_info": {
+    "total_samples": 18183,
+    "train_samples": 14546,
+    "test_samples": 3637,
+    "d1_rate": 0.3432,
+    "stale_cleaning": "Option B multi-pass (stale outliers only, +/-2 std + >24mo)"
+  },
+  "calibration_curve": {
+    "predicted": [
+      0.0403,
+      0.1413,
+      0.251,
+      0.3501,
+      0.4516,
+      0.5351,
+      0.6461,
+      0.7457,
+      0.8462,
+      0.9412
+    ],
+    "actual": [
+      0.0473,
+      0.167,
+      0.2861,
+      0.3876,
+      0.4415,
+      0.5238,
+      0.6176,
+      0.7071,
+      0.8364,
+      0.8966
+    ]
+  }
+}
