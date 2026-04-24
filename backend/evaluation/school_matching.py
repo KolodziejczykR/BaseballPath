@@ -466,15 +466,15 @@ def _academic_fit_label(
 
     delta = player_academic_rating - school_academic_rating
 
-    if delta > 2.4:
+    if delta > 2.0:
         return "Strong Safety"
-    if delta > 0.9:
+    if delta > 0.6:
         return "Safety"
-    if delta >= -0.9:
+    if delta >= -0.6:
         return "Fit"
-    if delta >= -1.8:
+    if delta >= -1.5:
         return "Reach"
-    if delta >= -2.4:
+    if delta >= -2.0:
         return "Strong Reach"
     # Beyond strong reach — exclude
     return None
@@ -496,6 +496,9 @@ def match_and_rank_schools(
     user_state: Optional[str] = None,
     limit: int = 15,
     consideration_pool: bool = False,
+    ranking_priority: Optional[str] = None,
+    selected_states: Optional[List[str]] = None,
+    excluded_states: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Match schools against player PCI, apply filters, and return a balanced list.
@@ -503,15 +506,51 @@ def match_and_rank_schools(
     When ``consideration_pool=True``, the function returns a broader candidate
     set (wider delta range, relaxed exclusion rules) intended for downstream
     roster research that will perform final selection.
+
+    ``ranking_priority`` ("academics" | "baseball_fit" | None) biases the
+    consideration-pool sort so the candidate set honors the user's main
+    preference before the LLM rerank runs. Without it, academically-perfect
+    Strong-Safety-baseball schools get dropped at the gate and never reach
+    the stage that could surface them.
+
+    ``selected_states`` is a list of 2-letter state abbreviations that add
+    to the region filter. The allowed geography is the UNION of states in
+    ``selected_regions`` and ``selected_states``, minus any states in
+    ``excluded_states`` — lets a user who wants all of Northeast except
+    Maine explicitly subtract ME after selecting the region.
     """
     player_academic_rounded = academic_composite
     candidates: List[Dict[str, Any]] = []
 
-    allowed_states = None
-    if selected_regions:
+    # Build the allowed-state set as union(states in selected regions,
+    # explicitly selected states) - excluded_states. If neither regions nor
+    # states are provided, no geo filter is applied.
+    allowed_states: Optional[set] = None
+    if selected_regions or selected_states:
         allowed_states = set()
-        for region in selected_regions:
-            allowed_states.update(REGION_STATES.get(region, set()))
+        if selected_regions:
+            for region in selected_regions:
+                allowed_states.update(REGION_STATES.get(region, set()))
+        if selected_states:
+            for st in selected_states:
+                if st:
+                    allowed_states.add(st.strip().upper())
+        if excluded_states:
+            for st in excluded_states:
+                if st:
+                    allowed_states.discard(st.strip().upper())
+        if not allowed_states:
+            allowed_states = None
+
+    # Hard academic floor when the user explicitly prioritizes academics:
+    # exclude schools whose selectivity is more than 2.5 below the student's
+    # effective academic composite. Applied at the gate (before the 50-school
+    # consideration pool is built) so downstream bonus/penalty math only sees
+    # schools that make academic sense. Missing-selectivity schools fall back
+    # to 2.5, which will fail this filter for any student above ~5.0.
+    academic_floor: Optional[float] = None
+    if ranking_priority == "academics":
+        academic_floor = float(academic_composite) - 2.5
 
     for school in schools:
         school_name = school.get("school_name", "")
@@ -537,6 +576,16 @@ def match_and_rank_schools(
             if tuition is not None and tuition > max_budget:
                 continue
 
+        # Preference filter: academic floor (only when priority is academics)
+        if academic_floor is not None:
+            raw_sel = school.get("academic_selectivity_score")
+            try:
+                sel_for_floor = float(raw_sel) if raw_sel is not None else 2.5
+            except (TypeError, ValueError):
+                sel_for_floor = 2.5
+            if sel_for_floor < academic_floor:
+                continue
+
         school_sci, trend_bonus = _resolve_school_sci(school, is_pitcher=is_pitcher)
         if school_sci is None:
             continue
@@ -554,14 +603,19 @@ def match_and_rank_schools(
         fit_label = classify_fit(delta)
         baseball_fit = to_legacy_fit_label(fit_label)
 
+        # Fallback for schools missing an academic_selectivity_score. The
+        # ~12-15 such schools in the DB are empirically low-selectivity
+        # (unranked / open-enrollment / weak academic profile), so 2.5 is
+        # closer to reality than a neutral default. Mirrors
+        # _MISSING_SELECTIVITY_FALLBACK in ranking.py.
         school_selectivity = school.get("academic_selectivity_score")
         if school_selectivity is not None:
             try:
                 school_acad_numeric: Optional[float] = float(school_selectivity)
             except (TypeError, ValueError):
-                school_acad_numeric = 2.0
+                school_acad_numeric = 2.5
         else:
-            school_acad_numeric = 2.0
+            school_acad_numeric = 2.5
         acad_label = _academic_fit_label(player_academic_rounded, school_acad_numeric)
         if acad_label is None:
             continue
@@ -610,7 +664,7 @@ def match_and_rank_schools(
             "baseball_fit": baseball_fit,
             "fit_label": fit_label,
             "academic_fit": acad_label,
-            "niche_academic_grade": school_acad_numeric,
+            "academic_selectivity_score": school_acad_numeric,
             "estimated_annual_cost": display_tuition,
             "metric_comparisons": metric_comparisons,
             "delta": round(delta, 2),
@@ -619,6 +673,17 @@ def match_and_rank_schools(
             "trend_bonus": round(trend_bonus, 2),
             "academic_delta": round(player_academic_rounded - (school_acad_numeric or 2.0), 2),
             "_abs_delta": abs(delta),
+            # School general info for LLM context
+            "school_city": school.get("school_city"),
+            "undergrad_enrollment": school.get("undergrad_enrollment"),
+            "overall_grade": school.get("overall_grade"),
+            "academics_grade": school.get("academics_grade"),
+            "campus_life_grade": school.get("campus_life_grade"),
+            "student_life_grade": school.get("student_life_grade"),
+            # Baseball record from rankings enrichment
+            "baseball_record": school.get("baseball_record"),
+            "baseball_wins": school.get("baseball_wins"),
+            "baseball_losses": school.get("baseball_losses"),
         })
 
     logger.info(
@@ -640,20 +705,35 @@ def match_and_rank_schools(
             "Fit": 0.0, "Safety": 1.0, "Reach": 1.5,
             "Strong Safety": 3.0, "Strong Reach": 3.5,
         }
+        # Sort weights are priority-aware so the pool reflects what the user
+        # actually said they care about before the LLM rerank trims it.
+        if ranking_priority == "academics":
+            # Care less about baseball distance, more about academic fit.
+            _ABS_DELTA_WEIGHT = 0.5
+            _ACAD_WEIGHT = 3.0
+            _MIN_ACAD_DIVERSE = 20
+        elif ranking_priority == "baseball_fit":
+            # Tight baseball targeting, academics secondary.
+            _ABS_DELTA_WEIGHT = 1.3
+            _ACAD_WEIGHT = 0.8
+            _MIN_ACAD_DIVERSE = 8
+        else:
+            _ABS_DELTA_WEIGHT = 1.0
+            _ACAD_WEIGHT = 1.5
+            _MIN_ACAD_DIVERSE = 12
+
         candidates.sort(
-            key=lambda x: x["_abs_delta"] + _ACAD_DISTANCE.get(
-                x.get("academic_fit", "Fit"), 2.0
-            ) * 1.5
+            key=lambda x: x["_abs_delta"] * _ABS_DELTA_WEIGHT
+            + _ACAD_DISTANCE.get(x.get("academic_fit", "Fit"), 2.0) * _ACAD_WEIGHT
         )
 
         # Reserve slots for academically appropriate schools so downstream
         # research has academic diversity to work with.
-        MIN_ACAD_DIVERSE = 12
         acad_good = [
             c for c in candidates
             if c.get("academic_fit") in ("Fit", "Reach", "Safety")
         ]
-        selected: List[Dict[str, Any]] = acad_good[:MIN_ACAD_DIVERSE]
+        selected: List[Dict[str, Any]] = acad_good[:_MIN_ACAD_DIVERSE]
         selected_names = {s["school_name"] for s in selected}
 
         for c in candidates:

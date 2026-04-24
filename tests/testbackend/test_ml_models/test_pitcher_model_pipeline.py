@@ -120,11 +120,9 @@ def test_pipeline_structure(pipeline):
     result = pipeline.predict(player)
     assert hasattr(result, "d1_results")
     assert hasattr(result.d1_results, "d1_probability")
-    if result.d1_results.d1_prediction:
-        assert result.p4_results is not None
-        assert 0.0 <= result.p4_results.p4_probability <= 1.0
-    else:
-        assert result.p4_results is None
+    # p4_results are always computed by the updated pipeline
+    assert result.p4_results is not None
+    assert 0.0 <= result.p4_results.p4_probability <= 1.0
 
 
 def test_invalid_input_type_raises(pipeline):

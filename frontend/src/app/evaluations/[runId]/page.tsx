@@ -49,14 +49,14 @@ type School = {
   sci?: number;
   trend?: string;
   academic_fit?: string;
-  niche_academic_grade?: string;
+  academic_selectivity_score?: string;
   estimated_annual_cost?: number | null;
   metric_comparisons?: MetricComparison[];
   fit_summary?: string;
   school_description?: string;
-  roster_summary?: string;
-  opportunity_summary?: string;
-  trend_summary?: string;
+  why_this_school?: string;
+  school_snapshot?: string;
+  considerations?: string[];
   research_confidence?: string;
   opportunity_fit?: string;
   overall_school_view?: string;
@@ -65,8 +65,6 @@ type School = {
   ranking_adjustment?: number;
   ranking_score?: number;
   research_status?: string;
-  research_reasons?: string[];
-  research_risks?: string[];
   research_data_gaps?: string[];
   research_sources?: ResearchSource[];
 };
@@ -958,11 +956,11 @@ export default function EvaluationDetailPage() {
                       </div>
 
                       <div className="mt-4 grid grid-cols-2 gap-3">
-                        {selectedSchool.niche_academic_grade && (
+                        {selectedSchool.academic_selectivity_score && (
                           <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
                             <p className="text-xs text-[var(--muted)]">Niche academic grade</p>
                             <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                              {selectedSchool.niche_academic_grade}
+                              {selectedSchool.academic_selectivity_score}
                             </p>
                           </div>
                         )}
@@ -974,118 +972,40 @@ export default function EvaluationDetailPage() {
                         </div>
                       </div>
 
-                      {(selectedSchool.research_confidence || selectedSchool.opportunity_fit || selectedSchool.ranking_adjustment != null) && (
-                        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                          {selectedSchool.research_confidence && (
-                            <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                              <p className="text-xs text-[var(--muted)]">Research confidence</p>
-                              <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                                {selectedSchool.research_confidence}
-                              </p>
-                            </div>
-                          )}
-                          {selectedSchool.opportunity_fit && (
-                            <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                              <p className="text-xs text-[var(--muted)]">Roster opportunity</p>
-                              <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                                {selectedSchool.opportunity_fit}
-                              </p>
-                            </div>
-                          )}
-                          {selectedSchool.ranking_adjustment != null && (
-                            <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                              <p className="text-xs text-[var(--muted)]">Ranking adjustment</p>
-                              <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                                {selectedSchool.ranking_adjustment > 0 ? "+" : ""}
-                                {selectedSchool.ranking_adjustment.toFixed(1)}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* LLM Fit Summary */}
-                      {selectedSchool.fit_summary && (
+                      {/* Why This School — main narrative */}
+                      {(selectedSchool.why_this_school || selectedSchool.fit_summary) && (
                         <div className="mt-4 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Fit analysis</p>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Why this school</p>
                           <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.fit_summary}
+                            {selectedSchool.why_this_school || selectedSchool.fit_summary}
                           </p>
                         </div>
                       )}
 
-                      {selectedSchool.roster_summary && (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Roster outlook</p>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.roster_summary}
-                          </p>
-                        </div>
-                      )}
-
-                      {selectedSchool.opportunity_summary && (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Opportunity context</p>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.opportunity_summary}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* LLM School Description */}
-                      {selectedSchool.school_description && (
+                      {/* School Snapshot */}
+                      {(selectedSchool.school_snapshot || selectedSchool.school_description) && (
                         <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
                           <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">About this program</p>
                           <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.school_description}
+                            {selectedSchool.school_snapshot || selectedSchool.school_description}
                           </p>
                         </div>
                       )}
 
-                      {selectedSchool.trend_summary && (
+                      {/* Considerations */}
+                      {selectedSchool.considerations?.length ? (
                         <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Program trend</p>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.trend_summary}
-                          </p>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Things to consider</p>
+                          <ul className="mt-2 space-y-1.5 text-sm text-[var(--foreground)]">
+                            {selectedSchool.considerations.map((item) => (
+                              <li key={item} className="flex items-start gap-2">
+                                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[var(--muted)]" />
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
                         </div>
-                      )}
-
-                      {(selectedSchool.research_reasons?.length || selectedSchool.research_risks?.length || selectedSchool.research_data_gaps?.length) && (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Research notes</p>
-                          {selectedSchool.research_reasons?.length ? (
-                            <div className="mt-2">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Positives</p>
-                              <ul className="mt-1 space-y-1 text-sm text-[var(--foreground)]">
-                                {selectedSchool.research_reasons.map((reason) => (
-                                  <li key={reason}>- {reason}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                          {selectedSchool.research_risks?.length ? (
-                            <div className="mt-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Risks</p>
-                              <ul className="mt-1 space-y-1 text-sm text-[var(--foreground)]">
-                                {selectedSchool.research_risks.map((risk) => (
-                                  <li key={risk}>- {risk}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                          {selectedSchool.research_data_gaps?.length ? (
-                            <div className="mt-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Data gaps</p>
-                              <ul className="mt-1 space-y-1 text-sm text-[var(--foreground)]">
-                                {selectedSchool.research_data_gaps.map((gap) => (
-                                  <li key={gap}>- {gap}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
+                      ) : null}
 
                       {selectedSchool.research_sources?.length ? (
                         <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">

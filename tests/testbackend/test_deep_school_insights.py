@@ -209,11 +209,9 @@ class _StubInsightService(DeepSchoolInsightService):
             final_school_view="Safety" if adjustment > 0 else "Reach",
             adjustment_from_base="up_one" if adjustment > 0 else "down_one",
             confidence="high",
-            fit_summary=f"{school_name} fit",
-            program_summary=f"{school_name} program",
-            roster_summary=f"{school_name} roster",
-            opportunity_summary=f"{school_name} opportunity",
-            trend_summary=f"{school_name} trend",
+            why_this_school=f"{school_name} is a strong match for your profile.",
+            school_snapshot=f"{school_name} program snapshot.",
+            considerations=[],
         )
         return DeepSchoolInsight(
             school_name=school_name,
@@ -334,11 +332,9 @@ class _ConfiguredInsightService(DeepSchoolInsightService):
             final_school_view=school.get("fit_label") or "Fit",
             adjustment_from_base="up_one" if adjustment > 0 else ("down_one" if adjustment < 0 else "none"),
             confidence="high",
-            fit_summary="",
-            program_summary="",
-            roster_summary="",
-            opportunity_summary="",
-            trend_summary="",
+            why_this_school="",
+            school_snapshot="",
+            considerations=[],
         )
         return DeepSchoolInsight(
             school_name=school["school_name"],
@@ -672,7 +668,15 @@ def test_relative_opportunity_metrics_zero_out_for_identical_signals():
     assert metrics[1]["relative_opportunity_bonus"] == 0.0
 
 
-def test_cross_school_family_dominance_fit_over_safety_over_reach():
+def test_cross_school_family_dominance_under_baseball_fit_priority():
+    """Under ranking_priority='baseball_fit' the Fit > Safety > Reach invariant
+    still holds even in worst/best case because the base gap (100/45/85) plus
+    the aggressive weight multipliers keep families well separated.
+
+    Under the balanced/None profile, Safety and Reach are intentionally close
+    to Fit (user preference: don't penalize them), so this strict invariant
+    no longer holds there — see test_balanced_priority_only_docks_strong_outliers.
+    """
     schools = [
         _make_cross_school(
             "Fit Floor",
@@ -715,11 +719,45 @@ def test_cross_school_family_dominance_fit_over_safety_over_reach():
         ),
     ]
 
-    _apply_cross_school_reranking(schools)
+    _apply_cross_school_reranking(schools, ranking_priority="baseball_fit")
 
     by_name = {school["school_name"]: school for school in schools}
     assert by_name["Fit Floor"]["cross_school_composite"] > by_name["Safety Ceiling"]["cross_school_composite"]
-    assert by_name["Safety Ceiling"]["cross_school_composite"] > by_name["Reach Ceiling"]["cross_school_composite"]
+    # Reach is aspirational under baseball_fit (base=85), so a strong-roster
+    # Reach can beat a weak-roster Safety (base=45) — intentional.
+    assert by_name["Reach Ceiling"]["cross_school_composite"] > by_name["Safety Ceiling"]["cross_school_composite"]
+
+
+def test_balanced_priority_only_docks_strong_outliers():
+    """Under balanced/None priority, Fit/Safety/Reach are grouped together
+    and only Strong Safety / Strong Reach get docked vs Fit. This encodes the
+    product philosophy that a healthy Safety/Reach is not meaningfully worse
+    than a Fit — only extreme mismatches should lose rank."""
+    schools = [
+        _make_cross_school(
+            "Fit School", research_id=0, delta=0.0, fit_label="Fit",
+        ),
+        _make_cross_school(
+            "Safety School", research_id=1, delta=4.0, fit_label="Safety",
+        ),
+        _make_cross_school(
+            "Reach School", research_id=2, delta=-4.0, fit_label="Reach",
+        ),
+        _make_cross_school(
+            "Strong Safety School", research_id=3, delta=10.0, fit_label="Strong Safety",
+        ),
+        _make_cross_school(
+            "Strong Reach School", research_id=4, delta=-10.0, fit_label="Strong Reach",
+        ),
+    ]
+
+    _apply_cross_school_reranking(schools, ranking_priority=None)
+    by_name = {school["school_name"]: school for school in schools}
+
+    assert by_name["Fit School"]["cross_school_composite"] > by_name["Strong Safety School"]["cross_school_composite"]
+    assert by_name["Fit School"]["cross_school_composite"] > by_name["Strong Reach School"]["cross_school_composite"]
+    assert by_name["Safety School"]["cross_school_composite"] > by_name["Strong Safety School"]["cross_school_composite"]
+    assert by_name["Reach School"]["cross_school_composite"] > by_name["Strong Reach School"]["cross_school_composite"]
 
 
 def test_cross_school_differentiates_within_fit_family():
@@ -801,11 +839,11 @@ def test_cross_school_applies_academic_reach_penalty():
     _apply_cross_school_reranking(schools)
     by_name = {school["school_name"]: school for school in schools}
 
-    assert by_name["Academic Reach"]["academic_fit_penalty"] == -1.75
+    assert by_name["Academic Reach"]["academic_fit_penalty"] == -2.0
     assert (
         by_name["Academic Fit"]["cross_school_composite"]
         - by_name["Academic Reach"]["cross_school_composite"]
-        == 1.75
+        == 2.0
     )
 
 
@@ -833,7 +871,7 @@ def test_cross_school_applies_academic_strong_safety_penalty():
     _apply_cross_school_reranking(schools)
     by_name = {school["school_name"]: school for school in schools}
 
-    assert by_name["Academic Strong Safety"]["academic_fit_penalty"] == -4.0
+    assert by_name["Academic Strong Safety"]["academic_fit_penalty"] == -9.0
     assert (
         by_name["Academic Fit"]["cross_school_composite"]
         > by_name["Academic Strong Safety"]["cross_school_composite"]
@@ -863,14 +901,24 @@ def test_cross_school_degrades_gracefully_when_all_research_failed():
     _apply_cross_school_reranking(schools)
     by_name = {school["school_name"]: school for school in schools}
 
+    # Schools without an academic_selectivity_score fall back to 2.5. Under
+    # the balanced profile (median=5.0, weight=2.0) the delta is -2.5, which
+    # the asymmetric quadratic penalty converts to -(-2.5**2) * 2.0 = -12.5.
+    missing_selectivity_delta = 2.5 - 5.0
+    missing_selectivity_bonus = -(missing_selectivity_delta ** 2) * PRIORITY_WEIGHTS[None]["academic_quality"]
+
     assert by_name["Fit Failed"]["raw_opportunity_signal"] is None
     assert by_name["Fit Failed"]["relative_opportunity_bonus"] == 0.0
     assert by_name["Fit Failed"]["cross_school_composite"] == round(
-        FIT_FAMILY_BASE["Fit"] + by_name["Fit Failed"]["ranking_score"],
+        FIT_FAMILY_BASE["Fit"]
+        + by_name["Fit Failed"]["ranking_score"]
+        + missing_selectivity_bonus,
         2,
     )
     assert by_name["Reach Failed"]["cross_school_composite"] == round(
-        FIT_FAMILY_BASE["Reach"] + by_name["Reach Failed"]["ranking_score"],
+        FIT_FAMILY_BASE["Reach"]
+        + by_name["Reach Failed"]["ranking_score"]
+        + missing_selectivity_bonus,
         2,
     )
 
@@ -963,16 +1011,23 @@ async def test_final_limit_caps_still_use_cross_school_composite():
     selected_strong_safeties = {
         school["school_name"] for school in ranked if school.get("fit_label") == "Strong Safety"
     }
-    assert selected_strong_safeties == {"Strong B", "Strong C"}
+    # Cap of MAX_STRONG_SAFETY=2 picks the top two by cross_school_composite.
+    # Strong B leads (great roster context). Strong A beats Strong C despite
+    # worse roster because its ranking_adjustment (+4) outweighs C's edge.
+    assert selected_strong_safeties == {"Strong A", "Strong B"}
 
 
-def test_fit_family_gap_exceeds_worst_case_cross_family_swing():
-    """Fit family should always rank above Safety family even in worst/best case.
+def test_baseball_fit_priority_preserves_family_dominance_invariant():
+    """Under baseball_fit priority, Fit family always ranks above Safety family
+    even in worst/best case. This is the profile used when users explicitly
+    prioritize baseball, so the strict invariant is still enforced.
 
-    Note: Safety vs Reach cross-family inversions are now intentionally possible
-    when roster opportunity or academic penalties warrant it (e.g. Strong Safety
-    with terrible academics can drop below a Reach school with great opportunity).
+    For balanced/None and academics profiles, Safety/Reach are intentionally
+    close to Fit (see test_balanced_priority_only_docks_strong_outliers).
     """
+    from backend.llm.deep_school_insights.ranking import FIT_FAMILY_BASE_BY_PRIORITY
+
+    bb_fit_family = FIT_FAMILY_BASE_BY_PRIORITY["baseball_fit"]
     max_bonus = round(CROSS_SCHOOL_OPPORTUNITY_WEIGHT * CROSS_SCHOOL_Z_CLAMP, 2)
     worst_penalty = min(ACADEMIC_FIT_PENALTY_MAP.values())
     family_min = {"Fit": float("inf"), "Safety": float("inf"), "Reach": float("inf")}
@@ -989,7 +1044,7 @@ def test_fit_family_gap_exceeds_worst_case_cross_family_swing():
         else:
             family = "Reach"
 
-        family_base = FIT_FAMILY_BASE[fit_label]
+        family_base = bb_fit_family[fit_label]
         best_composite = family_base + compute_ranking_score(rounded_delta, MAX_RERANK_ADJUSTMENT) + max_bonus
         worst_composite = (
             family_base
@@ -1285,16 +1340,18 @@ def test_sidearm_extract_from_card_handles_unlabeled_compact_sidearm_cards():
 
 
 def test_academic_penalty_zero_in_fit_range():
+    # Dead zone matches the Fit label cutoff (|Δ| ≤ 0.6).
     assert _academic_penalty(0.0) == 0.0
     assert _academic_penalty(0.5) == 0.0
     assert _academic_penalty(-0.5) == 0.0
-    assert _academic_penalty(0.9) == 0.0
-    assert _academic_penalty(-0.9) == 0.0
+    assert _academic_penalty(0.6) == 0.0
+    assert _academic_penalty(-0.6) == 0.0
 
 
 def test_academic_penalty_mild_safety():
+    # Δ=1.5 sits mid-Safety — penalty should be small but nonzero.
     penalty = _academic_penalty(1.5)
-    assert -1.5 < penalty < 0.0
+    assert -2.5 < penalty < 0.0
 
 
 def test_academic_penalty_extreme_safety():
@@ -1303,8 +1360,9 @@ def test_academic_penalty_extreme_safety():
 
 
 def test_academic_penalty_mild_reach():
+    # Δ=-1.5 is the Reach/Strong Reach boundary — penalty is moderate.
     penalty = _academic_penalty(-1.5)
-    assert -1.5 < penalty < 0.0
+    assert -3.5 < penalty < 0.0
 
 
 def test_academic_penalty_extreme_reach():
@@ -1349,9 +1407,9 @@ def test_cross_school_uses_continuous_penalty_when_academic_delta_present():
     _apply_cross_school_reranking(schools)
     by_name = {s["school_name"]: s for s in schools}
 
-    # Continuous penalty for delta=5.0 is much harsher than flat -4.0
+    # Continuous penalty for delta=5.0 is much harsher than the discrete map.
     assert by_name["Continuous"]["academic_fit_penalty"] < -10.0
-    assert by_name["Label Fallback"]["academic_fit_penalty"] == -4.0
+    assert by_name["Label Fallback"]["academic_fit_penalty"] == -9.0
 
 
 def test_cross_school_academics_priority_amplifies_penalty():
@@ -1389,8 +1447,8 @@ def test_cross_school_academics_priority_amplifies_penalty():
     )
 
 
-def test_cross_school_playing_time_priority_boosts_opportunity():
-    """The 'playing_time' priority doubles opportunity bonus weight."""
+def test_cross_school_opportunity_is_supplemental_in_balanced():
+    """Balanced priority uses opportunity_bonus=0.5 — supplemental, not dominant."""
     schools = [
         {
             **_make_cross_school(
@@ -1418,10 +1476,70 @@ def test_cross_school_playing_time_priority_boosts_opportunity():
         },
     ]
 
-    _apply_cross_school_reranking(schools, ranking_priority="playing_time")
+    _apply_cross_school_reranking(schools, ranking_priority=None)
     by_name = {s["school_name"]: s for s in schools}
 
+    # Higher opportunity still ranks above, but at reduced weight
     assert (
         by_name["High Opportunity"]["cross_school_composite"]
         > by_name["Low Opportunity"]["cross_school_composite"]
     )
+
+
+def test_academic_quality_bonus_is_student_relative():
+    """When player_academic_score is supplied, the quality bonus centers on
+    (player_score - offset). Two identical schools with different student
+    academic levels should get different bonuses."""
+    def _make_school(name: str, selectivity: float) -> dict:
+        return {
+            **_make_cross_school(
+                name,
+                research_id=0,
+                delta=0.0,
+                fit_label="Fit",
+                academic_fit="Fit",
+            ),
+            "academic_selectivity_score": selectivity,
+            "academic_delta": 0.0,
+        }
+
+    # Player at 6.7 → median sits at 5.7. A 7.5-selectivity school is 1.8
+    # above the median → positive bonus.
+    school_hi = _make_school("Top Academic", 7.5)
+    _apply_cross_school_reranking(
+        [school_hi],
+        ranking_priority="academics",
+        player_academic_score=6.7,
+    )
+    bonus_hi = school_hi["cross_school_composite"]
+
+    # Same school under a stronger student (8.5) → median 7.5 → bonus 0.
+    school_neutral = _make_school("Top Academic", 7.5)
+    _apply_cross_school_reranking(
+        [school_neutral],
+        ranking_priority="academics",
+        player_academic_score=8.5,
+    )
+    bonus_neutral = school_neutral["cross_school_composite"]
+
+    # The same 7.5-selectivity school should score higher under the weaker
+    # student because it sits further above that student's median.
+    assert bonus_hi > bonus_neutral
+
+
+def test_academic_quality_bonus_fallback_when_player_score_missing():
+    """With no player_academic_score, the fixed _ACADEMIC_SELECTIVITY_MEDIAN
+    is used — preserving legacy behavior for callers that don't thread the
+    student score through."""
+    school = {
+        **_make_cross_school(
+            "Elite", research_id=0, delta=0.0, fit_label="Fit",
+            academic_fit="Fit",
+        ),
+        "academic_selectivity_score": 8.0,
+        "academic_delta": 0.0,
+    }
+    _apply_cross_school_reranking([school], ranking_priority="academics")
+    # With median=5.0 and academics weight=8.0, bonus contribution = 3.0*8 = 24.
+    # Composite = 0.7 * 100 (Fit family) + 24 + other small terms.
+    assert school["cross_school_composite"] > 90

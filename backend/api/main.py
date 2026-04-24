@@ -7,17 +7,10 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ml.ml_router import router as ml_router
-from ml.router.infielder_router import router as infielder_router
-from ml.router.outfielder_router import router as outfielder_router
-from ml.router.catcher_router import router as catcher_router
-from ml.router.pitcher_router import router as pitcher_router
-from api.routers.preferences import router as preferences_router
 from api.routers.waitlist import router as waitlist_router
 from api.routers.account import router as account_router
 from api.routers.evaluations import router as evaluations_router
 from api.routers.billing import router as billing_router
-from api.routers.player_card import router as player_card_router
-from api.routers.public_card import router as public_card_router
 from api.routers.goals import router as goals_router
 from api.routers.saved_schools import router as saved_schools_router
 
@@ -37,19 +30,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Import and include the ML routers
 app.include_router(ml_router, prefix="/predict")
-app.include_router(infielder_router, prefix="/infielder")
-app.include_router(outfielder_router, prefix="/outfielder")
-app.include_router(catcher_router, prefix="/catcher")
-app.include_router(pitcher_router, prefix="/pitcher")
-app.include_router(preferences_router, prefix="/preferences")
 app.include_router(waitlist_router, prefix="/waitlist")
 app.include_router(account_router, prefix="/account")
 app.include_router(evaluations_router, prefix="/evaluations")
 app.include_router(billing_router, prefix="/billing")
-app.include_router(player_card_router, prefix="/cards", tags=["player-cards"])
-app.include_router(public_card_router, prefix="/p", tags=["public-cards"])
 app.include_router(goals_router, prefix="/goals", tags=["goals"])
 app.include_router(saved_schools_router, prefix="/saved-schools", tags=["saved-schools"])
 
@@ -61,4 +46,3 @@ def read_root():
 def health_check():
     return {"status": "ok"}
 
-# Placeholder for future router imports

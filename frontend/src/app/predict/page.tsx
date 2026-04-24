@@ -192,6 +192,8 @@ function PredictContent() {
 
   // Step 3: Preferences
   const [selectedRegions, setSelectedRegions] = useState<RegionName[]>([]);
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
+  const [excludedStates, setExcludedStates] = useState<string[]>([]);
   const [budget, setBudget] = useState("no_preference");
   const [rankingPriority, setRankingPriority] = useState("");
 
@@ -338,6 +340,8 @@ function PredictContent() {
         },
         preferences: {
           regions: selectedRegions.length > 0 ? selectedRegions : null,
+          states: selectedStates.length > 0 ? selectedStates : null,
+          excluded_states: excludedStates.length > 0 ? excludedStates : null,
           max_budget: budget,
           ranking_priority: rankingPriority || null,
         },
@@ -744,7 +748,14 @@ function PredictContent() {
                 </p>
 
                 {/* Region map */}
-                <RegionMap selected={selectedRegions} onChange={setSelectedRegions} />
+                <RegionMap
+                  selected={selectedRegions}
+                  onChange={setSelectedRegions}
+                  selectedStates={selectedStates}
+                  onStatesChange={setSelectedStates}
+                  excludedStates={excludedStates}
+                  onExcludedStatesChange={setExcludedStates}
+                />
 
                 {/* Budget */}
                 <div>
@@ -762,7 +773,6 @@ function PredictContent() {
                   <div className="grid grid-cols-1 gap-2">
                     {[
                       { value: "", label: "Balanced", desc: "Equal weight across all factors" },
-                      { value: "playing_time", label: "Day 1 Playing Time", desc: "Prioritize roster opportunity" },
                       { value: "baseball_fit", label: "Best Baseball Fit", desc: "Closest competitive match" },
                       { value: "academics", label: "Best Academics", desc: "Strongest school you can play at" },
                     ].map((option) => (

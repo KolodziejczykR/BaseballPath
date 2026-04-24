@@ -29,7 +29,7 @@ def test_infielder_predict_high_performer():
         "player_region": "West",
         "primary_position": "SS"
     }
-    response = client.post("/infielder/predict", json=data)
+    response = client.post("/predict/infielder/predict", json=data)
     assert response.status_code == 200
     result = response.json()
     assert "final_prediction" in result
@@ -57,7 +57,7 @@ def test_infielder_predict_minimal_data():
         "inf_velo": 75.0,
         "sixty_time": 7.0
     }
-    response = client.post("/infielder/predict", json=data)
+    response = client.post("/predict/infielder/predict", json=data)
     assert response.status_code == 200
     result = response.json()
     assert "final_prediction" in result
@@ -66,7 +66,7 @@ def test_infielder_predict_minimal_data():
 
 def test_infielder_features_endpoint():
     """Test infielder features endpoint"""
-    response = client.get("/infielder/features")
+    response = client.get("/predict/infielder/features")
     assert response.status_code == 200
     result = response.json()
     assert "required_features" in result
@@ -74,7 +74,7 @@ def test_infielder_features_endpoint():
 
 def test_infielder_health_endpoint():
     """Test infielder health endpoint"""
-    response = client.get("/infielder/health")
+    response = client.get("/predict/infielder/health")
     assert response.status_code == 200
     result = response.json()
     assert "status" in result
@@ -84,7 +84,7 @@ def test_infielder_health_endpoint():
 
 def test_infielder_example_endpoint():
     """Test infielder example endpoint"""
-    response = client.get("/infielder/example")
+    response = client.get("/predict/infielder/example")
     assert response.status_code == 200
     result = response.json()
     assert "example_input" in result
@@ -109,7 +109,7 @@ def test_infielder_different_positions():
     for position in positions:
         data = base_data.copy()
         data["primary_position"] = position
-        response = client.post("/infielder/predict", json=data)
+        response = client.post("/predict/infielder/predict", json=data)
         assert response.status_code == 200
         result = response.json()
         assert "final_prediction" in result
@@ -129,7 +129,7 @@ def test_outfielder_predict_high_performer():
         "player_region": "West",
         "primary_position": "OF"
     }
-    response = client.post("/outfielder/predict", json=data)
+    response = client.post("/predict/outfielder/predict", json=data)
     assert response.status_code == 200
     result = response.json()
     assert "final_prediction" in result
@@ -157,7 +157,7 @@ def test_outfielder_predict_minimal_data():
         "of_velo": 78.0,
         "sixty_time": 7.0
     }
-    response = client.post("/outfielder/predict", json=data)
+    response = client.post("/predict/outfielder/predict", json=data)
     assert response.status_code == 200
     result = response.json()
     assert "final_prediction" in result
@@ -166,7 +166,7 @@ def test_outfielder_predict_minimal_data():
 
 def test_outfielder_features_endpoint():
     """Test outfielder features endpoint"""
-    response = client.get("/outfielder/features")
+    response = client.get("/predict/outfielder/features")
     assert response.status_code == 200
     result = response.json()
     assert "required_features" in result
@@ -174,7 +174,7 @@ def test_outfielder_features_endpoint():
 
 def test_outfielder_health_endpoint():
     """Test outfielder health endpoint"""
-    response = client.get("/outfielder/health")
+    response = client.get("/predict/outfielder/health")
     assert response.status_code == 200
     result = response.json()
     assert "status" in result
@@ -184,7 +184,7 @@ def test_outfielder_health_endpoint():
 
 def test_outfielder_example_endpoint():
     """Test outfielder example endpoint"""
-    response = client.get("/outfielder/example")
+    response = client.get("/predict/outfielder/example")
     assert response.status_code == 200
     result = response.json()
     assert "example_input" in result
@@ -209,7 +209,7 @@ def test_outfielder_different_positions():
     for position in positions:
         data = base_data.copy()
         data["primary_position"] = position
-        response = client.post("/outfielder/predict", json=data)
+        response = client.post("/predict/outfielder/predict", json=data)
         assert response.status_code == 200
         result = response.json()
         assert "final_prediction" in result
@@ -228,7 +228,7 @@ def test_outfielder_speed_focused_player():
         "player_region": "South",
         "primary_position": "OF"
     }
-    response = client.post("/outfielder/predict", json=data)
+    response = client.post("/predict/outfielder/predict", json=data)
     assert response.status_code == 200
     result = response.json()
     assert "final_prediction" in result
@@ -247,7 +247,7 @@ def test_outfielder_power_focused_player():
         "player_region": "West",
         "primary_position": "OF"
     }
-    response = client.post("/outfielder/predict", json=data)
+    response = client.post("/predict/outfielder/predict", json=data)
     assert response.status_code == 200
     result = response.json()
     assert "final_prediction" in result
@@ -261,7 +261,7 @@ def test_infielder_invalid_data():
         "inf_velo": 75.0,
         "primary_position": "SS"
     }
-    response = client.post("/infielder/predict", json=data)
+    response = client.post("/predict/infielder/predict", json=data)
     # Should either return 422 (validation error) or 400 (processing error)
     assert response.status_code in [400, 422]
 
@@ -272,20 +272,20 @@ def test_outfielder_invalid_data():
         "of_velo": 78.0,
         "primary_position": "CF"
     }
-    response = client.post("/outfielder/predict", json=data)
+    response = client.post("/predict/outfielder/predict", json=data)
     # Should either return 422 (validation error) or 400 (processing error)
     assert response.status_code in [400, 422]
 
 def test_infielder_empty_data():
     """Test infielder prediction with empty data"""
     data = {}
-    response = client.post("/infielder/predict", json=data)
+    response = client.post("/predict/infielder/predict", json=data)
     assert response.status_code == 422  # Pydantic validation error for missing required fields
 
 def test_outfielder_empty_data():
     """Test outfielder prediction with empty data"""
     data = {}
-    response = client.post("/outfielder/predict", json=data)
+    response = client.post("/predict/outfielder/predict", json=data)
     assert response.status_code == 422  # Pydantic validation error for missing required fields
 
 # Catcher API Tests
@@ -303,7 +303,7 @@ def test_catcher_predict_high_performer():
         "player_region": "West",
         "primary_position": "C"
     }
-    response = client.post("/catcher/predict", json=data)
+    response = client.post("/predict/catcher/predict", json=data)
     assert response.status_code == 200
     result = response.json()
     assert "final_prediction" in result
@@ -332,7 +332,7 @@ def test_catcher_predict_minimal_data():
         "throwing_hand": "R",
         "player_region": "West"
     }
-    response = client.post("/catcher/predict", json=data)
+    response = client.post("/predict/catcher/predict", json=data)
     assert response.status_code == 200
     result = response.json()
     assert "final_prediction" in result
@@ -341,7 +341,7 @@ def test_catcher_predict_minimal_data():
 
 def test_catcher_features_endpoint():
     """Test catcher features endpoint"""
-    response = client.get("/catcher/features")
+    response = client.get("/predict/catcher/features")
     assert response.status_code == 200
     result = response.json()
     assert "required_features" in result
@@ -349,7 +349,7 @@ def test_catcher_features_endpoint():
 
 def test_catcher_health_endpoint():
     """Test catcher health endpoint"""
-    response = client.get("/catcher/health")
+    response = client.get("/predict/catcher/health")
     assert response.status_code == 200
     result = response.json()
     assert "status" in result
@@ -359,7 +359,7 @@ def test_catcher_health_endpoint():
 
 def test_catcher_example_endpoint():
     """Test catcher example endpoint"""
-    response = client.get("/catcher/example")
+    response = client.get("/predict/catcher/example")
     assert response.status_code == 200
     result = response.json()
     assert "example_input" in result
@@ -381,7 +381,7 @@ def test_catcher_specific_features():
         "player_region": "West",
         "primary_position": "C"
     }
-    response = client.post("/catcher/predict", json=data)
+    response = client.post("/predict/catcher/predict", json=data)
     assert response.status_code == 200
     result = response.json()
     assert "final_prediction" in result
@@ -405,7 +405,7 @@ def test_catcher_different_pop_times():
     for pop_time in pop_times:
         data = base_data.copy()
         data["pop_time"] = pop_time
-        response = client.post("/catcher/predict", json=data)
+        response = client.post("/predict/catcher/predict", json=data)
         assert response.status_code == 200
         result = response.json()
         assert "final_prediction" in result
@@ -425,12 +425,12 @@ def test_catcher_invalid_data():
         "throwing_hand": "R",
         "player_region": "West"
     }
-    response = client.post("/catcher/predict", json=data)
+    response = client.post("/predict/catcher/predict", json=data)
     # Should either return 422 (validation error) or 400 (processing error)
     assert response.status_code in [400, 422]
 
 def test_catcher_empty_data():
     """Test catcher prediction with empty data"""
     data = {}
-    response = client.post("/catcher/predict", json=data)
+    response = client.post("/predict/catcher/predict", json=data)
     assert response.status_code == 422  # Should return error for missing required fields 

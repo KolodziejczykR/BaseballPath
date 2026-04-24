@@ -29,7 +29,7 @@ def test_end_to_end_infielder_predict():
         "player_region": "West",
         "primary_position": "SS",
     }
-    resp = client.post("/infielder/predict", json=payload)
+    resp = client.post("/predict/infielder/predict", json=payload)
     _assert_prediction_response(resp)
     assert resp.json()["player_type"] == "Infielder"
 
@@ -46,7 +46,7 @@ def test_end_to_end_outfielder_predict():
         "player_region": "West",
         "primary_position": "OF",
     }
-    resp = client.post("/outfielder/predict", json=payload)
+    resp = client.post("/predict/outfielder/predict", json=payload)
     _assert_prediction_response(resp)
     assert resp.json()["player_type"] == "Outfielder"
 
@@ -64,7 +64,7 @@ def test_end_to_end_catcher_predict():
         "throwing_hand": "R",
         "player_region": "West",
     }
-    resp = client.post("/catcher/predict", json=payload)
+    resp = client.post("/predict/catcher/predict", json=payload)
     _assert_prediction_response(resp)
     assert resp.json()["player_type"] == "Catcher"
 
@@ -79,6 +79,6 @@ def test_end_to_end_pitcher_predict():
         "fastball_velo_max": 90.0,
         "fastball_velo_range": 86.0,
     }
-    resp = client.post("/pitcher/predict", json=payload)
+    resp = client.post("/predict/pitcher/predict", json=payload)
     _assert_prediction_response(resp)
     assert resp.json()["player_type"] == "Pitcher"

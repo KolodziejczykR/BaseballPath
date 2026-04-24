@@ -8,8 +8,6 @@ this package.
 
 from __future__ import annotations
 
-import os
-from datetime import date
 from typing import Any, Dict, List, Optional
 
 from backend.roster_scraper.roster_parser import normalize_position
@@ -102,38 +100,6 @@ def _player_archetype(player_stats: Dict[str, Any]) -> str:
     return "infield_candidate"
 
 
-def _current_academic_year() -> int:
-    """Return the academic year for the current roster season.
-
-    Rosters published before August reflect the upcoming academic year
-    (spring season), so we use the calendar year directly.
-    """
-    return date.today().year
-
-
-def _target_incoming_grad_year(player_stats: Dict[str, Any]) -> int:
-    grad_year = player_stats.get("graduation_year")
-    try:
-        if grad_year is not None:
-            return int(grad_year)
-    except (TypeError, ValueError):
-        pass
-    try:
-        return int(os.getenv("OPENAI_RESEARCH_INCOMING_GRAD_YEAR", "2027"))
-    except (TypeError, ValueError):
-        return 2027
-
-
-def _years_until_enrollment(player_stats: Dict[str, Any]) -> int:
-    """How many roster turnover cycles before the player arrives on campus.
-
-    Capped at 3 because beyond that the entire roster will have turned over
-    and further projection adds no value.
-    """
-    enrollment_year = _target_incoming_grad_year(player_stats)
-    return min(3, max(0, enrollment_year - _current_academic_year()))
-
-
 def _estimate_openings(departures: int, total: int, returning_high_usage: Optional[int]) -> str:
     if total == 0:
         return "unknown"
@@ -188,14 +154,14 @@ def compute_evidence(
 ) -> GatheredEvidence:
     """Build GatheredEvidence deterministically from parsed roster/stats data.
 
-    Projections are shifted forward by the player's years until enrollment
-    so that departures, upperclassmen/underclassmen counts, and opportunity
-    estimates reflect the roster the player will actually face on arrival.
+    Projects one year forward (next season's roster): current seniors and
+    graduates are treated as departing, and everyone else ages up one class.
+    Incoming freshmen and transfers are intentionally excluded — that data is
+    not reliably available, so openings/competition are assessed solely from
+    who will remain on the roster.
     """
     target_family = _school_position_family(player_stats.get("primary_position", ""))
     target_position = normalize_position(player_stats.get("primary_position", ""))
-    years_out = _years_until_enrollment(player_stats)
-    enrollment_year = _target_incoming_grad_year(player_stats)
 
     same_family = [m for m in matched_players if m.player.position_family == target_family]
     same_exact = [m for m in matched_players if m.player.position_normalized == target_position] if target_position else []
@@ -205,7 +171,7 @@ def compute_evidence(
         if cy == 0:
             return False
         effective = cy - (1 if m.player.is_redshirt else 0)
-        return effective + years_out >= 4
+        return effective >= 4
 
     departures_family = sum(1 for m in same_family if _will_depart(m))
     departures_exact = (
@@ -216,7 +182,7 @@ def compute_evidence(
     remaining_family = [m for m in same_family if not _will_depart(m)]
 
     def _projected_year(m: MatchedPlayer) -> int:
-        return (m.player.normalized_class_year or 0) + years_out
+        return (m.player.normalized_class_year or 0) + 1
 
     upperclassmen = sum(1 for m in remaining_family if _projected_year(m) >= 3)
     underclassmen = sum(1 for m in remaining_family if 1 <= _projected_year(m) <= 2)
@@ -276,11 +242,11 @@ def compute_evidence(
     )
 
     notes: List[str] = []
-    if years_out > 0:
+    if same_family:
         notes.append(
-            f"Projected {years_out} year(s) forward ({enrollment_year} enrollment): "
-            f"{departures_family} of {len(same_family)} {target_family} players "
-            f"will have graduated by arrival."
+            f"Projected next-season roster: {departures_family} of {len(same_family)} "
+            f"current {target_family} players are seniors/graduates and will depart; "
+            f"{len(remaining_family)} return."
         )
     if not stats_available:
         notes.append("Stats page was not available; estimates based on roster data only.")
@@ -288,20 +254,6 @@ def compute_evidence(
         notes.append("Position listings use broad categories (IF/OF/P); exact positions unknown.")
     if pos_quality != "unknown" and not same_family:
         notes.append(f"No listed players matched the {target_family} position family on the roster.")
-
-    projected_note: Optional[str] = None
-    if years_out >= 3:
-        projected_note = (
-            f"Player enrolls in {enrollment_year} — current roster will be almost "
-            f"entirely turned over by then. Program size ({len(same_family)} {target_family} "
-            f"players) and recruiting patterns are more relevant than specific player analysis."
-        )
-    elif years_out > 0:
-        projected_note = (
-            f"Player enrolls in {enrollment_year} ({years_out} year(s) out). "
-            f"{departures_family} of {len(same_family)} current {target_family} players "
-            f"projected to depart; {len(remaining_family)} will remain on roster at arrival."
-        )
 
     sources = [
         ResearchSource(
@@ -332,12 +284,6 @@ def compute_evidence(
     data_gaps: List[str] = []
     if not stats_available:
         data_gaps.append("Team statistics unavailable — starter usage estimates less precise.")
-    if years_out >= 3:
-        data_gaps.append(
-            f"Player enrolls in {enrollment_year} — current roster will be almost entirely "
-            f"turned over by then. Program size and recruiting patterns are more relevant "
-            f"than specific player analysis."
-        )
 
     return GatheredEvidence(
         roster_context=RosterContext(
@@ -352,8 +298,6 @@ def compute_evidence(
             returning_high_usage_exact_position=returning_high_usage_exact if stats_available else None,
             starter_opening_estimate_same_family=opener_family,
             starter_opening_estimate_exact_position=opener_exact,
-            projected_years_out=years_out,
-            projected_departures_note=projected_note,
             notes=notes,
         ),
         recruiting_context=RecruitingContext(

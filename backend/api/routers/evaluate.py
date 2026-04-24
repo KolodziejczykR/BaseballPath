@@ -117,7 +117,9 @@ class AcademicInput(BaseModel):
 class PreferencesInput(BaseModel):
     regions: Optional[List[str]] = None  # None = all regions
     max_budget: Optional[str] = None  # Budget key or "no_preference"
-    ranking_priority: Optional[str] = None  # "playing_time" | "baseball_fit" | "academics"
+    ranking_priority: Optional[str] = None  # "baseball_fit" | "academics"
+    states: Optional[List[str]] = None  # individual 2-letter abbreviations to include
+    excluded_states: Optional[List[str]] = None  # states to exclude from selected regions
 
 
 class EvaluateRequest(BaseModel):
@@ -470,10 +472,13 @@ async def _run_core_evaluation(
         academic_composite=academic_score["effective"],
         is_pitcher=is_pitcher_flag,
         selected_regions=prefs.regions,
+        selected_states=prefs.states,
+        excluded_states=prefs.excluded_states,
         max_budget=budget_max,
         user_state=user_state,
         limit=school_limit,
         consideration_pool=consideration_pool,
+        ranking_priority=prefs.ranking_priority,
     )
 
     return {
@@ -711,6 +716,8 @@ async def finalize_evaluation(
         "stats_input": player_stats,
         "preferences_input": {
             "regions": prefs_data.get("regions"),
+            "states": prefs_data.get("states"),
+            "excluded_states": prefs_data.get("excluded_states"),
             "max_budget": prefs_data.get("max_budget"),
             "academic_input": acad_data,
         },
@@ -904,6 +911,8 @@ async def run_evaluation(
         "stats_input": player_stats,
         "preferences_input": {
             "regions": prefs.regions,
+            "states": prefs.states,
+            "excluded_states": prefs.excluded_states,
             "max_budget": prefs.max_budget,
             "academic_input": acad.model_dump(),
         },

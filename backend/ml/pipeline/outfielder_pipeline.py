@@ -32,7 +32,7 @@ class OutfielderPredictionPipeline:
             self.logger.info("Running Stage 1: D1 vs Non-D1 prediction")
             d1_result = predict_d1(player_data, MODEL_DIR_D1)
 
-            if not d1_result.d1_prediction:
+            if d1_result.d1_probability <= 0.35:
                 return MLPipelineResults(player=player, d1_results=d1_result, p4_results=None)
 
             self.logger.info("Running Stage 2: P4 vs Non-P4 D1 prediction")

@@ -20,8 +20,6 @@ from .evidence import (
     _player_archetype,
     _safe_int,
     _school_position_family,
-    _target_incoming_grad_year,
-    _years_until_enrollment,
     compute_evidence,
 )
 from .fetch import (
@@ -51,12 +49,14 @@ from .parsers import (
 )
 from .ranking import (
     ACADEMIC_FIT_PENALTY_MAP,
+    ACADEMIC_PRIORITY_PENALTY_MAP,
     ADJUSTMENT_POINTS,
     COMPETITION_POINTS,
     CONFIDENCE_MULTIPLIER,
     CROSS_SCHOOL_OPPORTUNITY_WEIGHT,
     CROSS_SCHOOL_Z_CLAMP,
     FIT_FAMILY_BASE,
+    FIT_FAMILY_BASE_BY_PRIORITY,
     LEVEL_POINTS,
     MAX_RERANK_ADJUSTMENT,
     OPENING_POINTS,
@@ -121,12 +121,14 @@ __all__ = [
     "HIGH_USAGE_GS_THRESHOLD",
     # Scoring constants
     "ACADEMIC_FIT_PENALTY_MAP",
+    "ACADEMIC_PRIORITY_PENALTY_MAP",
     "ADJUSTMENT_POINTS",
     "COMPETITION_POINTS",
     "CONFIDENCE_MULTIPLIER",
     "CROSS_SCHOOL_OPPORTUNITY_WEIGHT",
     "CROSS_SCHOOL_Z_CLAMP",
     "FIT_FAMILY_BASE",
+    "FIT_FAMILY_BASE_BY_PRIORITY",
     "LEVEL_POINTS",
     "MAX_RERANK_ADJUSTMENT",
     "OPENING_POINTS",
@@ -183,7 +185,5 @@ __all__ = [
     "_review_confidence_multiplier",
     "_safe_int",
     "_school_position_family",
-    "_target_incoming_grad_year",
     "_trusted_domains_for_school",
-    "_years_until_enrollment",
 ]

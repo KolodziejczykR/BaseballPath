@@ -211,7 +211,22 @@ class DeepSchoolInsightService:
 
             batch_size = self.batch_size
 
-        _apply_cross_school_reranking(schools_copy, ranking_priority=ranking_priority)
+        player_academic_score: Optional[float] = None
+        if isinstance(academic_score, dict):
+            raw_score = academic_score.get("effective")
+            if raw_score is None:
+                raw_score = academic_score.get("composite")
+            if raw_score is not None:
+                try:
+                    player_academic_score = float(raw_score)
+                except (TypeError, ValueError):
+                    player_academic_score = None
+
+        _apply_cross_school_reranking(
+            schools_copy,
+            ranking_priority=ranking_priority,
+            player_academic_score=player_academic_score,
+        )
         schools_copy.sort(
             key=_cross_school_sort_key,
             reverse=True,
@@ -224,7 +239,7 @@ class DeepSchoolInsightService:
         if final_limit is not None and len(schools_copy) > final_limit:
             MAX_STRONG_SAFETY = 2
             MAX_STRONG_REACH = 2
-            MAX_ACAD_STRONG_SAFETY = 2 if ranking_priority == "academics" else 5
+            MAX_ACAD_STRONG_SAFETY = 0 if ranking_priority == "academics" else 5
 
             strong_safeties = [s for s in schools_copy if s.get("fit_label") == "Strong Safety"]
             strong_reaches = [s for s in schools_copy if s.get("fit_label") == "Strong Reach"]
@@ -248,7 +263,43 @@ class DeepSchoolInsightService:
                 else:
                     acad_capped.append(s)
 
-            schools_copy = acad_capped[:final_limit]
+            trimmed = acad_capped[:final_limit]
+
+            # Guarantee priority-specific schools appear in the final set.
+            # "academics" → inject top academic schools (by selectivity score)
+            # "baseball_fit" → inject top baseball schools (by SCI)
+            GUARANTEED_SLOTS = 3
+            TOP_POOL = 10
+
+            if ranking_priority == "academics":
+                top_academic = sorted(
+                    schools_copy,
+                    key=lambda s: float(s.get("academic_selectivity_score") or 0),
+                    reverse=True,
+                )[:TOP_POOL]
+                trimmed_names = {s.get("school_name") for s in trimmed}
+                missing = [s for s in top_academic if s.get("school_name") not in trimmed_names]
+                for s in missing[:GUARANTEED_SLOTS]:
+                    if len(trimmed) >= final_limit:
+                        trimmed.pop()  # drop lowest-ranked school
+                    trimmed.append(s)
+                trimmed.sort(key=_cross_school_sort_key, reverse=True)
+
+            elif ranking_priority == "baseball_fit":
+                top_baseball = sorted(
+                    schools_copy,
+                    key=lambda s: float(s.get("sci") or 0),
+                    reverse=True,
+                )[:TOP_POOL]
+                trimmed_names = {s.get("school_name") for s in trimmed}
+                missing = [s for s in top_baseball if s.get("school_name") not in trimmed_names]
+                for s in missing[:GUARANTEED_SLOTS]:
+                    if len(trimmed) >= final_limit:
+                        trimmed.pop()  # drop lowest-ranked school
+                    trimmed.append(s)
+                trimmed.sort(key=_cross_school_sort_key, reverse=True)
+
+            schools_copy = trimmed
 
         for idx, school in enumerate(schools_copy, start=1):
             school.pop("_research_id", None)
@@ -283,19 +334,19 @@ class DeepSchoolInsightService:
         school["opportunity_fit"] = insight.review.opportunity_fit
         school["overall_school_view"] = insight.review.final_school_view
         school["review_adjustment_from_base"] = insight.review.adjustment_from_base
-        school["roster_summary"] = insight.review.roster_summary
-        school["opportunity_summary"] = insight.review.opportunity_summary
-        school["trend_summary"] = insight.review.trend_summary
-        school["research_fit_summary"] = insight.review.fit_summary
-        # Propagate deep review summaries as the primary fit_summary / school_description
-        # so the UI shows research-backed content instead of the fast inline summary.
-        if insight.review.fit_summary:
-            school["fit_summary"] = insight.review.fit_summary
-        if insight.review.program_summary:
-            school["school_description"] = insight.review.program_summary
-        school["program_summary"] = insight.review.program_summary
-        school["research_reasons"] = insight.review.reasons_for_fit
-        school["research_risks"] = insight.review.risks
+
+        # Human-facing narrative fields
+        school["why_this_school"] = insight.review.why_this_school
+        school["school_snapshot"] = insight.review.school_snapshot
+        school["considerations"] = insight.review.considerations
+
+        # Backward-compat: populate fit_summary / school_description so any
+        # code or UI that still references the old field names keeps working.
+        if insight.review.why_this_school:
+            school["fit_summary"] = insight.review.why_this_school
+        if insight.review.school_snapshot:
+            school["school_description"] = insight.review.school_snapshot
+
         school["research_data_gaps"] = sorted(
             set(insight.review.data_gaps + insight.evidence.data_gaps)
         )
@@ -325,13 +376,9 @@ class DeepSchoolInsightService:
                     final_school_view=school.get("fit_label") or "",
                     adjustment_from_base="none",
                     confidence="low",
-                    fit_summary="",
-                    program_summary="",
-                    roster_summary="Deep roster research is unavailable in the current backend environment.",
-                    opportunity_summary="Opportunity was left unchanged because roster research could not run.",
-                    trend_summary="",
-                    reasons_for_fit=[],
-                    risks=[],
+                    why_this_school="",
+                    school_snapshot="",
+                    considerations=[],
                     data_gaps=[
                         "Deep roster research is unavailable because the running OpenAI SDK does not support responses.parse."
                     ],
@@ -364,13 +411,9 @@ class DeepSchoolInsightService:
                     final_school_view=school.get("fit_label") or "",
                     adjustment_from_base="none",
                     confidence="low",
-                    fit_summary="",
-                    program_summary="",
-                    roster_summary="Official roster context could not be verified from source-backed results.",
-                    opportunity_summary="Opportunity was left unchanged because verified roster evidence was not available.",
-                    trend_summary="",
-                    reasons_for_fit=[],
-                    risks=[],
+                    why_this_school="",
+                    school_snapshot="",
+                    considerations=[],
                     data_gaps=evidence.data_gaps,
                 ),
                 ranking_adjustment=0.0,
@@ -398,13 +441,9 @@ class DeepSchoolInsightService:
                 final_school_view=school.get("fit_label") or "",
                 adjustment_from_base="none",
                 confidence="low",
-                fit_summary="",
-                program_summary="",
-                roster_summary="Roster evidence was gathered but the detailed review could not be completed.",
-                opportunity_summary="",
-                trend_summary="",
-                reasons_for_fit=[],
-                risks=[],
+                why_this_school="",
+                school_snapshot="",
+                considerations=[],
                 data_gaps=evidence.data_gaps + ["Detailed review could not be completed."],
             )
             ranking_adjustment = compute_ranking_adjustment(evidence, review)
@@ -492,16 +531,29 @@ class DeepSchoolInsightService:
         baseball_assessment: Dict[str, Any],
         academic_score: Dict[str, Any],
         evidence: GatheredEvidence,
+        _max_retries: int = 2,
     ) -> Optional[DeepSchoolReview]:
-        return await review_school(
-            school,
-            player_stats,
-            baseball_assessment,
-            academic_score,
-            evidence,
-            responses_parse=self._responses_parse,
-            review_model=self.review_model,
-        )
+        school_name = school.get("display_school_name") or school.get("school_name") or "?"
+        for attempt in range(_max_retries + 1):
+            result = await review_school(
+                school,
+                player_stats,
+                baseball_assessment,
+                academic_score,
+                evidence,
+                responses_parse=self._responses_parse,
+                review_model=self.review_model,
+            )
+            if result is not None:
+                return result
+            if attempt < _max_retries:
+                wait = 2.0 * (attempt + 1)
+                logger.warning(
+                    "LLM review failed for %r (attempt %d/%d), retrying in %.0fs",
+                    school_name, attempt + 1, _max_retries + 1, wait,
+                )
+                await asyncio.sleep(wait)
+        return None
 
     def _review_instructions(self) -> str:
         return review_instructions()

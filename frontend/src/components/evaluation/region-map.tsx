@@ -20,60 +20,124 @@ const REGIONS: { name: RegionName; label: string; color: string }[] = [
 type RegionMapProps = {
   selected: RegionName[];
   onChange: (regions: RegionName[]) => void;
+  selectedStates: string[];
+  onStatesChange: (states: string[]) => void;
+  excludedStates: string[];
+  onExcludedStatesChange: (states: string[]) => void;
 };
 
-export function RegionMap({ selected, onChange }: RegionMapProps) {
-  const [hoveredRegion, setHoveredRegion] = useState<RegionName | null>(null);
+export function RegionMap({
+  selected,
+  onChange,
+  selectedStates,
+  onStatesChange,
+  excludedStates,
+  onExcludedStatesChange,
+}: RegionMapProps) {
+  const [hoveredState, setHoveredState] = useState<string | null>(null);
 
-  const allSelected = selected.length === 0 || selected.length === REGIONS.length;
+  // "All selected" means no explicit filter — everything is in play.
+  const noFilter =
+    selected.length === 0 &&
+    selectedStates.length === 0 &&
+    excludedStates.length === 0;
+
+  function statesInRegion(region: RegionName): string[] {
+    return Object.keys(STATE_PATHS).filter(
+      (abbr) => getStateRegion(abbr) === region,
+    );
+  }
 
   function toggleRegion(name: RegionName) {
-    if (allSelected) {
-      onChange([name]);
-      return;
-    }
+    const regionStates = statesInRegion(name);
     if (selected.includes(name)) {
-      const next = selected.filter((r) => r !== name);
-      if (next.length === 0) {
-        onChange([]);
-      } else {
-        onChange(next);
-      }
+      // Deselecting a region — drop any exclusions inside it (they're
+      // meaningless without the region) and any individual inclusions
+      // (the state isn't covered by any region anymore, so clearing is
+      // safer than leaving stale selections).
+      onChange(selected.filter((r) => r !== name));
+      const clean = (arr: string[]) =>
+        arr.filter((s) => !regionStates.includes(s));
+      onExcludedStatesChange(clean(excludedStates));
+      onStatesChange(clean(selectedStates));
     } else {
       const next = [...selected, name];
+      // States individually included in this region are now redundant
+      // (covered by the region); clear them to keep state tidy.
+      const pruned = selectedStates.filter((s) => !regionStates.includes(s));
       if (next.length === REGIONS.length) {
+        // All regions selected → no filter; clear everything.
         onChange([]);
+        onStatesChange([]);
+        onExcludedStatesChange([]);
       } else {
         onChange(next);
+        if (pruned.length !== selectedStates.length) {
+          onStatesChange(pruned);
+        }
       }
     }
   }
 
-  function selectAll() {
+  function clearAll() {
     onChange([]);
+    onStatesChange([]);
+    onExcludedStatesChange([]);
+  }
+
+  function toggleState(abbr: string) {
+    const region = getStateRegion(abbr) as RegionName | null;
+    const regionSelected = region != null && selected.includes(region);
+
+    if (regionSelected) {
+      // State's region is selected — clicking toggles exclusion.
+      if (excludedStates.includes(abbr)) {
+        onExcludedStatesChange(excludedStates.filter((s) => s !== abbr));
+      } else {
+        onExcludedStatesChange([...excludedStates, abbr]);
+      }
+    } else {
+      // State's region is NOT selected — clicking toggles individual
+      // inclusion.
+      if (selectedStates.includes(abbr)) {
+        onStatesChange(selectedStates.filter((s) => s !== abbr));
+      } else {
+        onStatesChange([...selectedStates, abbr]);
+      }
+    }
+  }
+
+  function isStateActive(abbr: string): boolean {
+    if (noFilter) return true;
+    if (excludedStates.includes(abbr)) return false;
+    if (selectedStates.includes(abbr)) return true;
+    const region = getStateRegion(abbr) as RegionName | null;
+    return region != null && selected.includes(region);
   }
 
   function isRegionActive(name: RegionName): boolean {
-    return allSelected || selected.includes(name);
-  }
-
-  function handleStateClick(abbr: string) {
-    const region = getStateRegion(abbr) as RegionName | null;
-    if (region) toggleRegion(region);
+    return noFilter || selected.includes(name);
   }
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-[var(--foreground)]">Preferred regions</p>
+        <p className="text-sm font-medium text-[var(--foreground)]">
+          Preferred regions & states
+        </p>
         <button
           type="button"
-          onClick={selectAll}
+          onClick={clearAll}
           className="text-xs font-semibold text-[var(--primary)] hover:underline"
         >
-          {allSelected ? "All selected" : "Select all"}
+          {noFilter ? "All selected" : "Clear"}
         </button>
       </div>
+
+      <p className="text-xs text-[var(--muted)]">
+        Click the region chips for whole regions, then click states on the
+        map to add or remove individual ones.
+      </p>
 
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -85,34 +149,47 @@ export function RegionMap({ selected, onChange }: RegionMapProps) {
           const region = getStateRegion(abbr) as RegionName | null;
           if (!region) return null;
 
-          const active = isRegionActive(region);
-          const hovered = hoveredRegion === region;
+          const active = isStateActive(abbr);
+          const hovered = hoveredState === abbr;
           const regionColor = REGION_COLORS[region] || "var(--stroke)";
+          const individuallyIncluded = selectedStates.includes(abbr);
+          const excluded = excludedStates.includes(abbr);
 
           return (
             <path
               key={abbr}
               d={d}
               fill={active ? regionColor : "var(--clay-mist)"}
-              fillOpacity={active ? (hovered ? 0.85 : 0.6) : (hovered ? 0.4 : 0.25)}
-              stroke={active ? regionColor : "var(--stroke)"}
-              strokeWidth={active ? 1 : 0.5}
+              fillOpacity={
+                active ? (hovered ? 0.9 : 0.65) : hovered ? 0.4 : 0.25
+              }
+              stroke={
+                excluded
+                  ? "var(--danger, #c0392b)"
+                  : individuallyIncluded
+                    ? "var(--foreground)"
+                    : active
+                      ? regionColor
+                      : "var(--stroke)"
+              }
+              strokeWidth={excluded || individuallyIncluded ? 1.4 : active ? 1 : 0.5}
+              strokeDasharray={excluded ? "3 2" : undefined}
               strokeLinejoin="round"
-              onClick={() => handleStateClick(abbr)}
-              onMouseEnter={() => region && setHoveredRegion(region)}
-              onMouseLeave={() => setHoveredRegion(null)}
+              onClick={() => toggleState(abbr)}
+              onMouseEnter={() => setHoveredState(abbr)}
+              onMouseLeave={() => setHoveredState(null)}
               style={{
                 cursor: "pointer",
                 transition: "fill-opacity 200ms, stroke-width 200ms",
               }}
-            />
+            >
+              <title>{abbr}</title>
+            </path>
           );
         })}
-
-        {/* Region labels at approximate centers (Removed) */}
       </svg>
 
-      {/* Tag chips below map */}
+      {/* Region chips below map */}
       <div className="flex flex-wrap gap-2 justify-center">
         {REGIONS.map(({ name, label, color }) => {
           const active = isRegionActive(name);
@@ -134,6 +211,58 @@ export function RegionMap({ selected, onChange }: RegionMapProps) {
           );
         })}
       </div>
+
+      {/* Chip rows summarising individual additions / exclusions */}
+      {(selectedStates.length > 0 || excludedStates.length > 0) && (
+        <div className="space-y-1.5 pt-1">
+          {selectedStates.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 justify-center">
+              <span className="text-xs text-[var(--muted)] self-center mr-1">
+                Also included:
+              </span>
+              {selectedStates.map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => toggleState(st)}
+                  className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-all"
+                  style={{
+                    background: "var(--foreground)",
+                    color: "var(--background)",
+                    border: "1px solid var(--foreground)",
+                  }}
+                  title="Click to remove"
+                >
+                  {st} ✕
+                </button>
+              ))}
+            </div>
+          )}
+          {excludedStates.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 justify-center">
+              <span className="text-xs text-[var(--muted)] self-center mr-1">
+                Excluded:
+              </span>
+              {excludedStates.map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => toggleState(st)}
+                  className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-all"
+                  style={{
+                    background: "transparent",
+                    color: "var(--danger, #c0392b)",
+                    border: "1px dashed var(--danger, #c0392b)",
+                  }}
+                  title="Click to re-include"
+                >
+                  {st} ✕
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

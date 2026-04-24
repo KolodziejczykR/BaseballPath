@@ -113,6 +113,8 @@ class AcademicInput(BaseModel):
 
 class PreferencesInput(BaseModel):
     regions: Optional[List[str]] = None
+    states: Optional[List[str]] = None  # individual 2-letter abbreviations to include
+    excluded_states: Optional[List[str]] = None  # states to exclude from selected regions
     max_budget: Optional[str] = None
     ranking_priority: Optional[str] = None
 
@@ -185,6 +187,7 @@ async def run_preview_core(
     user_state: Optional[str] = None,
     school_limit: int = 15,
     consideration_pool: bool = False,
+    ranking_priority: Optional[str] = None,
 ) -> CoreEvaluation:
     if acad.sat_score is None and acad.act_score is None:
         raise EvaluationInputError("At least one test score (SAT or ACT) is required.")
@@ -229,6 +232,12 @@ async def run_preview_core(
         if budget_range:
             budget_max = budget_range[1]
 
+    # Prefer explicit override (used by deep-research stages that pass the
+    # stored priority directly); otherwise fall back to the preferences payload.
+    effective_priority = ranking_priority
+    if effective_priority is None:
+        effective_priority = prefs.ranking_priority
+
     ranked_schools = match_and_rank_schools(
         schools=all_schools,
         player_stats=player_stats,
@@ -237,10 +246,13 @@ async def run_preview_core(
         academic_composite=academic_score["effective"],
         is_pitcher=is_pitcher_flag,
         selected_regions=prefs.regions,
+        selected_states=prefs.states,
+        excluded_states=prefs.excluded_states,
         max_budget=budget_max,
         user_state=user_state,
         limit=school_limit,
         consideration_pool=consideration_pool,
+        ranking_priority=effective_priority,
     )
 
     return CoreEvaluation(
@@ -260,14 +272,38 @@ async def run_preview_core(
 # ---------------------------------------------------------------------------
 
 
-def build_teaser(core: CoreEvaluation, rng: Optional[random.Random] = None) -> List[Dict[str, Any]]:
+def build_teaser(
+    core: CoreEvaluation,
+    rng: Optional[random.Random] = None,
+    ranking_priority: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """
     Pick up to TEASER_COUNT schools at random from the top TEASER_POOL_SIZE
     of the ranked list. Strips the payload to the fields the teaser UI shows.
+
+    When *ranking_priority* is set, the pool is drawn from the top schools
+    for that dimension (e.g. highest academic_selectivity_score for
+    ``"academics"``, highest SCI for ``"baseball_fit"``).
     """
-    pool = core.ranked_schools[:TEASER_POOL_SIZE]
-    if not pool:
+    schools = core.ranked_schools
+    if not schools:
         return []
+
+    if ranking_priority == "academics":
+        pool = sorted(
+            schools,
+            key=lambda s: float(s.get("academic_selectivity_score") or 0),
+            reverse=True,
+        )[:TEASER_POOL_SIZE]
+    elif ranking_priority == "baseball_fit":
+        pool = sorted(
+            schools,
+            key=lambda s: float(s.get("sci") or 0),
+            reverse=True,
+        )[:TEASER_POOL_SIZE]
+    else:
+        pool = schools[:TEASER_POOL_SIZE]
+
     rng = rng or random.Random()
     sample_size = min(TEASER_COUNT, len(pool))
     picked = rng.sample(pool, sample_size)
@@ -421,7 +457,10 @@ async def finalize_paid_evaluation(
         "stats_input": player_stats,
         "preferences_input": {
             "regions": prefs_data.get("regions"),
+            "states": prefs_data.get("states"),
+            "excluded_states": prefs_data.get("excluded_states"),
             "max_budget": prefs_data.get("max_budget"),
+            "ranking_priority": prefs_data.get("ranking_priority"),
             "academic_input": acad_data,
         },
         "prediction_response": ml_data,
@@ -452,7 +491,7 @@ async def finalize_paid_evaluation(
         player_stats=player_stats,
         baseball_assessment=baseball_assessment,
         academic_score=academic_score,
-        final_limit=15,
+        final_limit=25,
         ranking_priority=prefs_data.get("ranking_priority"),
     )
     supabase.table("prediction_runs").update(

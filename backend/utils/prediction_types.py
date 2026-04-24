@@ -56,6 +56,11 @@ class MLPipelineResults:
             str: One of POWER_4_D1, NON_P4_D1, or NON_D1
         """
         if self.p4_results and self.p4_results.p4_prediction:
+            # Cap at Non-P4 D1 if D1 model did not confirm D1 classification.
+            # Prevents soft-routed borderline players (d1_prediction=False but
+            # d1_prob above the routing floor) from being classified as P4.
+            if not self.d1_results.d1_prediction:
+                return NON_P4_D1
             return POWER_4_D1
         elif self.d1_results.d1_prediction:
             return NON_P4_D1

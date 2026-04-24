@@ -169,8 +169,8 @@ def effective_tier(
     d1_probability: Optional[float],
     p4_probability: Optional[float],
     *,
-    p4_floor: float = 0.55,
-    d1_floor: float = 0.50,
+    p4_floor: float = 0.30,
+    d1_floor: float = 0.35,
 ) -> str:
     """Demote a ML-predicted tier when the underlying probabilities don't back it.
 
@@ -414,14 +414,14 @@ def ml_based_pci(
     base = low + (percentile / 100.0) * (high - low)
 
     if tier == POWER_4_D1 and p4_prob is not None:
-        base += (float(p4_prob) - 0.65) * 8.0
+        base += (float(p4_prob) - 0.42) * 5.0
     elif tier == NON_P4_D1 and d1_prob is not None:
-        base += (float(d1_prob) - 0.65) * 6.0
+        base += (float(d1_prob) - 0.55) * 8.0
     elif tier == NON_D1 and d1_prob is not None:
         # Within the Non-D1 tier, d1_prob carries the cross-tier "how close to
-        # D1 are they" signal. A stronger slope lets high-d1_prob Non-D1
-        # players reach top-D3 SCIs without pulling in tier-agnostic metrics.
-        base += (float(d1_prob) - 0.15) * 25.0
+        # D1 are they" signal.  Multiplier is moderate (15.0) to avoid extreme
+        # swings — calibrated probabilities already spread meaningfully.
+        base += (float(d1_prob) - 0.25) * 15.0
 
     return _clamp(base, 0.0, 100.0)
 
@@ -718,13 +718,13 @@ def compute_fit_delta(player_pci: float, school_sci: float) -> float:
 
 
 def classify_fit(delta: float) -> str:
-    if delta > 8:
+    if delta > 6:
         return "Strong Safety"
-    if delta > 4:
+    if delta > 3:
         return "Safety"
-    if delta >= -4:
+    if delta >= -3:
         return "Fit"
-    if delta >= -8:
+    if delta >= -6:
         return "Reach"
     return "Strong Reach"
 

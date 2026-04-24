@@ -77,7 +77,9 @@ async def preview_evaluation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
         ) from exc
 
-    teaser_schools = evaluation_service.build_teaser(core)
+    teaser_schools = evaluation_service.build_teaser(
+        core, ranking_priority=payload.preferences.ranking_priority,
+    )
 
     price_cents: Optional[int] = None
     is_first_eval: Optional[bool] = None

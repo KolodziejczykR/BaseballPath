@@ -36,27 +36,111 @@ RESEARCH_QUALITY_BONUS = 1.5
 # Cross-school reranking constants.
 CROSS_SCHOOL_OPPORTUNITY_WEIGHT = 2.5
 CROSS_SCHOOL_Z_CLAMP = 2.5
+# Academic-fit penalties (label fallback when no academic_delta is available).
+# Philosophy: the real academic cliff is the Strong Safety side (school way
+# below student). Safety/Reach/Strong Reach get lighter penalties so the
+# matcher still considers them. Magnitudes are ~2x the legacy table so the
+# signal actually moves the composite against the 0-100 FIT_FAMILY_BASE swing.
 ACADEMIC_FIT_PENALTY_MAP = {
-    "strong safety": -4.0,
-    "safety": -1.5,
+    "strong safety": -9.0,
+    "safety": -1.0,
     "fit": 0.0,
-    "reach": -1.75,
-    "strong reach": -5.0,
+    "reach": -2.0,
+    "strong reach": -6.5,
 }
-FIT_FAMILY_BASE = {
-    "Fit": 100.0,
-    "Safety": 50.0,
-    "Strong Safety": 30.0,
-    "Reach": 20.0,
-    "Strong Reach": 0.0
+# When ranking_priority == "academics": the Strong Safety direction is
+# effectively excluded via cap in service.py, but kept large here as fallback.
+# Reaches are unpenalized (academic stretch is the goal); small hit for
+# Strong Reach (probable admit wall).
+ACADEMIC_PRIORITY_PENALTY_MAP = {
+    "strong safety": -15.0,
+    "safety": -5.0,
+    "fit": 0.0,
+    "reach": 0.0,
+    "strong reach": -3.0,
 }
+# FIT_FAMILY_BASE is now priority-aware. Default (balanced) leaves Safety and
+# Reach close to Fit and only docks Strong Safety / Strong Reach.
+# baseball_fit makes Reach aspirational and docks Safety (too easy).
+# academics docks Reach (academics already stretching, don't double-reach).
+FIT_FAMILY_BASE_BY_PRIORITY = {
+    None: {
+        "Fit": 100.0,
+        "Safety": 90.0,
+        "Strong Safety": 40.0,
+        "Reach": 90.0,
+        "Strong Reach": 40.0,
+    },
+    "baseball_fit": {
+        "Fit": 100.0,
+        "Safety": 45.0,
+        "Strong Safety": 15.0,
+        "Reach": 85.0,
+        "Strong Reach": 45.0,
+    },
+    "academics": {
+        "Fit": 100.0,
+        "Safety": 80.0,
+        "Strong Safety": 45.0,
+        "Reach": 50.0,
+        "Strong Reach": 10.0,
+    },
+}
+# Backwards-compat alias for callers that still import FIT_FAMILY_BASE.
+FIT_FAMILY_BASE = FIT_FAMILY_BASE_BY_PRIORITY[None]
 PRIORITY_WEIGHTS = {
-    None: {"fit_family_base": 1.0, "ranking_score": 1.0, "opportunity_bonus": 1.0, "academic_penalty": 1.0},
-    "playing_time": {"fit_family_base": 0.8, "ranking_score": 1.0, "opportunity_bonus": 2.0, "academic_penalty": 0.6},
-    "baseball_fit": {"fit_family_base": 1.3, "ranking_score": 1.2, "opportunity_bonus": 0.5, "academic_penalty": 0.8},
-    "academics": {"fit_family_base": 0.9, "ranking_score": 0.8, "opportunity_bonus": 0.5, "academic_penalty": 2.0},
+    None: {"fit_family_base": 1.0, "ranking_score": 1.0, "opportunity_bonus": 0.5, "academic_penalty": 1.0, "academic_quality": 2.0},
+    "baseball_fit": {"fit_family_base": 1.3, "ranking_score": 1.2, "opportunity_bonus": 0.25, "academic_penalty": 0.8, "academic_quality": 0.0},
+    "academics": {"fit_family_base": 0.7, "ranking_score": 0.6, "opportunity_bonus": 0.15, "academic_penalty": 0.5, "academic_quality": 12.0},
 }
-VALID_RANKING_PRIORITIES = {"playing_time", "baseball_fit", "academics"}
+
+# Fallback median academic selectivity score when the player's own academic
+# score is unavailable. When the player's score *is* known, the median shifts
+# to ``player_score - _ACADEMIC_MEDIAN_OFFSET``, making the quality bonus a
+# student-relative signal: schools at or above the student's level are
+# rewarded, schools clearly below are penalized.
+_ACADEMIC_SELECTIVITY_MEDIAN = 5.0
+# How far below the player's academic score the "neutral point" sits. An
+# offset of 1.0 means a school one selectivity point below the student
+# contributes zero quality bonus; schools at the student's level or above
+# contribute positive bonus; Strong Safety territory contributes negative.
+_ACADEMIC_MEDIAN_OFFSET = 1.0
+# Fallback selectivity value for schools missing an ``academic_selectivity_score``.
+# Empirically the ~12-15 schools in the database without a score are all
+# academically weak (unranked / open-enrollment / low-selectivity programs),
+# so treating them as neutral at the median would over-reward them. 2.5 keeps
+# them clearly below the quality-bonus neutral point for any realistic student
+# academic score, matching their actual academic profile.
+_MISSING_SELECTIVITY_FALLBACK = 2.5
+# Attainability scaling on the positive side of the quality bonus. A school's
+# prestige is only a useful signal to the extent the student can actually get
+# in: Academic Fit / Safety is fully attainable (factor 1.0), Reach is
+# aspirational but realistic (0.8), Strong Reach is unlikely admission so
+# its prestige shouldn't crown it as the student's best fit (0.35). This is
+# what keeps Baseball-Fit + Academic-Reach above Baseball-Fit + Academic-
+# Strong-Reach under academics priority.
+_QUALITY_BONUS_ATTAINABILITY = {
+    "fit": 1.0,
+    "safety": 1.0,
+    "strong safety": 1.0,
+    "reach": 0.8,
+    "strong reach": 0.35,
+}
+VALID_RANKING_PRIORITIES = {"baseball_fit", "academics"}
+
+
+def _resolve_academic_median(player_academic_score: Optional[float]) -> float:
+    """Return the student-relative academic median used to center the quality bonus.
+
+    Falls back to the fixed ``_ACADEMIC_SELECTIVITY_MEDIAN`` when the student's
+    own academic score is unknown.
+    """
+    if player_academic_score is None:
+        return _ACADEMIC_SELECTIVITY_MEDIAN
+    try:
+        return float(player_academic_score) - _ACADEMIC_MEDIAN_OFFSET
+    except (TypeError, ValueError):
+        return _ACADEMIC_SELECTIVITY_MEDIAN
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -73,15 +157,19 @@ def _academic_penalty(academic_delta: float) -> float:
     ``academic_delta`` = player_academic - school_academic.
     Positive means the student is overqualified (safety direction).
     Negative means the school is harder (reach direction).
+
+    Dead zone matches the Fit label cutoff (|Δ| ≤ 0.6). Safety side uses a
+    steep exponent so Strong Safety (Δ > 2.0) bites hard; reach side stays
+    gentler so aspirational academic reaches remain viable.
     """
-    if abs(academic_delta) <= 0.9:
+    if abs(academic_delta) <= 0.6:
         return 0.0
-    if academic_delta > 0.9:
-        excess = academic_delta - 0.9
-        return -(excess ** 1.5) * 1.5
+    if academic_delta > 0.6:
+        excess = academic_delta - 0.6
+        return -(excess ** 2.2) * 2.2
     else:
-        excess = abs(academic_delta) - 0.9
-        return -(excess ** 1.5) * 1.2
+        excess = abs(academic_delta) - 0.6
+        return -(excess ** 1.5) * 3.0
 
 
 def compute_ranking_adjustment(evidence: GatheredEvidence, review: DeepSchoolReview) -> float:
@@ -216,24 +304,36 @@ def _cross_school_sort_key(school: Dict[str, Any]) -> Tuple[float, float, float]
 def _apply_cross_school_reranking(
     schools: Sequence[Dict[str, Any]],
     ranking_priority: Optional[str] = None,
+    player_academic_score: Optional[float] = None,
 ) -> None:
-    """Attach family-guarded composite scores and relative opportunity metrics."""
+    """Attach family-guarded composite scores and relative opportunity metrics.
+
+    ``player_academic_score`` is the student's effective academic composite
+    (0-10 scale). When provided, the academic quality bonus centers on
+    ``player_academic_score - _ACADEMIC_MEDIAN_OFFSET`` so the reward/penalty
+    split adapts to the individual student rather than the population.
+    """
     metrics_by_id = _compute_relative_opportunity_metrics(schools)
     w = PRIORITY_WEIGHTS.get(ranking_priority, PRIORITY_WEIGHTS[None])
+    fit_family_table = FIT_FAMILY_BASE_BY_PRIORITY.get(
+        ranking_priority, FIT_FAMILY_BASE_BY_PRIORITY[None]
+    )
+    academic_median = _resolve_academic_median(player_academic_score)
 
     for school in schools:
         school["raw_opportunity_signal"] = compute_raw_opportunity_signal(school)
         school["relative_opportunity_zscore"] = None
         school["relative_opportunity_bonus"] = 0.0
 
-        acad_delta = school.get("academic_delta")
-        if acad_delta is not None:
-            school["academic_fit_penalty"] = _academic_penalty(float(acad_delta))
+        acad_label = str(school.get("academic_fit") or "").strip().lower()
+        if ranking_priority == "academics":
+            school["academic_fit_penalty"] = ACADEMIC_PRIORITY_PENALTY_MAP.get(acad_label, 0.0)
         else:
-            school["academic_fit_penalty"] = ACADEMIC_FIT_PENALTY_MAP.get(
-                str(school.get("academic_fit") or "").strip().lower(),
-                0.0,
-            )
+            acad_delta = school.get("academic_delta")
+            if acad_delta is not None:
+                school["academic_fit_penalty"] = _academic_penalty(float(acad_delta))
+            else:
+                school["academic_fit_penalty"] = ACADEMIC_FIT_PENALTY_MAP.get(acad_label, 0.0)
 
         research_id = school.get("_research_id")
         if research_id is not None:
@@ -242,14 +342,44 @@ def _apply_cross_school_reranking(
                 school.update(metrics)
 
         fit_label = school.get("fit_label")
-        if fit_label not in FIT_FAMILY_BASE:
+        if fit_label not in fit_family_table:
             fit_label = classify_fit(float(school.get("delta") or 0.0))
             school["fit_label"] = fit_label
 
+        # Academic quality bonus: centers on a student-relative median so the
+        # reward/penalty scale tracks the individual student's level. Schools
+        # missing a selectivity score fall back to _MISSING_SELECTIVITY_FALLBACK
+        # (2.5) — the unscored schools in the DB are empirically low-selectivity,
+        # so defaulting to neutral would over-reward them.
+        raw_selectivity = school.get("academic_selectivity_score")
+        if raw_selectivity is None:
+            acad_sel = _MISSING_SELECTIVITY_FALLBACK
+        else:
+            try:
+                acad_sel = float(raw_selectivity)
+            except (TypeError, ValueError):
+                acad_sel = _MISSING_SELECTIVITY_FALLBACK
+        # Asymmetric: linear reward above the median (aspirational schools
+        # get a steady lift), quadratic penalty below (schools further below
+        # the student's level get punished disproportionately, so Lebanon-
+        # Valley-tier entries can't coast on small deltas).
+        # The positive side is scaled by an attainability factor based on
+        # academic fit — Strong-Reach schools get half credit for their
+        # selectivity because the student probably can't get in, so the
+        # raw prestige is a weaker signal of actual fit.
+        selectivity_delta = acad_sel - academic_median
+        if selectivity_delta >= 0:
+            acad_fit_label_lc = (school.get("academic_fit") or "").strip().lower()
+            attainability = _QUALITY_BONUS_ATTAINABILITY.get(acad_fit_label_lc, 1.0)
+            acad_quality_bonus = selectivity_delta * w["academic_quality"] * attainability
+        else:
+            acad_quality_bonus = -(selectivity_delta ** 2) * w["academic_quality"]
+
         composite = (
-            w["fit_family_base"] * FIT_FAMILY_BASE[fit_label]
+            w["fit_family_base"] * fit_family_table[fit_label]
             + w["ranking_score"] * float(school.get("ranking_score") or 0.0)
             + w["opportunity_bonus"] * float(school.get("relative_opportunity_bonus") or 0.0)
             + w["academic_penalty"] * float(school.get("academic_fit_penalty") or 0.0)
+            + acad_quality_bonus
         )
         school["cross_school_composite"] = round(composite, 2)

@@ -1,29 +1,18 @@
 """
-Celery tasks for LLM reasoning generation.
+Celery tasks for deep school research.
 """
 
 import asyncio
-import json
 import os
-import hashlib
 import logging
 import time
 from datetime import datetime
 from typing import Any, Dict
 
 from celery import Celery
-try:
-    import redis
-except Exception:  # pragma: no cover - optional dependency
-    redis = None
 
-from backend.llm.recommendation_reasoning import (
-    InsufficientQuotaError,
-    RecommendationReasoningGenerator,
-)
 from backend.llm.deep_school_insights import DeepSchoolInsightService
 from backend.api.clients.supabase import get_supabase_admin_client
-from backend.utils.recommendation_types import school_recommendation_from_dict
 
 
 def _get_env(name: str, default: str) -> str:
@@ -36,8 +25,6 @@ celery_app = Celery(
     backend=_get_env("CELERY_RESULT_BACKEND", "redis://localhost:6379/1"),
 )
 
-CACHE_PREFIX = "llm:reasoning:"
-INFLIGHT_PREFIX = "llm:reasoning:inflight:"
 logger = logging.getLogger(__name__)
 
 
@@ -46,142 +33,6 @@ def _top_schools_snapshot(schools: list[dict[str, Any]], limit: int = 3) -> list
         {"school_name": school.get("display_school_name") or school.get("school_name")}
         for school in (schools or [])[:limit]
     ]
-
-
-def compute_request_hash(payload: Dict[str, Any]) -> str:
-    normalized = json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-
-
-def _redis_client():
-    if redis is None:
-        return None
-    url = _get_env("REDIS_URL", "redis://localhost:6379/2")
-    return redis.Redis.from_url(url, decode_responses=True)
-
-
-def get_cached_reasoning(request_hash: str) -> Dict[str, Any] | None:
-    client = _redis_client()
-    if client is None:
-        return None
-    data = client.get(f"{CACHE_PREFIX}{request_hash}")
-    if not data:
-        return None
-    try:
-        return json.loads(data)
-    except Exception:
-        return None
-
-
-def set_cached_reasoning(request_hash: str, payload: Dict[str, Any], ttl_seconds: int = 3600) -> None:
-    client = _redis_client()
-    if client is None:
-        return None
-    client.setex(f"{CACHE_PREFIX}{request_hash}", ttl_seconds, json.dumps(payload, ensure_ascii=True))
-
-
-def get_inflight_job_id(request_hash: str) -> str | None:
-    client = _redis_client()
-    if client is None:
-        return None
-    return client.get(f"{INFLIGHT_PREFIX}{request_hash}")
-
-
-def set_inflight_job_id(request_hash: str, job_id: str, ttl_seconds: int = 900) -> None:
-    client = _redis_client()
-    if client is None:
-        return None
-    client.setex(f"{INFLIGHT_PREFIX}{request_hash}", ttl_seconds, job_id)
-
-
-def clear_inflight_job_id(request_hash: str) -> None:
-    client = _redis_client()
-    if client is None:
-        return None
-    client.delete(f"{INFLIGHT_PREFIX}{request_hash}")
-
-
-@celery_app.task(
-    name="generate_llm_reasoning",
-    rate_limit=_get_env("LLM_TASK_RATE_LIMIT", "30/m"),
-)
-def generate_llm_reasoning(payload: Dict[str, Any]) -> Dict[str, Any]:
-    request_hash = payload.get("request_hash")
-    schools_data = payload.get("schools", [])
-    player_info = payload.get("player_info", {})
-    ml_summary = payload.get("ml_summary", {})
-    preferences = payload.get("preferences", {})
-    total_matches = payload.get("total_matches", 0)
-    min_threshold = payload.get("min_threshold", 5)
-
-    schools = [school_recommendation_from_dict(item) for item in schools_data]
-
-    try:
-        generator = RecommendationReasoningGenerator()
-        reasoning_map = generator.generate_school_reasoning(
-            schools,
-            player_info=player_info,
-            ml_summary=ml_summary,
-            preferences=preferences,
-            batch_size=5,
-        )
-
-        player_summary = None
-        if payload.get("include_player_summary"):
-            player_summary = generator.generate_player_summary(
-                schools,
-                player_info=player_info,
-                ml_summary=ml_summary,
-                preferences=preferences,
-            )
-
-        relax_suggestions = generator.generate_relax_suggestions(
-            must_haves=payload.get("must_haves", {}),
-            total_matches=total_matches,
-            min_threshold=min_threshold,
-        )
-
-        result_payload = {
-            "status": "completed",
-            "reasoning": {k: v.__dict__ for k, v in reasoning_map.items()},
-            "player_summary": player_summary,
-            "relax_suggestions": [s.__dict__ for s in relax_suggestions],
-            "completed_at": datetime.now().isoformat(),
-        }
-    except InsufficientQuotaError as exc:
-        logger.warning("LLM reasoning unavailable (insufficient quota): %s", exc)
-        result_payload = {
-            "status": "failed",
-            "error_code": "insufficient_quota",
-            "error_message": "LLM quota exceeded. Please check billing and usage limits.",
-            "reasoning": {},
-            "player_summary": None,
-            "relax_suggestions": [],
-            "completed_at": datetime.now().isoformat(),
-        }
-    except Exception as exc:
-        logger.exception("LLM reasoning task failed: %s", exc)
-        result_payload = {
-            "status": "failed",
-            "error_code": "llm_generation_error",
-            "error_message": "LLM reasoning generation failed.",
-            "reasoning": {},
-            "player_summary": None,
-            "relax_suggestions": [],
-            "completed_at": datetime.now().isoformat(),
-        }
-
-    if request_hash:
-        try:
-            set_cached_reasoning(
-                request_hash,
-                result_payload,
-                ttl_seconds=int(_get_env("LLM_CACHE_TTL_SECONDS", "3600")),
-            )
-        finally:
-            clear_inflight_job_id(request_hash)
-
-    return result_payload
 
 
 @celery_app.task(

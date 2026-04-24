@@ -142,17 +142,17 @@ def test_non_d1_ml_pci_uses_d1_probability_meaningfully():
     )
 
     assert higher_prob > lower_prob
-    assert (higher_prob - lower_prob) >= 8.0
+    assert (higher_prob - lower_prob) >= 6.0
 
 
 def test_effective_tier_demotes_low_confidence_p4():
-    """A P4 call at p4_prob < 0.55 should be demoted to Non-P4 D1."""
-    assert effective_tier(POWER_4_D1, d1_probability=0.63, p4_probability=0.494) == NON_P4_D1
+    """A P4 call at p4_prob < 0.30 should be demoted to Non-P4 D1."""
+    assert effective_tier(POWER_4_D1, d1_probability=0.63, p4_probability=0.25) == NON_P4_D1
 
 
 def test_effective_tier_demotes_borderline_p4():
-    """A P4 call at p4_prob between old floor (0.50) and new floor (0.55) is demoted."""
-    assert effective_tier(POWER_4_D1, d1_probability=0.70, p4_probability=0.52) == NON_P4_D1
+    """A P4 call at p4_prob just below the 0.30 floor is demoted."""
+    assert effective_tier(POWER_4_D1, d1_probability=0.70, p4_probability=0.28) == NON_P4_D1
 
 
 def test_effective_tier_preserves_confident_p4():
@@ -161,11 +161,11 @@ def test_effective_tier_preserves_confident_p4():
 
 def test_effective_tier_cascades_p4_to_non_d1():
     """A P4 call that also fails the D1 floor should cascade to Non-D1."""
-    assert effective_tier(POWER_4_D1, d1_probability=0.40, p4_probability=0.45) == NON_D1
+    assert effective_tier(POWER_4_D1, d1_probability=0.30, p4_probability=0.25) == NON_D1
 
 
 def test_effective_tier_demotes_low_confidence_non_p4_d1():
-    assert effective_tier(NON_P4_D1, d1_probability=0.42, p4_probability=0.10) == NON_D1
+    assert effective_tier(NON_P4_D1, d1_probability=0.32, p4_probability=0.10) == NON_D1
 
 
 def test_effective_tier_never_promotes():
@@ -228,14 +228,14 @@ def test_match_and_rank_uses_school_sci_delta_not_flat_tier():
     )
 
     by_name = {row["school_name"]: row for row in results}
-    assert by_name["Tennessee"]["fit_label"] == "Reach"
-    assert by_name["Missouri"]["fit_label"] == "Safety"
+    assert by_name["Tennessee"]["fit_label"] == "Strong Reach"
+    assert by_name["Missouri"]["fit_label"] == "Strong Safety"
     assert by_name["Tennessee"]["display_school_name"] == "Tennessee"
     assert by_name["Missouri"]["display_school_name"] == "Missouri"
     assert by_name["Tennessee"]["delta"] < 0
     assert by_name["Missouri"]["delta"] > 0
-    assert by_name["Tennessee"]["niche_academic_grade"] == 6.5
-    assert by_name["Missouri"]["niche_academic_grade"] == 5.5
+    assert by_name["Tennessee"]["academic_selectivity_score"] == 6.5
+    assert by_name["Missouri"]["academic_selectivity_score"] == 5.5
     assert "academic_delta" in by_name["Tennessee"]
     assert "academic_delta" in by_name["Missouri"]
 
@@ -676,3 +676,33 @@ def test_normalize_hitter_position_handles_catcher_alias():
     assert normalize_hitter_position("catcher") == "C"
     assert normalize_hitter_position("OF") == "OF"
     assert normalize_hitter_position("SS") == "IF"
+
+
+def test_soft_routed_player_capped_at_non_p4_d1():
+    """A borderline player (d1_prediction=False) who gets p4_prediction=True
+    via soft routing should be capped at Non-P4 D1, not Power 4 D1."""
+    from backend.utils.prediction_types import (
+        D1PredictionResult, P4PredictionResult, MLPipelineResults,
+    )
+    from backend.utils.player_types import PlayerOutfielder
+
+    player = PlayerOutfielder(
+        height=74, weight=200, primary_position="OF",
+        throwing_hand="R", hitting_handedness="R", region="South",
+        exit_velo_max=95.0, of_velo=90.0, sixty_time=6.8,
+    )
+    d1 = D1PredictionResult(
+        d1_probability=0.40, d1_prediction=False,
+        confidence="Low", model_version="test",
+    )
+    p4 = P4PredictionResult(
+        p4_probability=0.50, p4_prediction=True,
+        confidence="Medium", is_elite=False, model_version="test",
+    )
+    result = MLPipelineResults(player=player, d1_results=d1, p4_results=p4)
+    assert result.get_final_prediction() == NON_P4_D1
+
+
+def test_effective_tier_preserves_calibrated_p4():
+    """A P4 call at p4_prob=0.45 (above calibrated floor 0.30) should stay P4."""
+    assert effective_tier(POWER_4_D1, d1_probability=0.70, p4_probability=0.45) == POWER_4_D1
