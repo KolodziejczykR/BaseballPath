@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
 import { ResultsMap } from "@/components/evaluation/results-map";
+import { SchoolFitVote, type SchoolFeedbackRecord } from "@/components/evaluation/school-fit-vote";
+import { EvalFeedbackPanel } from "@/components/evaluation/eval-feedback-panel";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -283,6 +285,7 @@ function MetricComparisonTable({ comparisons }: { comparisons: MetricComparison[
             // For time-based metrics (sec), lower is better
             const isTimeBased = m.unit === "sec";
             const isGood = isTimeBased ? diff < 0 : diff > 0;
+            const decimals = m.metric === "60-Yard Dash" ? 2 : 1;
 
             return (
               <tr key={m.metric} className="border-t border-[var(--stroke)]/50">
@@ -298,7 +301,7 @@ function MetricComparisonTable({ comparisons }: { comparisons: MetricComparison[
                   style={{ color: isGood ? "var(--sage-green)" : "var(--copper)" }}
                 >
                   {isPositive ? "+" : ""}
-                  {diff.toFixed(1)}
+                  {diff.toFixed(decimals)}
                 </td>
               </tr>
             );
@@ -326,6 +329,9 @@ export default function EvaluationDetailPage() {
   const [savingSchool, setSavingSchool] = useState(false);
   const [saveSchoolMessage, setSaveSchoolMessage] = useState("");
   const [deletingRun, setDeletingRun] = useState(false);
+  const [schoolFeedbackByKey, setSchoolFeedbackByKey] = useState<Record<string, SchoolFeedbackRecord>>({});
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
+  const [feedbackEligible, setFeedbackEligible] = useState(false);
   const detailRef = useRef<HTMLDivElement>(null);
 
   // Load evaluation
@@ -418,6 +424,86 @@ export default function EvaluationDetailPage() {
     loadSavedSchools();
     return () => { mounted = false; };
   }, [accessToken]);
+
+  // Load existing per-school feedback for this run
+  useEffect(() => {
+    if (!accessToken || !runId) return;
+    let mounted = true;
+
+    async function loadSchoolFeedback() {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/feedback/school?evaluation_run_id=${encodeURIComponent(runId)}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!mounted) return;
+        const next: Record<string, SchoolFeedbackRecord> = {};
+        for (const item of data.items || []) {
+          if (item.school_dedupe_key) {
+            next[item.school_dedupe_key] = {
+              school_dedupe_key: item.school_dedupe_key,
+              is_good_fit: item.is_good_fit,
+              reason: item.reason ?? null,
+            };
+          }
+        }
+        setSchoolFeedbackByKey(next);
+      } catch { /* ignore */ }
+    }
+
+    loadSchoolFeedback();
+    return () => { mounted = false; };
+  }, [accessToken, runId]);
+
+  // Check survey eligibility once results are ready
+  useEffect(() => {
+    if (!accessToken || !runId) return;
+    if (evaluation?.llm_reasoning_status === "processing") return;
+    let mounted = true;
+
+    async function checkEligibility() {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/feedback/run/eligibility?evaluation_run_id=${encodeURIComponent(runId)}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!mounted) return;
+        setFeedbackEligible(Boolean(data.eligible));
+      } catch { /* ignore */ }
+    }
+
+    checkEligibility();
+    return () => { mounted = false; };
+  }, [accessToken, runId, evaluation?.llm_reasoning_status]);
+
+  // 1-minute delay before revealing the inline feedback panel (skipped if
+  // not eligible / dismissed this session).
+  useEffect(() => {
+    if (!feedbackEligible) return;
+    if (evaluation?.llm_reasoning_status === "processing") return;
+    if (typeof window === "undefined") return;
+    const sessionDismissKey = `bp_eval_feedback_dismissed_${runId}`;
+    if (sessionStorage.getItem(sessionDismissKey)) return;
+
+    const timer = window.setTimeout(() => {
+      setShowFeedbackPanel(true);
+    }, 60000);
+    return () => window.clearTimeout(timer);
+  }, [feedbackEligible, evaluation?.llm_reasoning_status, runId]);
 
   // Derived data
   const schools = useMemo(
@@ -747,6 +833,21 @@ export default function EvaluationDetailPage() {
             </section>
           )}
 
+          {/* Inline feedback panel — appears 60s after evaluation finalizes */}
+          {showFeedbackPanel && accessToken && llmStatus !== "processing" && (
+            <EvalFeedbackPanel
+              accessToken={accessToken}
+              evaluationRunId={runId}
+              defaultName={(evaluation?.identity_input?.name as string) || null}
+              onDismiss={() => {
+                setShowFeedbackPanel(false);
+                if (typeof window !== "undefined") {
+                  sessionStorage.setItem(`bp_eval_feedback_dismissed_${runId}`, "1");
+                }
+              }}
+            />
+          )}
+
           {/* Schools section — hidden while research is running */}
           {llmStatus !== "processing" && <section className="mt-6">
             <div className="mb-4 flex items-center justify-between">
@@ -971,6 +1072,22 @@ export default function EvaluationDetailPage() {
                           </p>
                         </div>
                       </div>
+
+                      {accessToken && selectedDedupeKey && (
+                        <SchoolFitVote
+                          accessToken={accessToken}
+                          evaluationRunId={runId}
+                          schoolDedupeKey={selectedDedupeKey}
+                          schoolName={schoolDisplayName(selectedSchool)}
+                          current={schoolFeedbackByKey[selectedDedupeKey] || null}
+                          onSaved={(record) =>
+                            setSchoolFeedbackByKey((prev) => ({
+                              ...prev,
+                              [record.school_dedupe_key]: record,
+                            }))
+                          }
+                        />
+                      )}
 
                       {/* Why This School — main narrative */}
                       {(selectedSchool.why_this_school || selectedSchool.fit_summary) && (

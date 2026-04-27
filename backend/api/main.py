@@ -13,6 +13,7 @@ from api.routers.evaluations import router as evaluations_router
 from api.routers.billing import router as billing_router
 from api.routers.goals import router as goals_router
 from api.routers.saved_schools import router as saved_schools_router
+from api.routers.feedback import router as feedback_router
 
 app = FastAPI(title="BaseballPath Backend")
 
@@ -37,6 +38,7 @@ app.include_router(evaluations_router, prefix="/evaluations")
 app.include_router(billing_router, prefix="/billing")
 app.include_router(goals_router, prefix="/goals", tags=["goals"])
 app.include_router(saved_schools_router, prefix="/saved-schools", tags=["saved-schools"])
+app.include_router(feedback_router, prefix="/feedback", tags=["feedback"])
 
 @app.get("/")
 def read_root():

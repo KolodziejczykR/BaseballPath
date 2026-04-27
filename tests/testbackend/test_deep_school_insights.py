@@ -1527,6 +1527,27 @@ def test_academic_quality_bonus_is_student_relative():
     assert bonus_hi > bonus_neutral
 
 
+def test_academic_median_offset_compresses_for_weak_students():
+    """The median offset shrinks for low-academic students so the quality
+    bonus neutral point sits closer to their level. A weak-academic recruit
+    on academics priority should see weak safeties penalized harder than
+    a strong-academic recruit would (both relative to their own level)."""
+    from backend.llm.deep_school_insights.ranking import _resolve_academic_median
+
+    # Strong student (above pivot): full 1.0 offset.
+    assert _resolve_academic_median(8.0) == pytest.approx(7.0)
+    assert _resolve_academic_median(6.7) == pytest.approx(5.7)
+
+    # Weak student (below pivot): compressed offset, median sits closer.
+    weak = _resolve_academic_median(4.7)
+    assert weak > 4.7 - 1.0  # offset is less than the legacy 1.0
+    assert weak < 4.7  # but still positive offset
+
+    # Floor at MIN: very weak student doesn't collapse to the player score.
+    very_weak = _resolve_academic_median(2.5)
+    assert very_weak == pytest.approx(2.0)  # 0.5 floor
+
+
 def test_academic_quality_bonus_fallback_when_player_score_missing():
     """With no player_academic_score, the fixed _ACADEMIC_SELECTIVITY_MEDIAN
     is used — preserving legacy behavior for callers that don't thread the

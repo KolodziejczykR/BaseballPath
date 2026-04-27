@@ -80,7 +80,13 @@ FIT_FAMILY_BASE_BY_PRIORITY = {
     },
     "academics": {
         "Fit": 100.0,
-        "Safety": 80.0,
+        # Safety is kept close to Fit so that under academics priority, a
+        # solid-academic-Fit + Baseball-Safety school outranks a weaker-
+        # academic-Safety + Baseball-Fit school. The Fit → Safety baseball
+        # gap (100 → 88 = 8.4 composite) is smaller than the typical
+        # academic-quality gap between a ~6.5 and a ~5.0 selectivity
+        # school, so academic match wins as intended under this priority.
+        "Safety": 88.0,
         "Strong Safety": 45.0,
         "Reach": 50.0,
         "Strong Reach": 10.0,
@@ -96,15 +102,21 @@ PRIORITY_WEIGHTS = {
 
 # Fallback median academic selectivity score when the player's own academic
 # score is unavailable. When the player's score *is* known, the median shifts
-# to ``player_score - _ACADEMIC_MEDIAN_OFFSET``, making the quality bonus a
-# student-relative signal: schools at or above the student's level are
-# rewarded, schools clearly below are penalized.
+# to ``player_score - offset``, making the quality bonus a student-relative
+# signal: schools at or above the student's level are rewarded, schools
+# clearly below are penalized.
 _ACADEMIC_SELECTIVITY_MEDIAN = 5.0
-# How far below the player's academic score the "neutral point" sits. An
-# offset of 1.0 means a school one selectivity point below the student
-# contributes zero quality bonus; schools at the student's level or above
-# contribute positive bonus; Strong Safety territory contributes negative.
-_ACADEMIC_MEDIAN_OFFSET = 1.0
+# The offset between the player's effective score and the quality-bonus
+# neutral point scales with the player's level. Strong students (effective
+# ≥ pivot) use the full MAX offset, so the neutral point sits a full
+# selectivity point below them and aspirational reaches stay rewarded.
+# Weaker students (effective ≤ ~2.75) compress to the MIN offset, so the
+# neutral point hugs their level and the reach-reward is dampened — a 3.0 /
+# 23 ACT recruit shouldn't be told that a sel-5.5 school is a free upgrade.
+# The pivot (5.5) corresponds roughly to a B+ / 25 ACT / 1-2 AP profile.
+_ACADEMIC_MEDIAN_OFFSET_MAX = 1.0
+_ACADEMIC_MEDIAN_OFFSET_MIN = 0.5
+_ACADEMIC_MEDIAN_OFFSET_PIVOT = 5.5
 # Fallback selectivity value for schools missing an ``academic_selectivity_score``.
 # Empirically the ~12-15 schools in the database without a score are all
 # academically weak (unranked / open-enrollment / low-selectivity programs),
@@ -132,15 +144,27 @@ VALID_RANKING_PRIORITIES = {"baseball_fit", "academics"}
 def _resolve_academic_median(player_academic_score: Optional[float]) -> float:
     """Return the student-relative academic median used to center the quality bonus.
 
+    The offset between the student's effective score and the median scales
+    with the student's level: full ``_ACADEMIC_MEDIAN_OFFSET_MAX`` at and
+    above the pivot, linearly compressing to ``_ACADEMIC_MEDIAN_OFFSET_MIN``
+    for low-academic profiles. This dampens the reach-reward for marginal
+    students without changing behavior for typical or strong students.
+
     Falls back to the fixed ``_ACADEMIC_SELECTIVITY_MEDIAN`` when the student's
     own academic score is unknown.
     """
     if player_academic_score is None:
         return _ACADEMIC_SELECTIVITY_MEDIAN
     try:
-        return float(player_academic_score) - _ACADEMIC_MEDIAN_OFFSET
+        score = float(player_academic_score)
     except (TypeError, ValueError):
         return _ACADEMIC_SELECTIVITY_MEDIAN
+    offset = _clamp(
+        score * (_ACADEMIC_MEDIAN_OFFSET_MAX / _ACADEMIC_MEDIAN_OFFSET_PIVOT),
+        _ACADEMIC_MEDIAN_OFFSET_MIN,
+        _ACADEMIC_MEDIAN_OFFSET_MAX,
+    )
+    return score - offset
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -309,9 +333,10 @@ def _apply_cross_school_reranking(
     """Attach family-guarded composite scores and relative opportunity metrics.
 
     ``player_academic_score`` is the student's effective academic composite
-    (0-10 scale). When provided, the academic quality bonus centers on
-    ``player_academic_score - _ACADEMIC_MEDIAN_OFFSET`` so the reward/penalty
-    split adapts to the individual student rather than the population.
+    (0-10 scale). When provided, the academic quality bonus centers on a
+    student-relative median (see ``_resolve_academic_median``) so the
+    reward/penalty split adapts to the individual student rather than the
+    population.
     """
     metrics_by_id = _compute_relative_opportunity_metrics(schools)
     w = PRIORITY_WEIGHTS.get(ranking_priority, PRIORITY_WEIGHTS[None])
