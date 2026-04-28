@@ -145,7 +145,7 @@ class DeepSchoolInsightService:
 
         for idx, school in enumerate(schools_copy):
             base_score = float(school.get("delta") or 0.0)
-            school["ranking_score"] = compute_ranking_score(base_score, 0.0)
+            school["ranking_score"] = compute_ranking_score(base_score, 0.0, ranking_priority)
             school["ranking_adjustment"] = 0.0
             school["research_status"] = "queued" if idx < research_limit else "not_requested"
             school["_research_id"] = idx
@@ -188,6 +188,7 @@ class DeepSchoolInsightService:
                     player_stats=player_stats,
                     baseball_assessment=baseball_assessment,
                     academic_score=academic_score,
+                    ranking_priority=ranking_priority,
                 )
                 for school in next_batch
             ]
@@ -361,6 +362,7 @@ class DeepSchoolInsightService:
         player_stats: Dict[str, Any],
         baseball_assessment: Dict[str, Any],
         academic_score: Dict[str, Any],
+        ranking_priority: Optional[str] = None,
     ) -> Optional[DeepSchoolInsight]:
         if self.client is None:
             return None
@@ -384,7 +386,7 @@ class DeepSchoolInsightService:
                     ],
                 ),
                 ranking_adjustment=0.0,
-                ranking_score=compute_ranking_score(float(school.get("delta") or 0.0), 0.0),
+                ranking_score=compute_ranking_score(float(school.get("delta") or 0.0), 0.0, ranking_priority),
                 research_status="unavailable",
             )
 
@@ -417,7 +419,7 @@ class DeepSchoolInsightService:
                     data_gaps=evidence.data_gaps,
                 ),
                 ranking_adjustment=0.0,
-                ranking_score=compute_ranking_score(float(school.get("delta") or 0.0), 0.0),
+                ranking_score=compute_ranking_score(float(school.get("delta") or 0.0), 0.0, ranking_priority),
                 research_status="insufficient_evidence",
             )
 
@@ -455,7 +457,7 @@ class DeepSchoolInsightService:
                 evidence=evidence,
                 review=review,
                 ranking_adjustment=ranking_adjustment,
-                ranking_score=compute_ranking_score(base_score, ranking_adjustment),
+                ranking_score=compute_ranking_score(base_score, ranking_adjustment, ranking_priority),
                 research_status="partial",
             )
 
@@ -468,7 +470,7 @@ class DeepSchoolInsightService:
             evidence=evidence,
             review=review,
             ranking_adjustment=ranking_adjustment,
-            ranking_score=compute_ranking_score(base_score, ranking_adjustment),
+            ranking_score=compute_ranking_score(base_score, ranking_adjustment, ranking_priority),
             research_status="completed",
         )
 

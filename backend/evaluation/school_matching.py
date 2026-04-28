@@ -712,15 +712,22 @@ def match_and_rank_schools(
             _ABS_DELTA_WEIGHT = 0.5
             _ACAD_WEIGHT = 3.0
             _MIN_ACAD_DIVERSE = 20
+            _MIN_BB_REACH = 0
         elif ranking_priority == "baseball_fit":
             # Tight baseball targeting, academics secondary.
             _ABS_DELTA_WEIGHT = 1.3
             _ACAD_WEIGHT = 0.8
             _MIN_ACAD_DIVERSE = 8
+            # Reserve cross-tier baseball stretches in the pool so the
+            # downstream ranker has reaches to work with. Without this,
+            # the close-delta primary-tier Fits dominate the global sort
+            # and reaches never enter the 50-school consideration pool.
+            _MIN_BB_REACH = 6
         else:
             _ABS_DELTA_WEIGHT = 1.0
             _ACAD_WEIGHT = 1.5
             _MIN_ACAD_DIVERSE = 12
+            _MIN_BB_REACH = 0
 
         candidates.sort(
             key=lambda x: x["_abs_delta"] * _ABS_DELTA_WEIGHT
@@ -735,6 +742,26 @@ def match_and_rank_schools(
         ]
         selected: List[Dict[str, Any]] = acad_good[:_MIN_ACAD_DIVERSE]
         selected_names = {s["school_name"] for s in selected}
+
+        # Reserve slots for baseball Reach / Strong Reach schools so the
+        # downstream ranker has stretches to work with. Without this, the
+        # global sort fills with close-delta Fits and reaches never enter
+        # the pool. Sorted by lowest absolute delta so the most attainable
+        # reaches come first.
+        if _MIN_BB_REACH > 0:
+            bb_reaches_sorted = sorted(
+                (c for c in candidates if c.get("fit_label") in ("Reach", "Strong Reach")),
+                key=lambda x: x["_abs_delta"],
+            )
+            for c in bb_reaches_sorted:
+                bb_reach_count = sum(
+                    1 for s in selected if s.get("fit_label") in ("Reach", "Strong Reach")
+                )
+                if bb_reach_count >= _MIN_BB_REACH or len(selected) >= limit:
+                    break
+                if c["school_name"] not in selected_names:
+                    selected.append(c)
+                    selected_names.add(c["school_name"])
 
         for c in candidates:
             if len(selected) >= limit:

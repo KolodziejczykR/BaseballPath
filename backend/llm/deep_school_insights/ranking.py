@@ -75,8 +75,8 @@ FIT_FAMILY_BASE_BY_PRIORITY = {
         "Fit": 100.0,
         "Safety": 45.0,
         "Strong Safety": 15.0,
-        "Reach": 85.0,
-        "Strong Reach": 45.0,
+        "Reach": 92.0,
+        "Strong Reach": 55.0,
     },
     "academics": {
         "Fit": 100.0,
@@ -95,8 +95,8 @@ FIT_FAMILY_BASE_BY_PRIORITY = {
 # Backwards-compat alias for callers that still import FIT_FAMILY_BASE.
 FIT_FAMILY_BASE = FIT_FAMILY_BASE_BY_PRIORITY[None]
 PRIORITY_WEIGHTS = {
-    None: {"fit_family_base": 1.0, "ranking_score": 1.0, "opportunity_bonus": 0.5, "academic_penalty": 1.0, "academic_quality": 2.0},
-    "baseball_fit": {"fit_family_base": 1.3, "ranking_score": 1.2, "opportunity_bonus": 0.25, "academic_penalty": 0.8, "academic_quality": 0.0},
+    None: {"fit_family_base": 1.3, "ranking_score": 1.0, "opportunity_bonus": 0.5, "academic_penalty": 0.4, "academic_quality": 5},
+    "baseball_fit": {"fit_family_base": 1.6, "ranking_score": 1.4, "opportunity_bonus": 0.25, "academic_penalty": 0.3, "academic_quality": 3.0},
     "academics": {"fit_family_base": 0.7, "ranking_score": 0.6, "opportunity_bonus": 0.15, "academic_penalty": 0.5, "academic_quality": 12.0},
 }
 
@@ -140,6 +140,16 @@ _QUALITY_BONUS_ATTAINABILITY = {
 }
 VALID_RANKING_PRIORITIES = {"baseball_fit", "academics"}
 
+# Multiplier applied to |delta| on the reach side of ranking_score. Lower =
+# reaches penalized less than safeties of equivalent distance. Under
+# ``baseball_fit`` we soften reaches hard so harder schools (higher SCI within
+# a fit band, deeper Reach) aren't punished for being aspirational baseball.
+REACH_SCORE_SOFTENER = {
+    None: 0.85,
+    "baseball_fit": 0.5,
+    "academics": 0.85,
+}
+
 
 def _resolve_academic_median(player_academic_score: Optional[float]) -> float:
     """Return the student-relative academic median used to center the quality bonus.
@@ -171,29 +181,65 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+# Smooth ramp on academic_quality weight for low-academic students under
+# balanced / baseball_fit priorities. A 2.7-GPA / 19-ACT student lives at a
+# student-relative median around 3.3, so any school with sel ≥ 3.3 earns a
+# positive quality bonus — at full weight that pushes academic Reaches into
+# the top of the list, which isn't the right behavior for a student who
+# realistically can't admit there. We taper the weight from 1.0× at effective
+# ≥ 5.0 down to 0.5× at effective ≤ 3.0 so the reach-reward shrinks for low
+# academic profiles without a hard cliff. ``academics`` priority is unaffected
+# (academic stretching is the explicit goal there).
+_QUALITY_WEIGHT_RAMP_HIGH = 5.0
+_QUALITY_WEIGHT_RAMP_LOW = 3.0
+_QUALITY_WEIGHT_RAMP_MIN = 0.5
+
+
+def _academic_quality_weight_scale(
+    player_academic_score: Optional[float],
+    ranking_priority: Optional[str],
+) -> float:
+    if ranking_priority == "academics" or player_academic_score is None:
+        return 1.0
+    try:
+        score = float(player_academic_score)
+    except (TypeError, ValueError):
+        return 1.0
+    if score >= _QUALITY_WEIGHT_RAMP_HIGH:
+        return 1.0
+    if score <= _QUALITY_WEIGHT_RAMP_LOW:
+        return _QUALITY_WEIGHT_RAMP_MIN
+    span = _QUALITY_WEIGHT_RAMP_HIGH - _QUALITY_WEIGHT_RAMP_LOW
+    return _QUALITY_WEIGHT_RAMP_MIN + (1.0 - _QUALITY_WEIGHT_RAMP_MIN) * (
+        (score - _QUALITY_WEIGHT_RAMP_LOW) / span
+    )
+
+
 def _review_confidence_multiplier(value: str) -> float:
     return CONFIDENCE_MULTIPLIER.get((value or "").lower(), 0.35)
 
 
-def _academic_penalty(academic_delta: float) -> float:
+def _academic_penalty(academic_delta: float, ranking_priority: Optional[str] = None) -> float:
     """Continuous academic penalty that scales with the gap magnitude.
 
     ``academic_delta`` = player_academic - school_academic.
     Positive means the student is overqualified (safety direction).
     Negative means the school is harder (reach direction).
 
-    Dead zone matches the Fit label cutoff (|Δ| ≤ 0.6). Safety side uses a
-    steep exponent so Strong Safety (Δ > 2.0) bites hard; reach side stays
-    gentler so aspirational academic reaches remain viable.
+    Dead zone matches the Fit label cutoff (|Δ| ≤ 0.6). Under ``baseball_fit``
+    the safety side uses a steeper exponent than the reach side so aspirational
+    academic reaches remain viable while Strong Safety (Δ > 2.0) bites hard.
+    Under balanced (``None``) the two sides are symmetric — penalties for being
+    a Reach or Safety of equivalent magnitude are equal.
     """
     if abs(academic_delta) <= 0.6:
         return 0.0
-    if academic_delta > 0.6:
-        excess = academic_delta - 0.6
+    excess = abs(academic_delta) - 0.6
+    if ranking_priority is None:
+        return -(excess ** 2.0) * 2.5
+    if academic_delta > 0:
         return -(excess ** 2.2) * 2.2
-    else:
-        excess = abs(academic_delta) - 0.6
-        return -(excess ** 1.5) * 3.0
+    return -(excess ** 1.5) * 3.0
 
 
 def compute_ranking_adjustment(evidence: GatheredEvidence, review: DeepSchoolReview) -> float:
@@ -244,17 +290,24 @@ def compute_roster_label(evidence: GatheredEvidence) -> str:
     return "competitive"
 
 
-def compute_ranking_score(delta: float, ranking_adjustment: float) -> float:
+def compute_ranking_score(
+    delta: float,
+    ranking_adjustment: float,
+    ranking_priority: Optional[str] = None,
+) -> float:
     """Compute a fit-centered ranking score.
 
-    Schools closest to Fit (delta=0) score highest.  Reaches are slightly
-    preferred over equivalent safeties (aspirational > fallback).  The
-    ranking_adjustment from roster research can promote or demote a school.
+    Schools closest to Fit (delta=0) score highest.  Reaches are preferred
+    over equivalent safeties (aspirational > fallback); the reach-side
+    softener is priority-aware so ``baseball_fit`` rewards harder schools
+    more aggressively. The ranking_adjustment from roster research can
+    promote or demote a school.
     """
     if delta >= 0:
         fit_distance = delta * 1.0
     else:
-        fit_distance = abs(delta) * 0.85
+        softener = REACH_SCORE_SOFTENER.get(ranking_priority, 0.85)
+        fit_distance = abs(delta) * softener
     return round(-fit_distance + ranking_adjustment, 2)
 
 
@@ -344,6 +397,9 @@ def _apply_cross_school_reranking(
         ranking_priority, FIT_FAMILY_BASE_BY_PRIORITY[None]
     )
     academic_median = _resolve_academic_median(player_academic_score)
+    quality_weight = w["academic_quality"] * _academic_quality_weight_scale(
+        player_academic_score, ranking_priority
+    )
 
     for school in schools:
         school["raw_opportunity_signal"] = compute_raw_opportunity_signal(school)
@@ -356,7 +412,7 @@ def _apply_cross_school_reranking(
         else:
             acad_delta = school.get("academic_delta")
             if acad_delta is not None:
-                school["academic_fit_penalty"] = _academic_penalty(float(acad_delta))
+                school["academic_fit_penalty"] = _academic_penalty(float(acad_delta), ranking_priority)
             else:
                 school["academic_fit_penalty"] = ACADEMIC_FIT_PENALTY_MAP.get(acad_label, 0.0)
 
@@ -396,9 +452,9 @@ def _apply_cross_school_reranking(
         if selectivity_delta >= 0:
             acad_fit_label_lc = (school.get("academic_fit") or "").strip().lower()
             attainability = _QUALITY_BONUS_ATTAINABILITY.get(acad_fit_label_lc, 1.0)
-            acad_quality_bonus = selectivity_delta * w["academic_quality"] * attainability
+            acad_quality_bonus = selectivity_delta * quality_weight * attainability
         else:
-            acad_quality_bonus = -(selectivity_delta ** 2) * w["academic_quality"]
+            acad_quality_bonus = -(selectivity_delta ** 2) * quality_weight
 
         composite = (
             w["fit_family_base"] * fit_family_table[fit_label]

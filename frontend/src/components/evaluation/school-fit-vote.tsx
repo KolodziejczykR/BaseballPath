@@ -73,7 +73,7 @@ export function SchoolFitVote({
         is_good_fit: data.is_good_fit,
         reason: data.reason ?? null,
       });
-      if (!isGoodFit) setShowReasons(false);
+      if (!isGoodFit && reason) setShowReasons(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to submit feedback");
     } finally {
