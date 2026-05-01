@@ -129,6 +129,46 @@ async def create_eval_checkout(
     }
 
 
+def _claim_stripe_event(supabase: Any, event_id: str, event_type: str) -> bool:
+    """Try to claim a Stripe event for processing.
+
+    Inserts ``(event_id, event_type)`` into ``stripe_events``. Returns True
+    if this is the first time we've seen the event (i.e. we should process
+    it), False if it's a duplicate Stripe retry.
+
+    Stripe routinely re-delivers events on transient 2xx flakiness, network
+    issues, or when our ack times out. Without this guard the same event
+    can fire ``eval_purchases`` updates and downstream side effects
+    multiple times. The unique constraint on ``stripe_events.event_id`` is
+    what makes this safe under concurrency — two parallel webhook calls
+    for the same event will both INSERT, but only one will succeed.
+    """
+    try:
+        result = (
+            supabase.table("stripe_events")
+            .insert(
+                {"event_id": event_id, "event_type": event_type},
+                returning="minimal",
+            )
+            .execute()
+        )
+        # If insert returned data, we just claimed the event for the first time.
+        return True
+    except Exception as exc:
+        # Most common cause: unique-constraint violation on event_id, which
+        # means a sibling worker already claimed this event. Treat anything
+        # that the DB rejects as "already processed" rather than re-running
+        # the side effects. We log so a real DB outage is visible.
+        message = str(exc).lower()
+        if "duplicate" in message or "unique" in message or "23505" in message:
+            return False
+        logger.warning(
+            "stripe_events claim failed for event_id=%s type=%s err=%s",
+            event_id, event_type, exc,
+        )
+        return False
+
+
 @router.post("/webhook")
 async def billing_webhook(request: Request) -> Dict[str, Any]:
     stripe_client = _require_stripe()
@@ -146,8 +186,23 @@ async def billing_webhook(request: Request) -> Dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid webhook signature: {str(exc)}") from exc
 
+    event_id = event.get("id")
     event_type = event.get("type")
     event_data = ((event.get("data") or {}).get("object")) or {}
+
+    if not event_id:
+        logger.warning("Stripe webhook received with no event id; ignoring")
+        return {"received": True, "ignored": True, "reason": "missing_event_id"}
+
+    supabase = require_supabase_admin_client()
+
+    # Idempotency layer 1: have we processed this exact event id already?
+    if not _claim_stripe_event(supabase, event_id, event_type or ""):
+        logger.info(
+            "Stripe webhook duplicate event_id=%s type=%s — skipping",
+            event_id, event_type,
+        )
+        return {"received": True, "duplicate": True}
 
     if event_type == "checkout.session.completed":
         metadata = event_data.get("metadata") or {}
@@ -159,7 +214,30 @@ async def billing_webhook(request: Request) -> Dict[str, Any]:
             logger.warning("checkout.session.completed missing purchase_id in metadata")
             return {"received": True}
 
-        supabase = require_supabase_admin_client()
+        # Idempotency layer 2: only flip to completed if not already there.
+        # Defense-in-depth in case the event-id dedupe is bypassed (manual
+        # replay, restored backup, etc). Avoids re-stamping completed_at /
+        # downstream consumers that watch for the transition.
+        existing = (
+            supabase.table("eval_purchases")
+            .select("status")
+            .eq("id", purchase_id)
+            .limit(1)
+            .execute()
+        )
+        if not existing.data:
+            logger.warning(
+                "checkout.session.completed for unknown purchase_id=%s",
+                purchase_id,
+            )
+            return {"received": True}
+        if existing.data[0].get("status") == "completed":
+            logger.info(
+                "checkout.session.completed for already-completed purchase_id=%s — skipping",
+                purchase_id,
+            )
+            return {"received": True, "duplicate_completion": True}
+
         payment_intent_id = event_data.get("payment_intent")
         supabase.table("eval_purchases").update(
             {
@@ -170,5 +248,63 @@ async def billing_webhook(request: Request) -> Dict[str, Any]:
             }
         ).eq("id", purchase_id).execute()
         logger.info("Eval purchase %s marked completed", purchase_id)
+        return {"received": True}
 
-    return {"received": True}
+    # ---------------------------------------------------------------------
+    # Other event types — log explicitly so we have an audit trail and
+    # don't pretend we handled them. None of these are "do nothing"
+    # silently anymore. Add real handling for each as the billing flow
+    # matures (refunds, dispute holds, etc.).
+    # ---------------------------------------------------------------------
+
+    # The Stripe metadata we need to correlate to a local purchase.
+    metadata = event_data.get("metadata") or {}
+    purchase_id_for_log = metadata.get("purchase_id")
+
+    if event_type == "checkout.session.async_payment_failed":
+        # User abandoned or the bank declined. Purchase remains 'pending';
+        # the user can retry through a new checkout session. Logging here
+        # so a spike in failures is visible in dashboards.
+        logger.warning(
+            "Stripe async payment failed: event_id=%s purchase_id=%s",
+            event_id, purchase_id_for_log,
+        )
+        return {"received": True, "event_type": event_type, "logged": True}
+
+    if event_type in ("payment_intent.payment_failed", "charge.failed"):
+        logger.warning(
+            "Stripe payment failed: event_id=%s type=%s purchase_id=%s",
+            event_id, event_type, purchase_id_for_log,
+        )
+        return {"received": True, "event_type": event_type, "logged": True}
+
+    if event_type in ("charge.refunded", "charge.refund.updated"):
+        # Refunds aren't auto-handled yet — the user-facing story (revoke
+        # access? credit a re-eval?) hasn't been decided. Log loudly so
+        # we notice them while support is still manual.
+        logger.warning(
+            "Stripe refund event received but not auto-processed: "
+            "event_id=%s type=%s purchase_id=%s — manual reconciliation needed",
+            event_id, event_type, purchase_id_for_log,
+        )
+        return {"received": True, "event_type": event_type, "needs_manual_review": True}
+
+    if event_type in (
+        "charge.dispute.created",
+        "charge.dispute.funds_withdrawn",
+        "charge.dispute.closed",
+    ):
+        # Disputes are a strong "look at this now" signal.
+        logger.error(
+            "Stripe dispute event: event_id=%s type=%s purchase_id=%s — manual review required",
+            event_id, event_type, purchase_id_for_log,
+        )
+        return {"received": True, "event_type": event_type, "needs_manual_review": True}
+
+    # Any other event type (Stripe sends a lot we don't subscribe to). Log
+    # at INFO so we have a record but don't alert.
+    logger.info(
+        "Stripe webhook unhandled event_type=%s event_id=%s",
+        event_type, event_id,
+    )
+    return {"received": True, "event_type": event_type, "ignored": True}

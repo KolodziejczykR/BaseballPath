@@ -1,0 +1,25 @@
+{
+  "features": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "of_velo",
+    "bat_speed_max",
+    "d1_prob"
+  ],
+  "required_columns": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "of_velo",
+    "bat_speed_max"
+  ],
+  "meta_features": [
+    "d1_prob"
+  ],
+  "notes": "d1_prob comes from the calibrated D1 model. XGBoost handles NaN natively. No imputation or scaling needed."
+}

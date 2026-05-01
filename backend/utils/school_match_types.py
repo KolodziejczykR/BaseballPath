@@ -6,13 +6,9 @@ filtering system, allowing for dynamic school counting and detailed
 match scoring.
 """
 
-from typing import Dict, List, Any, Optional, TYPE_CHECKING
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
-
-# Use TYPE_CHECKING to avoid circular imports
-if TYPE_CHECKING:
-    from backend.playing_time.types import PlayingTimeResult
 
 
 class PreferenceCategory(Enum):
@@ -66,11 +62,7 @@ class SchoolMatch:
 
     # Baseball rankings integration
     baseball_strength: Optional[Dict[str, Any]] = None  # From BaseballRankingsIntegration
-    playing_time_factor: Optional[float] = None  # DEPRECATED: use playing_time_result instead
     has_baseball_data: bool = False  # Whether baseball rankings are available
-
-    # Playing time analysis (comprehensive result from PlayingTimeCalculator)
-    playing_time_result: Optional["PlayingTimeResult"] = None
 
     def add_nice_to_have_match(self, match: NiceToHaveMatch):
         """Add a nice-to-have match"""
@@ -114,12 +106,6 @@ class SchoolMatch:
             }
         else:
             summary["baseball_strength"] = {"has_data": False}
-
-        # Add playing time analysis if available
-        if self.playing_time_result is not None:
-            summary["playing_time"] = self.playing_time_result.to_summary_dict()
-        else:
-            summary["playing_time"] = {"has_data": False}
 
         return summary
 

@@ -181,16 +181,16 @@ The result dict also surfaces `gpa_rating`, `test_rating`, `ap_rating` for trans
 
 File: `backend/evaluation/competitiveness.py` (called by `school_matching.compute_player_pci`)
 
-PCI lives on a **0–100 national competitiveness scale** so it can be compared directly against School SCI (same scale). It's a blend of two independent estimates.
+PCI lives on a **0–100 national competitiveness scale** so it can be compared directly against School SCI (same scale). PCI is the tier-aware `ml_based_pci` — a within-tier percentile mapped into the tier's PCI band, with a cross-tier nudge from the ML `d1_probability` / `p4_probability`.
 
 ### 3.1 Tier PCI bands (`TIER_PCI_BANDS`)
 | Predicted tier | PCI band |
 |----------------|----------|
-| Power 4 D1     | 65.0 – 100.0 |
-| Non-P4 D1      | 30.0 – 72.0  |
-| Non-D1         |  0.0 – 40.0  |
+| Power 4 D1     | 69.0 – 100.0 |
+| Non-P4 D1      | 35.0 – 88.0  |
+| Non-D1         |  0.0 – 45.0  |
 
-Bands intentionally **overlap** to model reality (top Non-P4 > bottom P4).
+Bands are calibrated to the empirical School SCI distribution (per-group p5/p95) and intentionally **overlap** to model reality (top Non-P4 > bottom P4).
 
 ### 3.2 Within-tier percentile (0–100)
 `school_matching.compute_within_tier_percentile` computes an average z-score of the player's metrics against the **predicted tier's benchmarks**, then maps it through the standard-normal CDF.
@@ -207,49 +207,21 @@ base = band_low + (within_tier_percentile / 100) × (band_high − band_low)
 Then a **ML-probability nudge** is added:
 - Power 4 tier: `base += (p4_prob − 0.65) × 8.0`
 - Non-P4 D1 tier: `base += (d1_prob − 0.65) × 6.0`
-- Non-D1 tier: `base += (d1_prob − 0.25) × 4.0` (intentionally gentler)
+- Non-D1 tier: `base += (d1_prob − 0.15) × 25.0`
+
+The Non-D1 slope is intentionally large: within a single tier the ML `d1_probability` is the primary cross-tier signal for how close a player is to the D1 line. A high-d1_prob Non-D1 player reaches top-D3 SCI territory; a low-d1_prob Non-D1 player does not.
 
 Clamped to [0, 100].
 
-### 3.4 Benchmark PCI (`benchmark_pci`)
-A parallel calculation grounded purely in raw metric comparison against benchmark tiers. The key anchors are the `BENCHMARK_ANCHORS` (benchmark tier → national score midpoint):
-
-| Tier          | National anchor |
-|---------------|-----------------|
-| P4            | 88.0 |
-| Mid-Major D1  | 62.0 |
-| Low-Major D1  | 47.0 |
-| D2            | 28.0 |
-| D3            | 15.0 |
-
-For each metric:
-1. Build `(benchmark_mean, national_anchor)` pairs across tiers.
-2. Linearly interpolate the player's raw value across those anchors (`interpolate`).
-3. Score bounded via ±5 extrapolation for extreme outliers.
-4. Per-metric "strength" = percent deviation from the player's **predicted-tier** benchmark mean (used to rank which metrics are the player's top tools).
-
-**Hitter weighting** (`HITTER_WEIGHT_TIERS`, applied to top 3 strongest metrics):
-- Best: 0.36
-- Mid: 0.34
-- Worst: 0.32
-(If fewer than 3 metrics available, equal weights.)
-
-Hitter metrics come from `HITTER_POSITION_METRICS`:
-- **IF**: `exit_velo`, `inf_velo`, `sixty_time`
-- **OF**: `exit_velo`, `of_velo`, `sixty_time`
-- **C**: `exit_velo`, `c_velo`, `pop_time`
-
-**Pitcher weighting** (`PITCHER_WEIGHT_TIERS_BY_COUNT`): descending weights with `spread=0.12` around 1.0 — e.g. 3 metrics → `[1.06, 1.00, 0.94]` normalized. Metrics ranked by percent deviation strength.
-
-Pitcher metrics: 9 metrics in `PITCHER_METRIC_MAP` (fastball velo range + max + spin, changeup velo range + spin, curveball velo range + spin, slider velo range + spin).
-
-### 3.5 Final blended PCI (`final_pci`)
+### 3.4 Final PCI (`final_pci`)
 ```
-player_pci = (0.60 × ml_pci) + (0.40 × benchmark_pci)
+player_pci = ml_pci
 ```
-- 60% ML-based / 40% benchmark-based.
-- If `benchmark_pci` is None (no metrics), falls back to pure `ml_pci`.
-- Clamped to [0, 100].
+`final_pci` is a thin pass-through of `ml_pci`, clamped to [0, 100]. There is no tier-agnostic benchmark blend — all cross-tier awareness lives in the `ml_based_pci` d1/p4 nudge.
+
+> **Why no benchmark blend?** A prior implementation blended `ml_pci` 60/40 with a tier-agnostic `benchmark_pci` derived from metric-level interpolation against per-tier benchmark anchors. That blend was hijackable: a single elite metric (for example a 6.97 60-time sitting at the P4 anchor mean) could pull a 53rd-percentile Non-D1 player to a `player_pci` around 38, matching them to top-15 D3 schools as "Fit". Pushing cross-tier awareness into `d1_probability` inside `ml_based_pci` — and retuning `TIER_PCI_BANDS` against the real SCI distribution — solves the same problem without the single-metric hijack path.
+
+The per-school metric comparison table (`_build_metric_comparisons` in `school_matching.py`) is unrelated and still uses `DIVISION_BENCHMARKS` / `get_position_benchmarks` directly for the "player vs school group averages" UI panel.
 
 ---
 
@@ -701,7 +673,7 @@ File: `backend/playing_time/playing_time_calculator.py`
 > **Why it was subbed out**: the old calculator relied purely on z-score aggregation against division benchmarks plus coarse team-needs signals inferred from Massey offensive/defensive ratings. The new path actually scrapes the target school's official roster and stats pages, projects departures forward to the player's enrollment year, computes real positional openings/competition/opportunity, and has an LLM reviewer refine fit — producing a much more grounded playing-time signal per school.
 >
 > The `playing_time` module is kept in the repo for two reasons:
-> 1. Its benchmark dictionaries (`DIVISION_BENCHMARKS`, `PITCHER_DIVISION_BENCHMARKS`, `get_position_benchmarks`) are re-exported via `backend/constants.py` and are the source of truth used by both PCI (`competitiveness.benchmark_pci`) and within-tier percentile (`school_matching.compute_within_tier_percentile`).
+> 1. Its benchmark dictionaries (`DIVISION_BENCHMARKS`, `PITCHER_DIVISION_BENCHMARKS`, `get_position_benchmarks`) are re-exported via `backend/constants.py` and are the source of truth used by both within-tier percentile (`school_matching.compute_within_tier_percentile`) and the per-school metric comparison table (`school_matching._build_metric_comparisons`).
 > 2. Historical reference while the new research-based approach stabilizes.
 >
 > The formulas below are **documentation-only** — they describe the legacy algorithm. Do not treat them as current behavior when planning new work; any "playing time" signal surfaced to the user today comes from `roster_label` + `opportunity_fit` in Section 8/9, not from this calculator.
@@ -853,7 +825,7 @@ All numbers travel through the API as JSON. Key tables in `prediction_runs`:
 - `prediction_response` — ML inputs
 - `preferences_response.schools` — final ranked schools
 - `preferences_response.academic_score` — `{composite, effective, gpa_rating, test_rating, ap_rating}`
-- `preferences_response.baseball_assessment` — `{predicted_tier, within_tier_percentile, player_competitiveness_index, ml_pci, benchmark_pci, d1_probability, p4_probability}`
+- `preferences_response.baseball_assessment` — `{predicted_tier, within_tier_percentile, player_competitiveness_index, ml_pci, d1_probability, p4_probability}`
 - `llm_reasoning_status` — `queued | processing | completed | partial | insufficient_evidence | failed | skipped | unavailable`
 - `llm_job_id`
 
@@ -870,7 +842,7 @@ Per-school, the stored record includes:
 |---|---|---|
 | Academic composite | `0.4·gpa_r + 0.4·test_r + 0.2·ap_r` | `academic_scoring.py` |
 | Athlete boost | `+0.5` | `academic_scoring.py` |
-| PCI final | `0.6·ml_pci + 0.4·benchmark_pci` | `competitiveness.py` |
+| PCI final | `ml_pci` (tier band + d1/p4_prob nudge) | `competitiveness.py` |
 | SCI hitter | `0.50·overall + 0.35·offensive + 0.15·power` | `competitiveness.py` |
 | SCI pitcher | `0.50·overall + 0.30·power + 0.20·defensive` | `competitiveness.py` |
 | Recency weights | 2025:0.50 / 2024:0.30 / 2023:0.20 | `competitiveness.py` |

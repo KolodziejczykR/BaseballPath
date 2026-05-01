@@ -7,79 +7,93 @@ compared against each school's ``academic_selectivity_score`` column for fit
 matching.
 """
 
-from typing import Optional
+from typing import List, Optional, Tuple
+
+
+# ---------------------------------------------------------------------------
+# Piecewise-linear rating interpolation
+# ---------------------------------------------------------------------------
+# GPA, ACT, and SAT ratings are continuous along the domain rather than
+# bracketed in steps. Anchors below preserve the historical bracket floors,
+# so the rating at each anchor matches the legacy table; values between
+# anchors interpolate linearly. Step brackets created cliffs where, e.g., a
+# 3.00 and a 3.29 GPA both rated 5/10 — linear interpolation differentiates
+# them while preserving the same scale and downstream composite weighting.
+def _interpolate_rating(value: float, anchors: List[Tuple[float, float]]) -> float:
+    if value <= anchors[0][0]:
+        return float(anchors[0][1])
+    if value >= anchors[-1][0]:
+        return float(anchors[-1][1])
+    for (x1, y1), (x2, y2) in zip(anchors, anchors[1:]):
+        if x1 <= value <= x2:
+            if x2 == x1:
+                return float(y1)
+            t = (value - x1) / (x2 - x1)
+            return float(y1) + t * (float(y2) - float(y1))
+    return float(anchors[-1][1])
 
 
 # ---------------------------------------------------------------------------
 # GPA → Rating (1–10)
 # ---------------------------------------------------------------------------
-_GPA_BRACKETS = [
-    (3.95, 10),
-    (3.85, 9),
-    (3.70, 8),
-    (3.50, 7),
-    (3.30, 6),
-    (3.00, 5),
-    (2.70, 4),
-    (2.40, 3),
+_GPA_ANCHORS: List[Tuple[float, float]] = [
+    (1.00, 1),
     (2.00, 2),
-    (0.00, 1),
+    (2.40, 3),
+    (2.70, 4),
+    (3.00, 5),
+    (3.30, 6),
+    (3.50, 7),
+    (3.70, 8),
+    (3.85, 9),
+    (3.95, 10),
 ]
 
 
-def gpa_to_rating(gpa: float) -> int:
-    for floor, rating in _GPA_BRACKETS:
-        if gpa >= floor:
-            return rating
-    return 1
+def gpa_to_rating(gpa: float) -> float:
+    return round(_interpolate_rating(float(gpa), _GPA_ANCHORS), 2)
 
 
 # ---------------------------------------------------------------------------
 # ACT → Rating (1–10)
 # ---------------------------------------------------------------------------
-_ACT_BRACKETS = [
-    (35, 10),
-    (34, 9),
-    (33, 8),
-    (30, 7),
-    (27, 6),
-    (24, 5),
-    (21, 4),
-    (18, 3),
-    (15, 2),
+_ACT_ANCHORS: List[Tuple[float, float]] = [
     (1, 1),
+    (15, 2),
+    (18, 3),
+    (21, 4),
+    (24, 5),
+    (27, 6),
+    (30, 7),
+    (33, 8),
+    (34, 9),
+    (35, 10),
 ]
 
 
-def act_to_rating(act: int) -> int:
-    for floor, rating in _ACT_BRACKETS:
-        if act >= floor:
-            return rating
-    return 1
+def act_to_rating(act: int) -> float:
+    return round(_interpolate_rating(float(act), _ACT_ANCHORS), 2)
 
 
 # ---------------------------------------------------------------------------
 # SAT → Rating (1–10)
 # ---------------------------------------------------------------------------
-_SAT_BRACKETS = [
-    (1550, 10),
-    (1500, 9),
-    (1440, 8),
-    (1370, 7),
-    (1290, 6),
-    (1200, 5),
-    (1100, 4),
-    (1000, 3),
+_SAT_ANCHORS: List[Tuple[float, float]] = [
+    (400, 1),
     (900, 2),
-    (0, 1),
+    (1000, 3),
+    (1100, 4),
+    (1200, 5),
+    (1290, 6),
+    (1370, 7),
+    (1440, 8),
+    (1500, 9),
+    (1550, 10),
 ]
 
 
-def sat_to_rating(sat: int) -> int:
-    for floor, rating in _SAT_BRACKETS:
-        if sat >= floor:
-            return rating
-    return 1
+def sat_to_rating(sat: int) -> float:
+    return round(_interpolate_rating(float(sat), _SAT_ANCHORS), 2)
 
 
 # ---------------------------------------------------------------------------
@@ -149,14 +163,14 @@ def compute_academic_score(
     Returns dict with:
         composite: float (1.0–10.0) — raw weighted score
         effective: float — composite + athlete boost (used for matching)
-        gpa_rating: int
-        test_rating: int
+        gpa_rating: float
+        test_rating: float
         ap_rating: int
     """
     gpa_r = gpa_to_rating(gpa)
 
     # Use the higher resulting rating if both provided
-    test_r = 1
+    test_r: float = 1.0
     if sat_score is not None and act_score is not None:
         test_r = max(sat_to_rating(sat_score), act_to_rating(act_score))
     elif sat_score is not None:
@@ -171,7 +185,7 @@ def compute_academic_score(
     return {
         "composite": round(composite, 2),
         "effective": round(composite + ATHLETE_BOOST, 2),
-        "gpa_rating": gpa_r,
-        "test_rating": test_r,
+        "gpa_rating": round(gpa_r, 2),
+        "test_rating": round(test_r, 2),
         "ap_rating": ap_r,
     }

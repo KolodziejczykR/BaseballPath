@@ -36,6 +36,7 @@ from .llm_insight_service import (
 from .profile_service import get_profile
 
 from backend.evaluation.academic_scoring import compute_academic_score
+from backend.evaluation.competitiveness import effective_tier
 from backend.evaluation.school_matching import (
     BUDGET_RANGES,
     compute_player_pci,
@@ -112,6 +113,8 @@ class AcademicInput(BaseModel):
 
 class PreferencesInput(BaseModel):
     regions: Optional[List[str]] = None
+    states: Optional[List[str]] = None  # individual 2-letter abbreviations to include
+    excluded_states: Optional[List[str]] = None  # states to exclude from selected regions
     max_budget: Optional[str] = None
     ranking_priority: Optional[str] = None
 
@@ -131,7 +134,6 @@ class CoreEvaluation:
     player_percentile: float
     player_pci: float
     ml_pci: Optional[float]
-    benchmark_pci: Optional[float]
     is_pitcher: bool
     ranked_schools: List[Dict[str, Any]]
 
@@ -141,7 +143,6 @@ class CoreEvaluation:
             "within_tier_percentile": self.player_percentile,
             "player_competitiveness_index": self.player_pci,
             "ml_pci": self.ml_pci,
-            "benchmark_pci": self.benchmark_pci,
             "d1_probability": ml.d1_probability,
             "p4_probability": ml.p4_probability,
         }
@@ -162,6 +163,23 @@ class PendingEvaluationNotFound(LookupError):
 
 class PurchaseNotFound(LookupError):
     """The eval_purchases row referenced by the finalize request is missing."""
+
+
+class PurchaseNotPaid(PermissionError):
+    """The eval_purchases row exists but its status is not 'completed'.
+
+    Raised when a user tries to finalize an evaluation against a purchase
+    that has not been paid (e.g., status='pending'). Mapped to HTTP 402.
+    """
+
+
+class PurchaseAlreadyUsed(PermissionError):
+    """The eval_purchases row was already redeemed for an evaluation.
+
+    Raised when a user tries to finalize a second time against the same
+    purchase_id. Mapped to HTTP 409. Prevents replaying one paid purchase
+    to mint multiple runs.
+    """
 
 
 class PredictionRunPersistError(RuntimeError):
@@ -186,6 +204,7 @@ async def run_preview_core(
     user_state: Optional[str] = None,
     school_limit: int = 15,
     consideration_pool: bool = False,
+    ranking_priority: Optional[str] = None,
 ) -> CoreEvaluation:
     if acad.sat_score is None and acad.act_score is None:
         raise EvaluationInputError("At least one test score (SAT or ACT) is required.")
@@ -200,7 +219,14 @@ async def run_preview_core(
     )
 
     player_stats = metrics.model_dump(exclude_none=True)
-    predicted_tier = ml.final_prediction
+    # Demote low-confidence P4/D1 calls so borderline players don't get matched
+    # against top-tier schools just because the ML layer used an elite-feature
+    # override. effective_tier only ever demotes; a confident call is unchanged.
+    predicted_tier = effective_tier(
+        ml.final_prediction,
+        d1_probability=ml.d1_probability,
+        p4_probability=ml.p4_probability,
+    )
     player_competitiveness = compute_player_pci(
         player_stats=player_stats,
         predicted_tier=predicted_tier,
@@ -223,6 +249,12 @@ async def run_preview_core(
         if budget_range:
             budget_max = budget_range[1]
 
+    # Prefer explicit override (used by deep-research stages that pass the
+    # stored priority directly); otherwise fall back to the preferences payload.
+    effective_priority = ranking_priority
+    if effective_priority is None:
+        effective_priority = prefs.ranking_priority
+
     ranked_schools = match_and_rank_schools(
         schools=all_schools,
         player_stats=player_stats,
@@ -231,10 +263,13 @@ async def run_preview_core(
         academic_composite=academic_score["effective"],
         is_pitcher=is_pitcher_flag,
         selected_regions=prefs.regions,
+        selected_states=prefs.states,
+        excluded_states=prefs.excluded_states,
         max_budget=budget_max,
         user_state=user_state,
         limit=school_limit,
         consideration_pool=consideration_pool,
+        ranking_priority=effective_priority,
     )
 
     return CoreEvaluation(
@@ -244,7 +279,6 @@ async def run_preview_core(
         player_percentile=player_percentile,
         player_pci=player_pci,
         ml_pci=player_competitiveness.get("ml_pci"),
-        benchmark_pci=player_competitiveness.get("benchmark_pci"),
         is_pitcher=is_pitcher_flag,
         ranked_schools=ranked_schools,
     )
@@ -255,14 +289,38 @@ async def run_preview_core(
 # ---------------------------------------------------------------------------
 
 
-def build_teaser(core: CoreEvaluation, rng: Optional[random.Random] = None) -> List[Dict[str, Any]]:
+def build_teaser(
+    core: CoreEvaluation,
+    rng: Optional[random.Random] = None,
+    ranking_priority: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """
     Pick up to TEASER_COUNT schools at random from the top TEASER_POOL_SIZE
     of the ranked list. Strips the payload to the fields the teaser UI shows.
+
+    When *ranking_priority* is set, the pool is drawn from the top schools
+    for that dimension (e.g. highest academic_selectivity_score for
+    ``"academics"``, highest SCI for ``"baseball_fit"``).
     """
-    pool = core.ranked_schools[:TEASER_POOL_SIZE]
-    if not pool:
+    schools = core.ranked_schools
+    if not schools:
         return []
+
+    if ranking_priority == "academics":
+        pool = sorted(
+            schools,
+            key=lambda s: float(s.get("academic_selectivity_score") or 0),
+            reverse=True,
+        )[:TEASER_POOL_SIZE]
+    elif ranking_priority == "baseball_fit":
+        pool = sorted(
+            schools,
+            key=lambda s: float(s.get("sci") or 0),
+            reverse=True,
+        )[:TEASER_POOL_SIZE]
+    else:
+        pool = schools[:TEASER_POOL_SIZE]
+
     rng = rng or random.Random()
     sample_size = min(TEASER_COUNT, len(pool))
     picked = rng.sample(pool, sample_size)
@@ -371,6 +429,21 @@ async def finalize_paid_evaluation(
     purchase = purchase_result.data[0]
     if purchase.get("user_id") and purchase["user_id"] != user_id:
         raise PurchaseNotFound("Purchase belongs to a different user")
+    # Block unpaid finalize attempts. The Stripe webhook flips status to
+    # "completed" only after a successful payment; without this guard a
+    # logged-in user could call /evaluations/finalize with a purchase_id
+    # in any state and get a free paid evaluation.
+    if purchase.get("status") != "completed":
+        raise PurchaseNotPaid(
+            f"Purchase has not been paid (status={purchase.get('status')!r})"
+        )
+    # Block replaying the same purchase to mint a second run. We mark
+    # eval_run_id below once the run is persisted; if it's already set,
+    # this purchase has been redeemed.
+    if purchase.get("eval_run_id"):
+        raise PurchaseAlreadyUsed(
+            "Purchase has already been redeemed for an evaluation"
+        )
 
     pending_result = (
         supabase.table("pending_evaluations")
@@ -416,7 +489,10 @@ async def finalize_paid_evaluation(
         "stats_input": player_stats,
         "preferences_input": {
             "regions": prefs_data.get("regions"),
+            "states": prefs_data.get("states"),
+            "excluded_states": prefs_data.get("excluded_states"),
             "max_budget": prefs_data.get("max_budget"),
+            "ranking_priority": prefs_data.get("ranking_priority"),
             "academic_input": acad_data,
         },
         "prediction_response": ml_data,
@@ -447,7 +523,7 @@ async def finalize_paid_evaluation(
         player_stats=player_stats,
         baseball_assessment=baseball_assessment,
         academic_score=academic_score,
-        final_limit=15,
+        final_limit=25,
         ranking_priority=prefs_data.get("ranking_priority"),
     )
     supabase.table("prediction_runs").update(
@@ -465,7 +541,6 @@ async def finalize_paid_evaluation(
             "within_tier_percentile": baseball_assessment["within_tier_percentile"],
             "player_competitiveness_index": baseball_assessment.get("player_competitiveness_index"),
             "ml_pci": baseball_assessment.get("ml_pci"),
-            "benchmark_pci": baseball_assessment.get("benchmark_pci"),
             "d1_probability": baseball_assessment.get("d1_probability"),
             "p4_probability": baseball_assessment.get("p4_probability"),
             "confidence": ml_data.get("confidence"),

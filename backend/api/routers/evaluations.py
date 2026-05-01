@@ -12,16 +12,24 @@ Three flows live here:
     page before the user is logged in.
 
 Plus the authenticated list/get/delete endpoints for a user's runs.
-"""
 
-from __future__ import annotations
+NOTE: this module deliberately does NOT use ``from __future__ import
+annotations``. SlowAPI's ``@limiter.limit`` decorator wraps route handlers
+in a way that confuses FastAPI's introspection when annotations are
+deferred (string ForwardRefs). Concretely, ``payload: EvaluateRequest``
+under future-annotations gets registered as ``Body(PydanticUndefined)``
+with an unresolvable ForwardRef, which breaks OpenAPI generation and
+request validation. Keeping annotations evaluated at definition time
+side-steps the issue.
+"""
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from ..deps.auth import AuthenticatedUser, get_current_user, get_optional_user
+from ..rate_limit import limiter
 from ..services import evaluation_service
 from ..services.evaluation_service import (
     DISCLAIMER_TEXT,
@@ -30,7 +38,9 @@ from ..services.evaluation_service import (
     LegacyPositionTrackConstraintError,
     PendingEvaluationNotFound,
     PredictionRunPersistError,
+    PurchaseAlreadyUsed,
     PurchaseNotFound,
+    PurchaseNotPaid,
 )
 from ..services.pricing_service import get_eval_price
 
@@ -48,8 +58,19 @@ class FinalizeRequest(BaseModel):
 
 
 @router.post("/preview")
+# Rate limit: the preview endpoint runs the full ML pipeline + matcher,
+# which is non-trivial work. This is the most expensive anonymous route
+# we serve, so we enforce a per-IP cap. 30/minute is well above what a
+# real user (one preview per session, maybe a tweak) would hit, low
+# enough that scripted abuse would notice.
+@limiter.limit("30/minute")
 async def preview_evaluation(
-    payload: EvaluateRequest,
+    request: Request,  # noqa: ARG001 — required by SlowAPI for IP keying
+    # Explicit Body() marker because the @limiter.limit wrapper combined
+    # with `from __future__ import annotations` confuses FastAPI's
+    # body-vs-query inference and would otherwise register the param as
+    # a query string, breaking OpenAPI generation and routing.
+    payload: EvaluateRequest = Body(...),
     current_user: Optional[AuthenticatedUser] = Depends(get_optional_user),
 ) -> Dict[str, Any]:
     try:
@@ -77,7 +98,9 @@ async def preview_evaluation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
         ) from exc
 
-    teaser_schools = evaluation_service.build_teaser(core)
+    teaser_schools = evaluation_service.build_teaser(
+        core, ranking_priority=payload.preferences.ranking_priority,
+    )
 
     price_cents: Optional[int] = None
     is_first_eval: Optional[bool] = None
@@ -113,6 +136,10 @@ async def finalize_evaluation(
         )
     except PurchaseNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PurchaseNotPaid as exc:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(exc)) from exc
+    except PurchaseAlreadyUsed as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except PendingEvaluationNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except LegacyPositionTrackConstraintError as exc:

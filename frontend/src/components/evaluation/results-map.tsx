@@ -146,38 +146,7 @@ export function ResultsMap({ schools, selectedRank, onSelect, highlightedRegions
           const r = isSelected || isHovered ? 14 : 12;
 
           return (
-            <g
-              key={`count-${abbr}`}
-              onClick={() => handleStateClick(abbr)}
-              onMouseEnter={() => setHoveredState(abbr)}
-              onMouseLeave={() => setHoveredState(null)}
-              style={{ cursor: "pointer" }}
-            >
-              {/* Background circle */}
-              <circle
-                cx={center[0]}
-                cy={center[1]}
-                r={r}
-                fill={regionColor}
-                fillOpacity={isSelected ? 1 : isHovered ? 0.9 : 0.8}
-                stroke="white"
-                strokeWidth={2}
-                style={{ transition: "r 150ms, fill-opacity 150ms" }}
-              />
-              {/* Count number */}
-              <text
-                x={center[0]}
-                y={center[1] + 1}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fill="white"
-                fontSize={r > 12 ? "12" : "10"}
-                fontWeight="700"
-                style={{ pointerEvents: "none", userSelect: "none" }}
-              >
-                {count}
-              </text>
-
+            <g key={`tooltip-${abbr}`} style={{ pointerEvents: "none" }}>
               {/* Hover tooltip showing school names */}
               {(isHovered || isSelected) && (
                 <g>

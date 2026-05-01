@@ -32,8 +32,6 @@ class RosterContext(BaseModel):
     returning_high_usage_exact_position: Optional[int] = None
     starter_opening_estimate_same_family: Literal["high", "medium", "low", "unknown"] = "unknown"
     starter_opening_estimate_exact_position: Literal["high", "medium", "low", "unknown"] = "unknown"
-    projected_years_out: int = 0
-    projected_departures_note: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
 
 
@@ -60,19 +58,20 @@ class GatheredEvidence(BaseModel):
 
 
 class DeepSchoolReview(BaseModel):
+    # --- Internal fields used by the ranking/reranking system ---
     base_athletic_fit: str = ""
     opportunity_fit: str = ""
     final_school_view: str = ""
     adjustment_from_base: Literal["none", "up_one", "down_one"] = "none"
     confidence: Literal["high", "medium", "low"] = "low"
-    fit_summary: str = ""
-    program_summary: str = ""
-    roster_summary: str = ""
-    opportunity_summary: str = ""
-    trend_summary: str = ""
-    reasons_for_fit: List[str] = Field(default_factory=list)
-    risks: List[str] = Field(default_factory=list)
     data_gaps: List[str] = Field(default_factory=list)
+
+    # --- Human-facing narrative field ---
+    # v1: collapsed to a single ~150-word paragraph. school_snapshot and
+    # considerations were dropped — the snapshot was redundant with the
+    # narrative, and considerations were too generic without grounded
+    # notable_facts. Revisit considerations alongside notable_facts later.
+    why_this_school: str = ""
 
 
 # Pre-warm Pydantic schemas eagerly so the first LLM call doesn't eat a cold
@@ -133,3 +132,5 @@ class MatchedPlayer:
 
 
 HIGH_USAGE_GS_THRESHOLD = 10
+PITCHER_HIGH_USAGE_GS_THRESHOLD = 5
+PITCHER_HIGH_USAGE_GP_THRESHOLD = 15

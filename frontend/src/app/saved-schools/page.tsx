@@ -37,16 +37,6 @@ type SavedSchoolDetail = {
     pros?: PreferencePoint[];
     cons?: PreferenceMiss[];
   };
-  scores?: {
-    playing_time_score?: number | null;
-  };
-  playing_time?: {
-    available?: boolean;
-    percentile?: number | null;
-    bucket?: string | null;
-    interpretation?: string | null;
-    message?: string | null;
-  };
 };
 
 type SavedSchoolRecord = {
@@ -64,24 +54,6 @@ type SavedSchoolsResponse = {
   items: SavedSchoolRecord[];
   count?: number;
 };
-
-function getPlayingTimePreview(school: SavedSchoolDetail | undefined): string {
-  if (!school) return "Playing-time analysis unavailable";
-  const playingTime = school.playing_time;
-  if (playingTime?.available) {
-    const bucket = playingTime.bucket || "Estimate available";
-    if (typeof playingTime.percentile === "number") {
-      return `${bucket} · ${playingTime.percentile.toFixed(1)} percentile`;
-    }
-    return bucket;
-  }
-
-  if (typeof school.scores?.playing_time_score === "number") {
-    return `${school.scores.playing_time_score.toFixed(1)} score`;
-  }
-
-  return playingTime?.message || "Playing-time analysis unavailable";
-}
 
 function getNcaLogoUrl(record: SavedSchoolRecord): string | null {
   const logoKey = (record.school_logo_image || record.school_data?.school_logo_image || "").trim();
@@ -316,9 +288,6 @@ export default function SavedSchoolsPage() {
                             <p>
                               Matching preferences:{" "}
                               <span className="font-semibold text-[var(--navy)]">{detail?.match_analysis?.total_nice_to_have_matches ?? 0}</span>
-                            </p>
-                            <p>
-                              Playing-time calc: <span className="font-semibold text-[var(--navy)]">{getPlayingTimePreview(detail)}</span>
                             </p>
                           </div>
                         </div>

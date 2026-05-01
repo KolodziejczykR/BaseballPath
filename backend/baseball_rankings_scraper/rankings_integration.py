@@ -146,7 +146,6 @@ class BaseballRankingsIntegration:
 
                 # Strength classification
                 "strength_classification": self._classify_strength(weighted_metrics, division_percentile),
-                "playing_time_factor": self._calculate_playing_time_factor(weighted_metrics, division_percentile)
             }
 
         except Exception as e:
@@ -272,26 +271,6 @@ class BaseballRankingsIntegration:
         else:
             return "rebuilding"
 
-    def _calculate_playing_time_factor(self, weighted_metrics: Dict, division_percentile: Optional[float]) -> float:
-        """
-        Calculate playing time opportunity factor
-        Higher rating = more competitive = lower opportunity factor
-        """
-        if division_percentile is None:
-            return 1.0  # Neutral factor
-
-        # Scale from 0.7 (elite programs, harder to play) to 1.3 (rebuilding programs, more opportunities)
-        if division_percentile >= 90:
-            return 0.7  # Elite programs - very competitive
-        elif division_percentile >= 75:
-            return 0.8  # Strong programs - competitive
-        elif division_percentile >= 50:
-            return 1.0  # Average programs - normal opportunities
-        elif division_percentile >= 25:
-            return 1.2  # Developing programs - more opportunities
-        else:
-            return 1.3  # Rebuilding programs - most opportunities
-
     def get_division_rankings(self, year: int, division: int, limit: int = 50) -> List[Dict]:
         """
         Get top rankings for a specific year and division
@@ -326,7 +305,6 @@ class BaseballRankingsIntegration:
                 "comparison_summary": {
                     "strongest_program": None,
                     "most_improving": None,
-                    "best_playing_time_opportunity": None
                 }
             }
 
@@ -337,10 +315,6 @@ class BaseballRankingsIntegration:
             # Find most improving program (most negative change = best improvement)
             best_trend = 9999  # Initialize high to find most negative
             most_improving_school = None
-
-            # Find best playing time opportunity (highest factor)
-            best_opportunity = 0
-            best_opportunity_school = None
 
             for school_name, profile in school_profiles.items():
                 if not profile.get('has_data'):
@@ -358,16 +332,9 @@ class BaseballRankingsIntegration:
                     best_trend = trend_change
                     most_improving_school = school_name
 
-                # Check best opportunity
-                playing_time_factor = profile.get('playing_time_factor', 1.0)
-                if playing_time_factor > best_opportunity:
-                    best_opportunity = playing_time_factor
-                    best_opportunity_school = school_name
-
             comparison["comparison_summary"] = {
                 "strongest_program": strongest_school,
                 "most_improving": most_improving_school,
-                "best_playing_time_opportunity": best_opportunity_school
             }
 
             return comparison

@@ -178,15 +178,12 @@ def test_individual_probabilities(pipeline):
     assert isinstance(result.d1_results.d1_probability, float)
     assert 0.0 <= result.d1_results.d1_probability <= 1.0
     
-    # p4_results should be present if D1 is predicted, None if Non-D1
-    if result.get_final_prediction() != "Non-D1":
-        assert hasattr(result, 'p4_results')
-        assert result.p4_results is not None
-        assert hasattr(result.p4_results, 'p4_probability')
-        assert isinstance(result.p4_results.p4_probability, float)
-        assert 0.0 <= result.p4_results.p4_probability <= 1.0
-    else:
-        assert result.p4_results is None
+    # p4_results are always computed by the updated pipeline
+    assert hasattr(result, 'p4_results')
+    assert result.p4_results is not None
+    assert hasattr(result.p4_results, 'p4_probability')
+    assert isinstance(result.p4_results.p4_probability, float)
+    assert 0.0 <= result.p4_results.p4_probability <= 1.0
 
 def test_extreme_values_boundary(pipeline):
     """Test extreme boundary values that could break the model"""

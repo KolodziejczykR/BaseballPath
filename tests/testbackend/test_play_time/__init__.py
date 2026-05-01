@@ -1,1 +1,0 @@
-# Playing time tests package

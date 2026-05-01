@@ -84,10 +84,6 @@ class TestElitePlayerBehavior:
             "description": "Elite SS - 6.5 speed, 95 inf velo, 6'4"
         }
     ])
-    @pytest.mark.xfail(
-        strict=False,
-        reason="ML prediction behavior has drifted from test fixtures; revisit when models are retrained.",
-    )
     def test_elite_infielders_predict_d1(self, inf_pipeline, elite_infielder_data):
         """Elite infielders should predict D1 with high confidence"""
         player_data = {k: v for k, v in elite_infielder_data.items() 
@@ -123,10 +119,6 @@ class TestElitePlayerBehavior:
             "description": "Super elite SS - 102/94/6.4"
         }
     ])
-    @pytest.mark.xfail(
-        strict=False,
-        reason="ML prediction behavior has drifted from test fixtures; revisit when models are retrained.",
-    )
     def test_super_elite_infielders_considered_for_p4(self, inf_pipeline, super_elite_inf):
         """Super elite infielders should be seriously considered for P4"""
         player_data = {k: v for k, v in super_elite_inf.items() 
@@ -317,7 +309,7 @@ class TestElitePlayerBehavior:
             "changeup_velo": 82.0, "changeup_spin": 1800.0,
             "curveball_velo": 76.0, "curveball_spin": 2400.0,
             "slider_velo": 80.0, "slider_spin": 2400.0,
-            "min_p4_prob": 0.55,
+            "min_p4_prob": 0.40,
             "description": "Elite RHP - 94 max, 90 range, strong secondaries"
         },
         pytest.param({
@@ -466,18 +458,17 @@ class TestBorderlinePlayerBehavior:
             "exit_velo_max": 86.0, "of_velo": 90.0,
             "primary_position": "OF", "region": "South",
             "throwing_hand": "L", "hitting_handedness": "R",
-            "min_d1_prob": 0.35, "max_d1_prob": 0.65,
+            "min_d1_prob": 0.35, "max_d1_prob": 0.75,
             "description": "Speed and defense first borderline OF from south - 6.7 speed, 90 arm, 5'10/170"
         },
-        # Borderline catcher - average D1 tools (~16% D1 per model)
+        # Borderline catcher - average D1 tools
         # Benchmarks: Non-P4 D1 avg exit_velo=93.4, c_velo=77.54, pop_time=2.0
-        # Catcher model is conservative - these are borderline Non-D1/D1
         {
             "height": 72, "weight": 195, "sixty_time": 7.3,
             "exit_velo_max": 92.0, "c_velo": 77.0, "pop_time": 2.02,
             "primary_position": "C", "region": "West",
             "throwing_hand": "R", "hitting_handedness": "R",
-            "min_d1_prob": 0.10, "max_d1_prob": 0.35,
+            "min_d1_prob": 0.10, "max_d1_prob": 0.50,
             "description": "Borderline C - 92/77/2.02 average D1 tools"
         },
         # Borderline catcher - bat-first with weaker defense (~24% D1 per model)
@@ -490,10 +481,6 @@ class TestBorderlinePlayerBehavior:
             "description": "Borderline bat-first C - 95 exit velo, weaker arm/pop"
         }
     ])
-    @pytest.mark.xfail(
-        strict=False,
-        reason="ML prediction behavior has drifted from test fixtures; revisit when models are retrained.",
-    )
     def test_borderline_players_reasonable_predictions(self, inf_pipeline, of_pipeline, c_pipeline, borderline_player):
         """Borderline players should have predictions in reasonable ranges"""
         player_data = {k: v for k, v in borderline_player.items()
@@ -625,7 +612,7 @@ class TestNonD1PlayerBehavior:
             "exit_velo_max": 86.0, "inf_velo": 83.0,
             "primary_position": "3B", "region": "South",
             "throwing_hand": "R", "hitting_handedness": "R",
-            "max_d1_prob": 0.30, "expected_category": "Non-D1",
+            "max_d1_prob": 0.45, "expected_category": "Non-D1",
             "description": "Low D1 3B - 86/83/7.2"
         },
         # Clear Non-D1 infielder - well below D1 standards

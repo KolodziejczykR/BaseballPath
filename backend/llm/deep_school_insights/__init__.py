@@ -20,8 +20,6 @@ from .evidence import (
     _player_archetype,
     _safe_int,
     _school_position_family,
-    _target_incoming_grad_year,
-    _years_until_enrollment,
     compute_evidence,
 )
 from .fetch import (
@@ -30,7 +28,16 @@ from .fetch import (
     gather_evidence,
     make_httpx_client,
 )
-from .llm_review import review_input, review_instructions, review_school
+from .llm_review import (
+    review_input,
+    review_instructions,
+    review_school,
+)
+from .talking_points import (
+    TalkingPoint,
+    compute_talking_points,
+    format_division_label,
+)
 from .parsers import (
     DEFAULT_TRUSTED_DOMAINS,
     OFFICIAL_SOURCE_TYPES,
@@ -46,17 +53,21 @@ from .parsers import (
     _trusted_domains_for_school,
     clean_soup,
     match_players_to_stats,
+    parse_nuxt_roster_players,
+    parse_nuxt_stats_records,
     parse_roster_players,
     parse_stats_records,
 )
 from .ranking import (
     ACADEMIC_FIT_PENALTY_MAP,
+    ACADEMIC_PRIORITY_PENALTY_MAP,
     ADJUSTMENT_POINTS,
     COMPETITION_POINTS,
     CONFIDENCE_MULTIPLIER,
     CROSS_SCHOOL_OPPORTUNITY_WEIGHT,
     CROSS_SCHOOL_Z_CLAMP,
     FIT_FAMILY_BASE,
+    FIT_FAMILY_BASE_BY_PRIORITY,
     LEVEL_POINTS,
     MAX_RERANK_ADJUSTMENT,
     OPENING_POINTS,
@@ -87,6 +98,8 @@ from .service import (
 )
 from .types import (
     HIGH_USAGE_GS_THRESHOLD,
+    PITCHER_HIGH_USAGE_GP_THRESHOLD,
+    PITCHER_HIGH_USAGE_GS_THRESHOLD,
     DeepSchoolInsight,
     DeepSchoolReview,
     GatheredEvidence,
@@ -119,14 +132,18 @@ __all__ = [
     "ResearchSource",
     "RosterContext",
     "HIGH_USAGE_GS_THRESHOLD",
+    "PITCHER_HIGH_USAGE_GS_THRESHOLD",
+    "PITCHER_HIGH_USAGE_GP_THRESHOLD",
     # Scoring constants
     "ACADEMIC_FIT_PENALTY_MAP",
+    "ACADEMIC_PRIORITY_PENALTY_MAP",
     "ADJUSTMENT_POINTS",
     "COMPETITION_POINTS",
     "CONFIDENCE_MULTIPLIER",
     "CROSS_SCHOOL_OPPORTUNITY_WEIGHT",
     "CROSS_SCHOOL_Z_CLAMP",
     "FIT_FAMILY_BASE",
+    "FIT_FAMILY_BASE_BY_PRIORITY",
     "LEVEL_POINTS",
     "MAX_RERANK_ADJUSTMENT",
     "OPENING_POINTS",
@@ -144,6 +161,8 @@ __all__ = [
     "OFFICIAL_SOURCE_TYPES",
     "clean_soup",
     "match_players_to_stats",
+    "parse_nuxt_roster_players",
+    "parse_nuxt_stats_records",
     "parse_roster_players",
     "parse_stats_records",
     # Fetch
@@ -155,6 +174,10 @@ __all__ = [
     "review_input",
     "review_instructions",
     "review_school",
+    # Talking-points extractor
+    "TalkingPoint",
+    "compute_talking_points",
+    "format_division_label",
     # Evidence
     "compute_evidence",
     # Internal helpers preserved for tests
@@ -183,7 +206,5 @@ __all__ = [
     "_review_confidence_multiplier",
     "_safe_int",
     "_school_position_family",
-    "_target_incoming_grad_year",
     "_trusted_domains_for_school",
-    "_years_until_enrollment",
 ]

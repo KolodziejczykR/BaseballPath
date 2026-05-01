@@ -25,7 +25,7 @@ _ACADEMIC_SCORE: Dict[str, Any] = {"effective": 55.0}
 
 
 def test_enqueue_returns_skipped_when_openai_client_unavailable(monkeypatch):
-    monkeypatch.setattr(llm_insight_service, "_openai_client", None)
+    monkeypatch.setattr(llm_insight_service, "_has_openai", False)
     monkeypatch.setattr(
         llm_insight_service,
         "generate_deep_school_research",
@@ -45,7 +45,7 @@ def test_enqueue_returns_skipped_when_openai_client_unavailable(monkeypatch):
 
 
 def test_enqueue_returns_skipped_when_celery_task_unavailable(monkeypatch):
-    monkeypatch.setattr(llm_insight_service, "_openai_client", object())
+    monkeypatch.setattr(llm_insight_service, "_has_openai", True)
     monkeypatch.setattr(llm_insight_service, "generate_deep_school_research", None)
 
     status, job_id = enqueue_deep_school_research(
@@ -61,7 +61,7 @@ def test_enqueue_returns_skipped_when_celery_task_unavailable(monkeypatch):
 
 
 def test_enqueue_returns_skipped_when_schools_empty(monkeypatch):
-    monkeypatch.setattr(llm_insight_service, "_openai_client", object())
+    monkeypatch.setattr(llm_insight_service, "_has_openai", True)
     fake_task = SimpleNamespace(delay=lambda _payload: SimpleNamespace(id="should-not-fire"))
     monkeypatch.setattr(llm_insight_service, "generate_deep_school_research", fake_task)
 
@@ -78,7 +78,7 @@ def test_enqueue_returns_skipped_when_schools_empty(monkeypatch):
 
 
 def test_enqueue_returns_processing_and_job_id_on_success(monkeypatch):
-    monkeypatch.setattr(llm_insight_service, "_openai_client", object())
+    monkeypatch.setattr(llm_insight_service, "_has_openai", True)
 
     captured_payloads: List[Dict[str, Any]] = []
 
@@ -115,7 +115,7 @@ def test_enqueue_returns_processing_and_job_id_on_success(monkeypatch):
 
 
 def test_enqueue_returns_failed_when_celery_raises(monkeypatch):
-    monkeypatch.setattr(llm_insight_service, "_openai_client", object())
+    monkeypatch.setattr(llm_insight_service, "_has_openai", True)
 
     def fake_delay(_payload: Dict[str, Any]) -> None:
         raise RuntimeError("redis down")

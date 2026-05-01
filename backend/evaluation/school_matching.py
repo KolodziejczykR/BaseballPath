@@ -14,12 +14,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from backend.constants import DIVISION_BENCHMARKS, PITCHER_DIVISION_BENCHMARKS, get_position_benchmarks
 from backend.evaluation.competitiveness import (
     DEFAULT_DIVISION_MAX_RANKS,
-    benchmark_pci,
     classify_fit,
     compute_fit_delta,
     final_pci,
     ml_based_pci,
-    normalize_hitter_position,
     normalize_predicted_tier,
     rank_to_percentile,
     to_legacy_fit_label,
@@ -147,6 +145,107 @@ def _normal_cdf(z: float) -> float:
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
 
+def _average_benchmarks(
+    bench_a: Dict[str, Dict[str, float]],
+    bench_b: Dict[str, Dict[str, float]],
+) -> Dict[str, Dict[str, float]]:
+    """Average mean/std from two benchmark dicts (e.g. D2 + D3 for Non-D1)."""
+    result: Dict[str, Dict[str, float]] = {}
+    all_keys = set(bench_a) | set(bench_b)
+    for key in all_keys:
+        a = bench_a.get(key)
+        b = bench_b.get(key)
+        if a and b:
+            result[key] = {
+                "mean": (a["mean"] + b["mean"]) / 2.0,
+                "std": (a["std"] + b["std"]) / 2.0,
+            }
+        elif a:
+            result[key] = dict(a)
+        elif b:
+            result[key] = dict(b)
+    return result
+
+
+def _resolve_tier_benchmarks_for_percentile(
+    tier: str,
+    is_pitcher: bool,
+    player_position: str,
+) -> Dict[str, Dict[str, float]]:
+    """Resolve the benchmark dict for a given tier, averaging D2+D3 for Non-D1."""
+    benchmark_key = {
+        POWER_4_D1: "P4",
+        NON_P4_D1: "Non-P4 D1",
+    }.get(tier)
+
+    if is_pitcher:
+        if tier == NON_D1:
+            d2 = PITCHER_DIVISION_BENCHMARKS.get("D2", {})
+            d3 = PITCHER_DIVISION_BENCHMARKS.get("D3", {})
+            return _average_benchmarks(d2, d3)
+        return PITCHER_DIVISION_BENCHMARKS.get(
+            benchmark_key, PITCHER_DIVISION_BENCHMARKS.get("Non-P4 D1", {})
+        )
+
+    pos_benchmarks = get_position_benchmarks(player_position)
+    if tier == NON_D1:
+        d2 = pos_benchmarks.get("D2", {})
+        d3 = pos_benchmarks.get("D3", {})
+        return _average_benchmarks(d2, d3)
+    return pos_benchmarks.get(
+        benchmark_key, pos_benchmarks.get("Non-P4 D1", {})
+    )
+
+
+# ---------------------------------------------------------------------------
+# Position-group z-score weights for hitter percentile calculation.
+# Raw weights are normalized at runtime — only the ratios matter.
+# Pitchers use equal weighting (no position-group variation).
+# ---------------------------------------------------------------------------
+
+_HITTER_Z_WEIGHTS: Dict[str, Dict[str, float]] = {
+    "OF": {
+        "exit_velo": 1.0,
+        "sixty_time": 1.0,   # neutral — OF need balanced tools
+        "of_velo": 1.0,
+    },
+    "MIF": {
+        "exit_velo": 1.0,
+        "sixty_time": 1.0,   # neutral — MIF need all tools
+        "inf_velo": 1.0,
+    },
+    "CIF": {
+        "exit_velo": 1.2,    # power matters more for corner guys
+        "sixty_time": 0.6,   # slow 3B/1B is acceptable
+        "inf_velo": 1.0,
+    },
+    "C": {
+        "exit_velo": 1.0,
+        "sixty_time": 1.0,
+        "c_velo": 1.0,
+        "pop_time": 1.0,
+    },
+}
+
+_OF_POSITIONS = frozenset({"OF", "CF", "RF", "LF", "OUTFIELDER"})
+_MIF_POSITIONS = frozenset({"SS", "2B", "MIF"})
+_CIF_POSITIONS = frozenset({"3B", "1B"})
+_C_POSITIONS = frozenset({"C", "CATCHER"})
+
+
+def _hitter_position_group(player_position: str) -> str:
+    pos = player_position.strip().upper() if player_position else ""
+    if pos in _OF_POSITIONS:
+        return "OF"
+    if pos in _MIF_POSITIONS:
+        return "MIF"
+    if pos in _CIF_POSITIONS:
+        return "CIF"
+    if pos in _C_POSITIONS:
+        return "C"
+    return "MIF"
+
+
 def compute_within_tier_percentile(
     player_stats: Dict[str, Any],
     predicted_tier: str,
@@ -156,18 +255,16 @@ def compute_within_tier_percentile(
     """
     Compute a within-tier percentile (0-100) by averaging stat z-scores against
     the benchmark means/stds for the predicted tier.
+
+    For hitters, z-scores are weighted by position group so that the most
+    recruitable tools for each position carry more influence.
     """
     tier = normalize_predicted_tier(predicted_tier)
-    benchmark_key = {
-        POWER_4_D1: "P4",
-        NON_P4_D1: "Non-P4 D1",
-        NON_D1: "Non D1",
-    }.get(tier, "Non-P4 D1")
+    benchmarks = _resolve_tier_benchmarks_for_percentile(
+        tier, is_pitcher, player_position,
+    )
 
     if is_pitcher:
-        benchmarks = PITCHER_DIVISION_BENCHMARKS.get(
-            benchmark_key, PITCHER_DIVISION_BENCHMARKS.get("Non-P4 D1", {})
-        )
         stat_map = {
             "FastballVelocity (max)": player_stats.get("fastball_velo_max"),
             "FastballVelo Range": player_stats.get("fastball_velo_range"),
@@ -180,10 +277,6 @@ def compute_within_tier_percentile(
             "Slider Spin Rate (avg)": player_stats.get("slider_spin"),
         }
     else:
-        pos_benchmarks = get_position_benchmarks(player_position)
-        benchmarks = pos_benchmarks.get(
-            benchmark_key, pos_benchmarks.get("Non-P4 D1", {})
-        )
         stat_map = {
             "exit_velo": player_stats.get("exit_velo_max"),
             "sixty_time": player_stats.get("sixty_time"),
@@ -197,7 +290,12 @@ def compute_within_tier_percentile(
             if player_stats.get("pop_time") is not None:
                 stat_map["pop_time"] = player_stats["pop_time"]
 
-    z_scores: List[float] = []
+    # Compute z-scores with position-aware weighting for hitters.
+    pos_group = _hitter_position_group(player_position) if not is_pitcher else ""
+    z_weights = _HITTER_Z_WEIGHTS.get(pos_group, {})
+
+    weighted_z_sum = 0.0
+    total_weight = 0.0
     for stat_name, player_value in stat_map.items():
         if player_value is None:
             continue
@@ -213,12 +311,15 @@ def compute_within_tier_percentile(
         z = (float(player_value) - float(mean)) / float(std)
         if stat_name in ("sixty_time", "pop_time"):
             z = -z  # lower is better
-        z_scores.append(z)
 
-    if not z_scores:
+        w = z_weights.get(stat_name, 1.0)
+        weighted_z_sum += z * w
+        total_weight += w
+
+    if total_weight <= 0:
         return 50.0
 
-    avg_z = sum(z_scores) / len(z_scores)
+    avg_z = weighted_z_sum / total_weight
     percentile = _normal_cdf(avg_z) * 100.0
     return round(min(max(percentile, 0.0), 100.0), 1)
 
@@ -234,15 +335,45 @@ def compute_player_pci(
     p4_probability: Optional[float],
     is_pitcher: bool,
 ) -> Dict[str, Optional[float]]:
-    """Compute ML PCI, benchmark PCI, and blended final PCI."""
+    """Compute tier-aware player PCI from ML percentile + d1/p4 probability.
+
+    Includes stat-based demotion: if a player's measurable metrics place them
+    in the bottom of their predicted tier, the tier is demoted and the
+    percentile recalculated against the lower tier's benchmarks. This catches
+    cases where the ML model is confident but the stats don't support the call.
+    """
     normalized_tier = normalize_predicted_tier(predicted_tier)
     player_position = player_stats.get("primary_position", "") or ""
+    demotion_threshold = 15.0 if is_pitcher else 20.0
+
     within_tier_percentile = compute_within_tier_percentile(
         player_stats=player_stats,
         predicted_tier=normalized_tier,
         is_pitcher=is_pitcher,
         player_position=player_position,
     )
+
+    # Stat-based demotion: if metrics place the player in the bottom of their
+    # predicted tier, demote and recalculate against lower-tier benchmarks.
+    # Demotion chain: P4 -> Non-P4 D1 -> Non-D1 (stops at Non-D1).
+    _DEMOTION_CHAIN = {POWER_4_D1: NON_P4_D1, NON_P4_D1: NON_D1}
+    next_tier = _DEMOTION_CHAIN.get(normalized_tier)
+    while next_tier and within_tier_percentile < demotion_threshold:
+        logger.info(
+            "Stat-based demotion: %s -> %s (within_tier_pct=%.1f < %.1f)",
+            normalized_tier,
+            next_tier,
+            within_tier_percentile,
+            demotion_threshold,
+        )
+        normalized_tier = next_tier
+        within_tier_percentile = compute_within_tier_percentile(
+            player_stats=player_stats,
+            predicted_tier=normalized_tier,
+            is_pitcher=is_pitcher,
+            player_position=player_position,
+        )
+        next_tier = _DEMOTION_CHAIN.get(normalized_tier)
 
     ml_pci = ml_based_pci(
         predicted_tier=normalized_tier,
@@ -251,29 +382,13 @@ def compute_player_pci(
         p4_prob=p4_probability,
     )
 
-    if is_pitcher:
-        benchmark_pci_value = benchmark_pci(
-            player_metrics=player_stats,
-            player_type="pitcher",
-            player_position="P",
-            predicted_tier=normalized_tier,
-        )
-    else:
-        benchmark_pci_value = benchmark_pci(
-            player_metrics=player_stats,
-            player_type="hitter",
-            player_position=normalize_hitter_position(player_stats.get("primary_position")),
-            predicted_tier=normalized_tier,
-        )
-
-    blended = final_pci(ml_pci, benchmark_pci_value)
+    player_pci_value = final_pci(ml_pci)
 
     return {
         "predicted_tier": normalized_tier,
         "within_tier_percentile": round(within_tier_percentile, 1),
         "ml_pci": round(ml_pci, 2),
-        "benchmark_pci": (round(benchmark_pci_value, 2) if benchmark_pci_value is not None else None),
-        "player_pci": round(blended, 2),
+        "player_pci": round(player_pci_value, 2),
     }
 
 
@@ -351,15 +466,15 @@ def _academic_fit_label(
 
     delta = player_academic_rating - school_academic_rating
 
-    if delta > 2.4:
+    if delta > 2.0:
         return "Strong Safety"
-    if delta > 0.9:
+    if delta > 0.6:
         return "Safety"
-    if delta >= -0.9:
+    if delta >= -0.6:
         return "Fit"
-    if delta >= -1.8:
+    if delta >= -1.5:
         return "Reach"
-    if delta >= -2.4:
+    if delta >= -2.0:
         return "Strong Reach"
     # Beyond strong reach — exclude
     return None
@@ -381,6 +496,9 @@ def match_and_rank_schools(
     user_state: Optional[str] = None,
     limit: int = 15,
     consideration_pool: bool = False,
+    ranking_priority: Optional[str] = None,
+    selected_states: Optional[List[str]] = None,
+    excluded_states: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Match schools against player PCI, apply filters, and return a balanced list.
@@ -388,15 +506,51 @@ def match_and_rank_schools(
     When ``consideration_pool=True``, the function returns a broader candidate
     set (wider delta range, relaxed exclusion rules) intended for downstream
     roster research that will perform final selection.
+
+    ``ranking_priority`` ("academics" | "baseball_fit" | None) biases the
+    consideration-pool sort so the candidate set honors the user's main
+    preference before the LLM rerank runs. Without it, academically-perfect
+    Strong-Safety-baseball schools get dropped at the gate and never reach
+    the stage that could surface them.
+
+    ``selected_states`` is a list of 2-letter state abbreviations that add
+    to the region filter. The allowed geography is the UNION of states in
+    ``selected_regions`` and ``selected_states``, minus any states in
+    ``excluded_states`` — lets a user who wants all of Northeast except
+    Maine explicitly subtract ME after selecting the region.
     """
     player_academic_rounded = academic_composite
     candidates: List[Dict[str, Any]] = []
 
-    allowed_states = None
-    if selected_regions:
+    # Build the allowed-state set as union(states in selected regions,
+    # explicitly selected states) - excluded_states. If neither regions nor
+    # states are provided, no geo filter is applied.
+    allowed_states: Optional[set] = None
+    if selected_regions or selected_states:
         allowed_states = set()
-        for region in selected_regions:
-            allowed_states.update(REGION_STATES.get(region, set()))
+        if selected_regions:
+            for region in selected_regions:
+                allowed_states.update(REGION_STATES.get(region, set()))
+        if selected_states:
+            for st in selected_states:
+                if st:
+                    allowed_states.add(st.strip().upper())
+        if excluded_states:
+            for st in excluded_states:
+                if st:
+                    allowed_states.discard(st.strip().upper())
+        if not allowed_states:
+            allowed_states = None
+
+    # Hard academic floor when the user explicitly prioritizes academics:
+    # exclude schools whose selectivity is more than 2.5 below the student's
+    # effective academic composite. Applied at the gate (before the 50-school
+    # consideration pool is built) so downstream bonus/penalty math only sees
+    # schools that make academic sense. Missing-selectivity schools fall back
+    # to 2.5, which will fail this filter for any student above ~5.0.
+    academic_floor: Optional[float] = None
+    if ranking_priority == "academics":
+        academic_floor = float(academic_composite) - 2.5
 
     for school in schools:
         school_name = school.get("school_name", "")
@@ -422,6 +576,16 @@ def match_and_rank_schools(
             if tuition is not None and tuition > max_budget:
                 continue
 
+        # Preference filter: academic floor (only when priority is academics)
+        if academic_floor is not None:
+            raw_sel = school.get("academic_selectivity_score")
+            try:
+                sel_for_floor = float(raw_sel) if raw_sel is not None else 2.5
+            except (TypeError, ValueError):
+                sel_for_floor = 2.5
+            if sel_for_floor < academic_floor:
+                continue
+
         school_sci, trend_bonus = _resolve_school_sci(school, is_pitcher=is_pitcher)
         if school_sci is None:
             continue
@@ -439,14 +603,19 @@ def match_and_rank_schools(
         fit_label = classify_fit(delta)
         baseball_fit = to_legacy_fit_label(fit_label)
 
+        # Fallback for schools missing an academic_selectivity_score. The
+        # ~12-15 such schools in the DB are empirically low-selectivity
+        # (unranked / open-enrollment / weak academic profile), so 2.5 is
+        # closer to reality than a neutral default. Mirrors
+        # _MISSING_SELECTIVITY_FALLBACK in ranking.py.
         school_selectivity = school.get("academic_selectivity_score")
         if school_selectivity is not None:
             try:
                 school_acad_numeric: Optional[float] = float(school_selectivity)
             except (TypeError, ValueError):
-                school_acad_numeric = 2.0
+                school_acad_numeric = 2.5
         else:
-            school_acad_numeric = 2.0
+            school_acad_numeric = 2.5
         acad_label = _academic_fit_label(player_academic_rounded, school_acad_numeric)
         if acad_label is None:
             continue
@@ -495,7 +664,7 @@ def match_and_rank_schools(
             "baseball_fit": baseball_fit,
             "fit_label": fit_label,
             "academic_fit": acad_label,
-            "niche_academic_grade": school_acad_numeric,
+            "academic_selectivity_score": school_acad_numeric,
             "estimated_annual_cost": display_tuition,
             "metric_comparisons": metric_comparisons,
             "delta": round(delta, 2),
@@ -504,6 +673,17 @@ def match_and_rank_schools(
             "trend_bonus": round(trend_bonus, 2),
             "academic_delta": round(player_academic_rounded - (school_acad_numeric or 2.0), 2),
             "_abs_delta": abs(delta),
+            # School general info for LLM context
+            "school_city": school.get("school_city"),
+            "undergrad_enrollment": school.get("undergrad_enrollment"),
+            "overall_grade": school.get("overall_grade"),
+            "academics_grade": school.get("academics_grade"),
+            "campus_life_grade": school.get("campus_life_grade"),
+            "student_life_grade": school.get("student_life_grade"),
+            # Baseball record from rankings enrichment
+            "baseball_record": school.get("baseball_record"),
+            "baseball_wins": school.get("baseball_wins"),
+            "baseball_losses": school.get("baseball_losses"),
         })
 
     logger.info(
@@ -525,21 +705,63 @@ def match_and_rank_schools(
             "Fit": 0.0, "Safety": 1.0, "Reach": 1.5,
             "Strong Safety": 3.0, "Strong Reach": 3.5,
         }
+        # Sort weights are priority-aware so the pool reflects what the user
+        # actually said they care about before the LLM rerank trims it.
+        if ranking_priority == "academics":
+            # Care less about baseball distance, more about academic fit.
+            _ABS_DELTA_WEIGHT = 0.5
+            _ACAD_WEIGHT = 3.0
+            _MIN_ACAD_DIVERSE = 20
+            _MIN_BB_REACH = 0
+        elif ranking_priority == "baseball_fit":
+            # Tight baseball targeting, academics secondary.
+            _ABS_DELTA_WEIGHT = 1.3
+            _ACAD_WEIGHT = 0.8
+            _MIN_ACAD_DIVERSE = 8
+            # Reserve cross-tier baseball stretches in the pool so the
+            # downstream ranker has reaches to work with. Without this,
+            # the close-delta primary-tier Fits dominate the global sort
+            # and reaches never enter the 50-school consideration pool.
+            _MIN_BB_REACH = 6
+        else:
+            _ABS_DELTA_WEIGHT = 1.0
+            _ACAD_WEIGHT = 1.5
+            _MIN_ACAD_DIVERSE = 12
+            _MIN_BB_REACH = 0
+
         candidates.sort(
-            key=lambda x: x["_abs_delta"] + _ACAD_DISTANCE.get(
-                x.get("academic_fit", "Fit"), 2.0
-            ) * 1.5
+            key=lambda x: x["_abs_delta"] * _ABS_DELTA_WEIGHT
+            + _ACAD_DISTANCE.get(x.get("academic_fit", "Fit"), 2.0) * _ACAD_WEIGHT
         )
 
         # Reserve slots for academically appropriate schools so downstream
         # research has academic diversity to work with.
-        MIN_ACAD_DIVERSE = 12
         acad_good = [
             c for c in candidates
             if c.get("academic_fit") in ("Fit", "Reach", "Safety")
         ]
-        selected: List[Dict[str, Any]] = acad_good[:MIN_ACAD_DIVERSE]
+        selected: List[Dict[str, Any]] = acad_good[:_MIN_ACAD_DIVERSE]
         selected_names = {s["school_name"] for s in selected}
+
+        # Reserve slots for baseball Reach / Strong Reach schools so the
+        # downstream ranker has stretches to work with. Without this, the
+        # global sort fills with close-delta Fits and reaches never enter
+        # the pool. Sorted by lowest absolute delta so the most attainable
+        # reaches come first.
+        if _MIN_BB_REACH > 0:
+            bb_reaches_sorted = sorted(
+                (c for c in candidates if c.get("fit_label") in ("Reach", "Strong Reach")),
+                key=lambda x: x["_abs_delta"],
+            )
+            for c in bb_reaches_sorted:
+                bb_reach_count = sum(
+                    1 for s in selected if s.get("fit_label") in ("Reach", "Strong Reach")
+                )
+                if bb_reach_count >= _MIN_BB_REACH or len(selected) >= limit:
+                    break
+                if c["school_name"] not in selected_names:
+                    selected.append(c)
+                    selected_names.add(c["school_name"])
 
         for c in candidates:
             if len(selected) >= limit:

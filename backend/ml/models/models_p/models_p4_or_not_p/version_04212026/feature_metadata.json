@@ -1,0 +1,52 @@
+{
+  "features": [
+    "height",
+    "weight",
+    "fastball_velo_max",
+    "fastball_velo_range",
+    "fastball_spin",
+    "changeup_velo_range",
+    "changeup_spin",
+    "curveball_velo_range",
+    "curveball_spin",
+    "slider_velo_range",
+    "slider_spin",
+    "d1_prob"
+  ],
+  "n_features": 12,
+  "meta_features": {
+    "d1_prob": {
+      "source": "Out-of-fold predictions from pitcher D1 model (CalibratedClassifierCV, isotonic, cv=3)",
+      "generation": "cross_val_predict with StratifiedKFold(n_splits=5) on full pitcher dataset (D1 + Non-D1)",
+      "note": "Leak-free OOF probabilities \u2014 each player's d1_prob was predicted by a model that never saw that player in training"
+    }
+  },
+  "feature_importance": {
+    "d1_prob": 0.3006,
+    "fastball_velo_max": 0.1821,
+    "fastball_velo_range": 0.079,
+    "height": 0.0733,
+    "slider_velo_range": 0.0535,
+    "curveball_spin": 0.0481,
+    "weight": 0.0452,
+    "changeup_velo_range": 0.0449,
+    "curveball_velo_range": 0.0443,
+    "fastball_spin": 0.0434,
+    "changeup_spin": 0.0428,
+    "slider_spin": 0.0427
+  },
+  "position": "P",
+  "core_features": [
+    "height",
+    "weight",
+    "fastball_velo_max",
+    "fastball_velo_range",
+    "fastball_spin",
+    "changeup_velo_range",
+    "changeup_spin",
+    "curveball_velo_range",
+    "curveball_spin",
+    "slider_velo_range",
+    "slider_spin"
+  ]
+}

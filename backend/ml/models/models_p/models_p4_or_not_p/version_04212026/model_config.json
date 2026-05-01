@@ -1,0 +1,74 @@
+{
+  "model_type": "XGBClassifier + CalibratedClassifierCV (isotonic)",
+  "task": "P4 vs Non-P4 D1 \u2014 Pitchers",
+  "version": "version_04212026",
+  "created": "2026-04-21T21:07:29.622545",
+  "threshold": 0.35,
+  "n_features": 12,
+  "features": [
+    "height",
+    "weight",
+    "fastball_velo_max",
+    "fastball_velo_range",
+    "fastball_spin",
+    "changeup_velo_range",
+    "changeup_spin",
+    "curveball_velo_range",
+    "curveball_spin",
+    "slider_velo_range",
+    "slider_spin",
+    "d1_prob"
+  ],
+  "hyperparameters": {
+    "n_estimators": 300,
+    "max_depth": 3,
+    "learning_rate": 0.03,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 1.5,
+    "reg_lambda": 5.0,
+    "min_child_weight": 8,
+    "scale_pos_weight": 3.2485
+  },
+  "calibration": {
+    "method": "isotonic",
+    "cv": 5
+  },
+  "metrics": {
+    "holdout_auc_roc": 0.7468,
+    "holdout_brier_raw": 0.2008,
+    "holdout_brier_calibrated": 0.1531,
+    "max_calibration_gap": 0.1021,
+    "cv_test_auc_mean": 0.7352,
+    "cv_test_auc_std": 0.0116,
+    "cv_train_auc_mean": 0.8027,
+    "overfit_gap_auc": 0.0674
+  },
+  "calibration_curve": {
+    "predicted": [
+      0.0824,
+      0.1842,
+      0.3053,
+      0.4398,
+      0.5487,
+      0.6713,
+      0.8082,
+      0.9354
+    ],
+    "actual": [
+      0.0772,
+      0.1713,
+      0.3611,
+      0.4667,
+      0.4574,
+      0.7273,
+      0.8333,
+      0.8333
+    ]
+  },
+  "training_data": {
+    "total_d1_players": 6241,
+    "p4_players": 1469,
+    "non_p4_d1_players": 4772
+  }
+}

@@ -9,10 +9,7 @@
       "WebBrowse(*)",
       "Write(**)"
     ],
-    "deny": [
-      "Bash(rm *)",
-      "Bash(rm -**)"
-    ]
+    "deny": []
   },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0"

@@ -5,6 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
 import { ResultsMap } from "@/components/evaluation/results-map";
+import { SchoolFitVote, type SchoolFeedbackRecord } from "@/components/evaluation/school-fit-vote";
+import { ReviewHelpfulnessVote, type ReviewFeedbackRecord } from "@/components/evaluation/review-helpfulness-vote";
+import { EvalFeedbackPanel } from "@/components/evaluation/eval-feedback-panel";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -49,14 +52,11 @@ type School = {
   sci?: number;
   trend?: string;
   academic_fit?: string;
-  niche_academic_grade?: string;
+  academic_selectivity_score?: string;
   estimated_annual_cost?: number | null;
   metric_comparisons?: MetricComparison[];
   fit_summary?: string;
-  school_description?: string;
-  roster_summary?: string;
-  opportunity_summary?: string;
-  trend_summary?: string;
+  why_this_school?: string;
   research_confidence?: string;
   opportunity_fit?: string;
   overall_school_view?: string;
@@ -65,8 +65,6 @@ type School = {
   ranking_adjustment?: number;
   ranking_score?: number;
   research_status?: string;
-  research_reasons?: string[];
-  research_risks?: string[];
   research_data_gaps?: string[];
   research_sources?: ResearchSource[];
 };
@@ -285,6 +283,7 @@ function MetricComparisonTable({ comparisons }: { comparisons: MetricComparison[
             // For time-based metrics (sec), lower is better
             const isTimeBased = m.unit === "sec";
             const isGood = isTimeBased ? diff < 0 : diff > 0;
+            const decimals = m.metric === "60-Yard Dash" ? 2 : 1;
 
             return (
               <tr key={m.metric} className="border-t border-[var(--stroke)]/50">
@@ -300,7 +299,7 @@ function MetricComparisonTable({ comparisons }: { comparisons: MetricComparison[
                   style={{ color: isGood ? "var(--sage-green)" : "var(--copper)" }}
                 >
                   {isPositive ? "+" : ""}
-                  {diff.toFixed(1)}
+                  {diff.toFixed(decimals)}
                 </td>
               </tr>
             );
@@ -328,6 +327,10 @@ export default function EvaluationDetailPage() {
   const [savingSchool, setSavingSchool] = useState(false);
   const [saveSchoolMessage, setSaveSchoolMessage] = useState("");
   const [deletingRun, setDeletingRun] = useState(false);
+  const [schoolFeedbackByKey, setSchoolFeedbackByKey] = useState<Record<string, SchoolFeedbackRecord>>({});
+  const [reviewFeedbackByKey, setReviewFeedbackByKey] = useState<Record<string, ReviewFeedbackRecord>>({});
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
+  const [feedbackEligible, setFeedbackEligible] = useState(false);
   const detailRef = useRef<HTMLDivElement>(null);
 
   // Load evaluation
@@ -420,6 +423,123 @@ export default function EvaluationDetailPage() {
     loadSavedSchools();
     return () => { mounted = false; };
   }, [accessToken]);
+
+  // Load existing per-school feedback for this run
+  useEffect(() => {
+    if (!accessToken || !runId) return;
+    let mounted = true;
+
+    async function loadSchoolFeedback() {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/feedback/school?evaluation_run_id=${encodeURIComponent(runId)}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!mounted) return;
+        const next: Record<string, SchoolFeedbackRecord> = {};
+        for (const item of data.items || []) {
+          if (item.school_dedupe_key) {
+            next[item.school_dedupe_key] = {
+              school_dedupe_key: item.school_dedupe_key,
+              is_good_fit: item.is_good_fit,
+              reason: item.reason ?? null,
+            };
+          }
+        }
+        setSchoolFeedbackByKey(next);
+      } catch { /* ignore */ }
+    }
+
+    loadSchoolFeedback();
+    return () => { mounted = false; };
+  }, [accessToken, runId]);
+
+  // Load existing per-school review-helpfulness feedback for this run
+  useEffect(() => {
+    if (!accessToken || !runId) return;
+    let mounted = true;
+
+    async function loadReviewFeedback() {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/feedback/review?evaluation_run_id=${encodeURIComponent(runId)}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!mounted) return;
+        const next: Record<string, ReviewFeedbackRecord> = {};
+        for (const item of data.items || []) {
+          if (item.school_dedupe_key) {
+            next[item.school_dedupe_key] = {
+              school_dedupe_key: item.school_dedupe_key,
+              is_helpful: item.is_helpful,
+              reason: item.reason ?? null,
+            };
+          }
+        }
+        setReviewFeedbackByKey(next);
+      } catch { /* ignore */ }
+    }
+
+    loadReviewFeedback();
+    return () => { mounted = false; };
+  }, [accessToken, runId]);
+
+  // Check survey eligibility once results are ready
+  useEffect(() => {
+    if (!accessToken || !runId) return;
+    if (evaluation?.llm_reasoning_status === "processing") return;
+    let mounted = true;
+
+    async function checkEligibility() {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/feedback/run/eligibility?evaluation_run_id=${encodeURIComponent(runId)}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!mounted) return;
+        setFeedbackEligible(Boolean(data.eligible));
+      } catch { /* ignore */ }
+    }
+
+    checkEligibility();
+    return () => { mounted = false; };
+  }, [accessToken, runId, evaluation?.llm_reasoning_status]);
+
+  // 1-minute delay before revealing the inline feedback panel (skipped if
+  // not eligible / dismissed this session).
+  useEffect(() => {
+    if (!feedbackEligible) return;
+    if (evaluation?.llm_reasoning_status === "processing") return;
+    if (typeof window === "undefined") return;
+    const sessionDismissKey = `bp_eval_feedback_dismissed_${runId}`;
+    if (sessionStorage.getItem(sessionDismissKey)) return;
+
+    const timer = window.setTimeout(() => {
+      setShowFeedbackPanel(true);
+    }, 60000);
+    return () => window.clearTimeout(timer);
+  }, [feedbackEligible, evaluation?.llm_reasoning_status, runId]);
 
   // Derived data
   const schools = useMemo(
@@ -749,6 +869,21 @@ export default function EvaluationDetailPage() {
             </section>
           )}
 
+          {/* Inline feedback panel — appears 60s after evaluation finalizes */}
+          {showFeedbackPanel && accessToken && llmStatus !== "processing" && (
+            <EvalFeedbackPanel
+              accessToken={accessToken}
+              evaluationRunId={runId}
+              defaultName={(evaluation?.identity_input?.name as string) || null}
+              onDismiss={() => {
+                setShowFeedbackPanel(false);
+                if (typeof window !== "undefined") {
+                  sessionStorage.setItem(`bp_eval_feedback_dismissed_${runId}`, "1");
+                }
+              }}
+            />
+          )}
+
           {/* Schools section — hidden while research is running */}
           {llmStatus !== "processing" && <section className="mt-6">
             <div className="mb-4 flex items-center justify-between">
@@ -958,11 +1093,11 @@ export default function EvaluationDetailPage() {
                       </div>
 
                       <div className="mt-4 grid grid-cols-2 gap-3">
-                        {selectedSchool.niche_academic_grade && (
+                        {selectedSchool.academic_selectivity_score && (
                           <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
                             <p className="text-xs text-[var(--muted)]">Niche academic grade</p>
                             <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                              {selectedSchool.niche_academic_grade}
+                              {selectedSchool.academic_selectivity_score}
                             </p>
                           </div>
                         )}
@@ -974,117 +1109,46 @@ export default function EvaluationDetailPage() {
                         </div>
                       </div>
 
-                      {(selectedSchool.research_confidence || selectedSchool.opportunity_fit || selectedSchool.ranking_adjustment != null) && (
-                        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                          {selectedSchool.research_confidence && (
-                            <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                              <p className="text-xs text-[var(--muted)]">Research confidence</p>
-                              <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                                {selectedSchool.research_confidence}
-                              </p>
-                            </div>
-                          )}
-                          {selectedSchool.opportunity_fit && (
-                            <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                              <p className="text-xs text-[var(--muted)]">Roster opportunity</p>
-                              <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                                {selectedSchool.opportunity_fit}
-                              </p>
-                            </div>
-                          )}
-                          {selectedSchool.ranking_adjustment != null && (
-                            <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                              <p className="text-xs text-[var(--muted)]">Ranking adjustment</p>
-                              <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                                {selectedSchool.ranking_adjustment > 0 ? "+" : ""}
-                                {selectedSchool.ranking_adjustment.toFixed(1)}
-                              </p>
-                            </div>
-                          )}
-                        </div>
+                      {accessToken && selectedDedupeKey && (
+                        <SchoolFitVote
+                          accessToken={accessToken}
+                          evaluationRunId={runId}
+                          schoolDedupeKey={selectedDedupeKey}
+                          schoolName={schoolDisplayName(selectedSchool)}
+                          current={schoolFeedbackByKey[selectedDedupeKey] || null}
+                          onSaved={(record) =>
+                            setSchoolFeedbackByKey((prev) => ({
+                              ...prev,
+                              [record.school_dedupe_key]: record,
+                            }))
+                          }
+                        />
                       )}
 
-                      {/* LLM Fit Summary */}
-                      {selectedSchool.fit_summary && (
+                      {/* Why This School — main narrative */}
+                      {(selectedSchool.why_this_school || selectedSchool.fit_summary) && (
                         <div className="mt-4 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Fit analysis</p>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Why this school</p>
                           <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.fit_summary}
+                            {selectedSchool.why_this_school || selectedSchool.fit_summary}
                           </p>
                         </div>
                       )}
 
-                      {selectedSchool.roster_summary && (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Roster outlook</p>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.roster_summary}
-                          </p>
-                        </div>
-                      )}
-
-                      {selectedSchool.opportunity_summary && (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Opportunity context</p>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.opportunity_summary}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* LLM School Description */}
-                      {selectedSchool.school_description && (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">About this program</p>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.school_description}
-                          </p>
-                        </div>
-                      )}
-
-                      {selectedSchool.trend_summary && (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Program trend</p>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.trend_summary}
-                          </p>
-                        </div>
-                      )}
-
-                      {(selectedSchool.research_reasons?.length || selectedSchool.research_risks?.length || selectedSchool.research_data_gaps?.length) && (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Research notes</p>
-                          {selectedSchool.research_reasons?.length ? (
-                            <div className="mt-2">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Positives</p>
-                              <ul className="mt-1 space-y-1 text-sm text-[var(--foreground)]">
-                                {selectedSchool.research_reasons.map((reason) => (
-                                  <li key={reason}>- {reason}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                          {selectedSchool.research_risks?.length ? (
-                            <div className="mt-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Risks</p>
-                              <ul className="mt-1 space-y-1 text-sm text-[var(--foreground)]">
-                                {selectedSchool.research_risks.map((risk) => (
-                                  <li key={risk}>- {risk}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                          {selectedSchool.research_data_gaps?.length ? (
-                            <div className="mt-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Data gaps</p>
-                              <ul className="mt-1 space-y-1 text-sm text-[var(--foreground)]">
-                                {selectedSchool.research_data_gaps.map((gap) => (
-                                  <li key={gap}>- {gap}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                        </div>
+                      {accessToken && selectedDedupeKey && (selectedSchool.why_this_school || selectedSchool.fit_summary) && (
+                        <ReviewHelpfulnessVote
+                          accessToken={accessToken}
+                          evaluationRunId={runId}
+                          schoolDedupeKey={selectedDedupeKey}
+                          schoolName={schoolDisplayName(selectedSchool)}
+                          current={reviewFeedbackByKey[selectedDedupeKey] || null}
+                          onSaved={(record) =>
+                            setReviewFeedbackByKey((prev) => ({
+                              ...prev,
+                              [record.school_dedupe_key]: record,
+                            }))
+                          }
+                        />
                       )}
 
                       {selectedSchool.research_sources?.length ? (

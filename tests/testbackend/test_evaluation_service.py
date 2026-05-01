@@ -25,7 +25,9 @@ from backend.api.services.evaluation_service import (
     MLPrediction,
     PendingEvaluationNotFound,
     PreferencesInput,
+    PurchaseAlreadyUsed,
     PurchaseNotFound,
+    PurchaseNotPaid,
     TEASER_COUNT,
     TEASER_POOL_SIZE,
     build_teaser,
@@ -55,7 +57,6 @@ def _core_with_schools(n: int) -> CoreEvaluation:
         player_percentile=72.0,
         player_pci=68.0,
         ml_pci=64.0,
-        benchmark_pci=60.0,
         is_pitcher=False,
         ranked_schools=schools,
     )
@@ -146,7 +147,6 @@ def test_baseball_assessment_shape():
         "within_tier_percentile": 72.0,
         "player_competitiveness_index": 68.0,
         "ml_pci": 64.0,
-        "benchmark_pci": 60.0,
         "d1_probability": 0.81,
         "p4_probability": 0.45,
     }
@@ -349,7 +349,6 @@ def _pending_row() -> Dict[str, Any]:
                 "within_tier_percentile": 72.0,
                 "player_competitiveness_index": 68.0,
                 "ml_pci": 64.0,
-                "benchmark_pci": 60.0,
                 "d1_probability": 0.81,
                 "p4_probability": 0.45,
             },
@@ -357,8 +356,23 @@ def _pending_row() -> Dict[str, Any]:
     }
 
 
-def _purchase_row(user_id: str = "user-1") -> Dict[str, Any]:
-    return {"id": "purchase-1", "user_id": user_id, "status": "pending"}
+def _purchase_row(
+    user_id: str = "user-1",
+    status: str = "completed",
+    eval_run_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build a fake eval_purchases row.
+
+    Default status is 'completed' so the happy-path tests pass through the
+    finalize guards. Tests for the unpaid / already-redeemed cases pass
+    explicit overrides.
+    """
+    return {
+        "id": "purchase-1",
+        "user_id": user_id,
+        "status": status,
+        "eval_run_id": eval_run_id,
+    }
 
 
 async def _fake_run_preview_core(*_args, **_kwargs) -> CoreEvaluation:
@@ -456,6 +470,61 @@ async def test_finalize_raises_purchase_not_found_for_different_user(monkeypatch
             session_token="sess-1",
             purchase_id="purchase-1",
         )
+
+
+async def test_finalize_rejects_unpaid_purchase(monkeypatch):
+    """Regression: a logged-in user must not be able to finalize against a
+    purchase whose status is still 'pending' (Stripe hasn't confirmed payment)."""
+    supabase = _FakeSupabase(
+        data={
+            "eval_purchases": [_purchase_row(status="pending")],
+            "pending_evaluations": [_pending_row()],
+        }
+    )
+    monkeypatch.setattr(
+        evaluation_service, "require_supabase_admin_client", lambda: supabase
+    )
+
+    with pytest.raises(PurchaseNotPaid):
+        await finalize_paid_evaluation(
+            user_id="user-1",
+            user_email="test@example.com",
+            session_token="sess-1",
+            purchase_id="purchase-1",
+        )
+
+    # No prediction_runs row should have been written.
+    assert not any(
+        table == "prediction_runs" for (table, _) in supabase.inserts
+    )
+
+
+async def test_finalize_rejects_already_redeemed_purchase(monkeypatch):
+    """Regression: replaying the same paid purchase_id must not mint a second run."""
+    supabase = _FakeSupabase(
+        data={
+            "eval_purchases": [
+                _purchase_row(status="completed", eval_run_id="run-already-exists")
+            ],
+            "pending_evaluations": [_pending_row()],
+        }
+    )
+    monkeypatch.setattr(
+        evaluation_service, "require_supabase_admin_client", lambda: supabase
+    )
+
+    with pytest.raises(PurchaseAlreadyUsed):
+        await finalize_paid_evaluation(
+            user_id="user-1",
+            user_email="test@example.com",
+            session_token="sess-1",
+            purchase_id="purchase-1",
+        )
+
+    # No new prediction_runs row should have been written.
+    assert not any(
+        table == "prediction_runs" for (table, _) in supabase.inserts
+    )
 
 
 async def test_finalize_raises_pending_not_found_when_session_expired(monkeypatch):

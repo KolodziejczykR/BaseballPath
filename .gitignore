@@ -108,4 +108,8 @@ CLAUDE_TEMPLATE.md
 
 .next-local
 
+# Claude Code / IDE / agent metadata — local-only, do not commit
 .claude/superpowers/
+.claude/skills/
+skills-lock.json
+.windsurf/

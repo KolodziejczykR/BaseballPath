@@ -59,6 +59,7 @@ def normalize_position(raw: Optional[str]) -> Optional[str]:
     Examples:
         'RHP' -> 'P'
         'Shortstop' -> 'SS'
+        'Right-Handed Pitcher' -> 'P'
         'OF' -> None (ambiguous, use get_position_credits)
     """
     if not raw:
@@ -74,7 +75,18 @@ def normalize_position(raw: Optional[str]) -> Optional[str]:
     if cleaned in AMBIGUOUS_POSITIONS:
         return None
 
-    return POSITION_MAP.get(cleaned)
+    direct = POSITION_MAP.get(cleaned)
+    if direct:
+        return direct
+
+    # Long-form fallback: "Right-Handed Pitcher", "Left Handed Pitcher", etc.
+    # Tokenize on non-alphanumerics so hyphens and spaces both split.
+    tokens = set(re.findall(r'[a-z0-9]+', cleaned))
+    if 'pitcher' in tokens or tokens & {'rhp', 'lhp', 'rp', 'sp', 'closer'}:
+        return 'P'
+    if 'catcher' in tokens:
+        return 'C'
+    return None
 
 
 def get_position_credits(raw: Optional[str]) -> Dict[str, float]:

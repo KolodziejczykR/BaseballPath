@@ -1,0 +1,21 @@
+{
+  "features": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "inf_velo",
+    "bat_speed_max"
+  ],
+  "required_columns": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "inf_velo",
+    "bat_speed_max"
+  ],
+  "notes": "XGBoost handles NaN natively. No imputation or scaling needed."
+}

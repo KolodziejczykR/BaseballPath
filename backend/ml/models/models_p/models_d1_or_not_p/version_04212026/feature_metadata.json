@@ -1,0 +1,29 @@
+{
+  "features": [
+    "height",
+    "weight",
+    "fastball_velo_max",
+    "fastball_velo_range",
+    "fastball_spin",
+    "changeup_velo_range",
+    "changeup_spin",
+    "curveball_velo_range",
+    "curveball_spin",
+    "slider_velo_range",
+    "slider_spin"
+  ],
+  "required_columns": [
+    "height",
+    "weight",
+    "fastball_velo_max",
+    "fastball_velo_range",
+    "fastball_spin",
+    "changeup_velo_range",
+    "changeup_spin",
+    "curveball_velo_range",
+    "curveball_spin",
+    "slider_velo_range",
+    "slider_spin"
+  ],
+  "notes": "XGBoost handles NaN natively. No imputation or scaling needed. 11 pitcher features: physical (2) + fastball velo/spin (3) + secondary pitch velo/spin (6). Players missing secondary pitches or spin data still get valid predictions."
+}

@@ -1,0 +1,23 @@
+{
+  "features": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "c_velo",
+    "pop_time",
+    "bat_speed_max"
+  ],
+  "required_columns": [
+    "height",
+    "weight",
+    "exit_velo_max",
+    "distance_max",
+    "sixty_time",
+    "c_velo",
+    "pop_time",
+    "bat_speed_max"
+  ],
+  "notes": "XGBoost handles NaN natively. No imputation or scaling needed. 8 features including both c_velo and pop_time as defensive metrics."
+}

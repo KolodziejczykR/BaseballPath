@@ -18,7 +18,7 @@ def _base_payload():
 
 
 def test_pitcher_predict_minimal():
-    response = client.post("/pitcher/predict", json=_base_payload())
+    response = client.post("/predict/pitcher/predict", json=_base_payload())
     assert response.status_code == 200
     data = response.json()
     assert "final_prediction" in data
@@ -36,7 +36,7 @@ def test_pitcher_predict_full_payload():
         "slider_velo": 78.0,
         "slider_spin": 2300.0,
     })
-    response = client.post("/pitcher/predict", json=payload)
+    response = client.post("/predict/pitcher/predict", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert "final_prediction" in data
@@ -45,75 +45,75 @@ def test_pitcher_predict_full_payload():
 def test_pitcher_missing_required_fastball_max():
     payload = _base_payload()
     payload.pop("fastball_velo_max")
-    response = client.post("/pitcher/predict", json=payload)
+    response = client.post("/predict/pitcher/predict", json=payload)
     assert response.status_code == 422
 
 
 def test_pitcher_invalid_height_range():
     payload = _base_payload()
     payload["height"] = 40
-    response = client.post("/pitcher/predict", json=payload)
+    response = client.post("/predict/pitcher/predict", json=payload)
     assert response.status_code == 422
 
 
 def test_pitcher_invalid_fastball_max_range():
     payload = _base_payload()
     payload["fastball_velo_max"] = 200
-    response = client.post("/pitcher/predict", json=payload)
+    response = client.post("/predict/pitcher/predict", json=payload)
     assert response.status_code == 422
 
 
 def test_pitcher_invalid_spin_range():
     payload = _base_payload()
     payload["fastball_spin"] = 5000
-    response = client.post("/pitcher/predict", json=payload)
+    response = client.post("/predict/pitcher/predict", json=payload)
     assert response.status_code == 422
 
 
 def test_pitcher_missing_height():
     payload = _base_payload()
     payload.pop("height")
-    response = client.post("/pitcher/predict", json=payload)
+    response = client.post("/predict/pitcher/predict", json=payload)
     assert response.status_code == 422
 
 
 def test_pitcher_missing_weight():
     payload = _base_payload()
     payload.pop("weight")
-    response = client.post("/pitcher/predict", json=payload)
+    response = client.post("/predict/pitcher/predict", json=payload)
     assert response.status_code == 422
 
 
 def test_pitcher_invalid_weight_type():
     payload = _base_payload()
     payload["weight"] = "heavy"
-    response = client.post("/pitcher/predict", json=payload)
+    response = client.post("/predict/pitcher/predict", json=payload)
     assert response.status_code == 422
 
 
 def test_pitcher_invalid_primary_position_type():
     payload = _base_payload()
     payload["primary_position"] = 123
-    response = client.post("/pitcher/predict", json=payload)
+    response = client.post("/predict/pitcher/predict", json=payload)
     assert response.status_code == 422
 
 
 def test_pitcher_features_endpoint():
-    response = client.get("/pitcher/features")
+    response = client.get("/predict/pitcher/features")
     assert response.status_code == 200
     data = response.json()
     assert "required_features" in data
 
 
 def test_pitcher_example_endpoint():
-    response = client.get("/pitcher/example")
+    response = client.get("/predict/pitcher/example")
     assert response.status_code == 200
     data = response.json()
     assert "example_input" in data
 
 
 def test_pitcher_health_endpoint():
-    response = client.get("/pitcher/health")
+    response = client.get("/predict/pitcher/health")
     assert response.status_code == 200
     data = response.json()
     assert "status" in data

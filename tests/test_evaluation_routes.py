@@ -11,12 +11,15 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from backend.api.deps.auth import (
     AuthenticatedUser,
     get_current_user,
     get_optional_user,
 )
+from backend.api.rate_limit import limiter
 from backend.api.routers.evaluations import router as evaluations_router
 from backend.api.services import evaluation_service
 from backend.api.services.evaluation_service import (
@@ -57,7 +60,6 @@ def _fake_core(n: int = 10) -> CoreEvaluation:
         player_percentile=72.0,
         player_pci=68.0,
         ml_pci=64.0,
-        benchmark_pci=60.0,
         is_pitcher=False,
         ranked_schools=_fake_ranked_schools(n),
     )
@@ -96,7 +98,17 @@ def _eval_payload() -> Dict[str, Any]:
 
 
 def _make_app() -> FastAPI:
+    """Build a test app that mirrors production wiring.
+
+    The shared SlowAPI limiter must be attached to ``app.state.limiter``
+    AND the RateLimitExceeded handler must be registered, otherwise the
+    decorated routes (e.g. /evaluations/preview) lose their body
+    annotations during FastAPI introspection and 422 with
+    "payload missing from query".
+    """
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(evaluations_router, prefix="/evaluations")
     return app
 
