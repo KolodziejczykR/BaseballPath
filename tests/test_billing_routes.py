@@ -13,6 +13,7 @@ import json
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -181,6 +182,12 @@ def _make_app() -> FastAPI:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(
+    reason=(
+        "FREE BETA: paid Stripe checkout is bypassed in billing.create_eval_checkout. "
+        "Re-enable this test (and remove the FREE BETA tests below) when restoring paid checkout."
+    )
+)
 def test_create_eval_checkout_happy_path(monkeypatch):
     supabase = _FakeSupabase()
     fake_stripe = _fake_stripe_for_checkout()
@@ -254,6 +261,12 @@ def test_create_eval_checkout_happy_path(monkeypatch):
     )
 
 
+@pytest.mark.skip(
+    reason=(
+        "FREE BETA: paid Stripe checkout is bypassed in billing.create_eval_checkout. "
+        "Re-enable this test (and remove the FREE BETA tests below) when restoring paid checkout."
+    )
+)
 def test_create_eval_checkout_uses_repeat_price_for_returning_users(monkeypatch):
     supabase = _FakeSupabase()
     fake_stripe = _fake_stripe_for_checkout()
@@ -290,6 +303,104 @@ def test_create_eval_checkout_uses_repeat_price_for_returning_users(monkeypatch)
     assert created["line_items"][0]["price_data"]["product_data"]["name"] == (
         "BaseballPath Evaluation"
     )
+
+
+# ---------------------------------------------------------------------------
+# FREE BETA: create-eval-checkout bypasses Stripe and marks the purchase
+# completed immediately so the existing /evaluations/finalize gate still
+# works without a webhook firing. Delete these tests when restoring paid
+# checkout (and un-skip the two paid-flow tests above).
+# ---------------------------------------------------------------------------
+
+
+def test_create_eval_checkout_free_beta_skips_stripe_and_completes_purchase(monkeypatch):
+    supabase = _FakeSupabase()
+    fake_stripe = _fake_stripe_for_checkout()
+
+    monkeypatch.setattr(billing_module, "_require_stripe", lambda: fake_stripe)
+    monkeypatch.setattr(
+        billing_module, "require_supabase_admin_client", lambda: supabase
+    )
+    monkeypatch.setattr(
+        billing_module,
+        "get_eval_price",
+        lambda user_id: {
+            "price_cents": 6900,
+            "is_first_eval": True,
+            "completed_eval_count": 0,
+        },
+    )
+    monkeypatch.setenv("APP_BASE_URL", "https://app.baseballpath.test")
+
+    app = _make_app()
+    app.dependency_overrides[get_current_user] = _auth_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/billing/create-eval-checkout",
+        json={"session_token": "sess-xyz"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    # checkout_url now points straight to the results page (no Stripe hop).
+    assert body["checkout_url"].startswith(
+        "https://app.baseballpath.test/predict/results"
+    )
+    assert "purchase_id=purchase-1" in body["checkout_url"]
+    assert "session_token=sess-xyz" in body["checkout_url"]
+    assert body["session_id"] is None
+    assert body["purchase_id"] == "purchase-1"
+
+    # Purchase is inserted as completed at $0 so finalize() passes its paid gate.
+    purchase_inserts = [p for (table, p) in supabase.inserts if table == "eval_purchases"]
+    assert len(purchase_inserts) == 1
+    inserted = purchase_inserts[0]
+    assert inserted["user_id"] == "user-1"
+    assert inserted["status"] == "completed"
+    assert inserted["amount_cents"] == 0
+    assert inserted["is_first_eval"] is True
+    assert inserted["currency"] == "usd"
+
+    # Stripe Session.create must NOT have been called.
+    assert fake_stripe._created_sessions == []
+
+
+def test_create_eval_checkout_free_beta_still_records_is_first_for_repeat_users(monkeypatch):
+    supabase = _FakeSupabase()
+    fake_stripe = _fake_stripe_for_checkout()
+
+    monkeypatch.setattr(billing_module, "_require_stripe", lambda: fake_stripe)
+    monkeypatch.setattr(
+        billing_module, "require_supabase_admin_client", lambda: supabase
+    )
+    monkeypatch.setattr(
+        billing_module,
+        "get_eval_price",
+        lambda user_id: {
+            "price_cents": 2900,
+            "is_first_eval": False,
+            "completed_eval_count": 2,
+        },
+    )
+
+    app = _make_app()
+    app.dependency_overrides[get_current_user] = _auth_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/billing/create-eval-checkout",
+        json={"session_token": "sess-xyz"},
+    )
+
+    assert response.status_code == 200
+    purchase_inserts = [p for (table, p) in supabase.inserts if table == "eval_purchases"]
+    # Amount is $0 under FREE BETA regardless of first-vs-repeat pricing,
+    # but is_first_eval is still recorded so analytics / future restoration work.
+    assert purchase_inserts[0]["amount_cents"] == 0
+    assert purchase_inserts[0]["is_first_eval"] is False
+    # Stripe Session.create must NOT have been called.
+    assert fake_stripe._created_sessions == []
 
 
 # ---------------------------------------------------------------------------
