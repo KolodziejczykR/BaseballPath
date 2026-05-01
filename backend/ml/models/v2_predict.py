@@ -12,6 +12,7 @@ XGBoost handles NaN natively for missing stats.
 
 import json
 import os
+from functools import lru_cache
 
 import joblib
 import numpy as np
@@ -28,6 +29,10 @@ _FEATURE_ALIASES = {
 }
 
 
+# Cached so each Celery worker process pays the joblib deserialization
+# cost (~50 MB across all 8 position×stage models) once at first use, not
+# on every prediction call. Models are read-only after load.
+@lru_cache(maxsize=None)
 def _load_model_and_config(model_dir: str):
     model = joblib.load(os.path.join(model_dir, "calibrated_xgb_model.pkl"))
     with open(os.path.join(model_dir, "model_config.json"), "r") as f:

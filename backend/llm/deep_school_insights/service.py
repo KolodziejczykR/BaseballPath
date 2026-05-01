@@ -10,6 +10,7 @@ a bare service instance created via ``__new__``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import time
@@ -27,6 +28,7 @@ from .evidence import (
     compute_evidence,
 )
 from .fetch import (
+    evidence_from_matched,
     fetch_and_parse_roster,
     fetch_and_parse_stats,
     gather_evidence,
@@ -111,6 +113,11 @@ class DeepSchoolInsightService:
             else (max(1, int(max_schools)) if max_schools is not None else None)
         )
         self.llm_timeout_s = float(os.getenv("OPENAI_RESEARCH_TIMEOUT_S", str(llm_timeout_s)))
+        # Decouple I/O concurrency from LLM concurrency in the fan-out path:
+        # HTML fetches are RAM-heavy (BS4 buffers), so cap them tight; LLM
+        # calls hold trivial local RAM, so let them fan out wider for speed.
+        self.fetch_concurrency = max(1, int(os.getenv("RESEARCH_FETCH_CONCURRENCY", "3")))
+        self.llm_concurrency = max(1, int(os.getenv("RESEARCH_LLM_CONCURRENCY", "10")))
 
     async def _responses_parse(
         self,
@@ -172,35 +179,120 @@ class DeepSchoolInsightService:
             school["_research_eligible"] = idx < research_limit
 
         researched_ids: set[int] = set()
-        batch_size = self.initial_batch_size
         batch_index = 0
 
-        while True:
-            schools_copy.sort(
-                key=lambda school: (
-                    float(school.get("ranking_score") or 0.0),
-                    float(school.get("delta") or 0.0),
-                ),
-                reverse=True,
-            )
-            next_batch = [
-                school
-                for school in schools_copy
-                if school.get("_research_eligible") and school.get("_research_id") not in researched_ids
-            ][:batch_size]
-            if not next_batch:
-                break
+        # Two execution paths:
+        #
+        # 1. **Rank-aware batched loop** — used when only a SUBSET of the
+        #    consideration pool gets researched (`max_schools` set without
+        #    `final_limit`). Earlier batches' insights bubble higher-ranked
+        #    schools into later batches via the inner re-sort, so the
+        #    selection of *which* schools get researched is a function of
+        #    intermediate research results.
+        #
+        # 2. **Two-semaphore fan-out** — used when ALL eligible schools get
+        #    researched anyway (the user-facing `final_limit` path, which
+        #    sets `research_limit == len(schools_copy)` per the assignment
+        #    above). In this case the inter-batch re-sort is a no-op for
+        #    selection purposes, so we collapse everything into a single
+        #    asyncio.gather() with separate semaphores capping fetch
+        #    concurrency (RAM-bounded) and LLM concurrency (wider, for
+        #    speed). This recovers the speed lost when batch_size was
+        #    lowered from 10 → 3 to fit the 512 MB Render dyno.
+        if research_limit < len(schools_copy):
+            batch_size = self.initial_batch_size
 
-            for school in next_batch:
+            while True:
+                schools_copy.sort(
+                    key=lambda school: (
+                        float(school.get("ranking_score") or 0.0),
+                        float(school.get("delta") or 0.0),
+                    ),
+                    reverse=True,
+                )
+                next_batch = [
+                    school
+                    for school in schools_copy
+                    if school.get("_research_eligible") and school.get("_research_id") not in researched_ids
+                ][:batch_size]
+                if not next_batch:
+                    break
+
+                for school in next_batch:
+                    school["research_status"] = "attempted"
+
+                batch_index += 1
+                t_batch_start = time.monotonic()
+                logger.info(
+                    "[TIMING] batch start idx=%d size=%d schools=%s",
+                    batch_index,
+                    len(next_batch),
+                    [s.get("school_name") for s in next_batch],
+                )
+                tasks = [
+                    self._enrich_single_school(
+                        school=school,
+                        player_stats=player_stats,
+                        baseball_assessment=baseball_assessment,
+                        academic_score=academic_score,
+                        ranking_priority=ranking_priority,
+                    )
+                    for school in next_batch
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                logger.info(
+                    "[TIMING] batch done idx=%d size=%d elapsed=%.2fs",
+                    batch_index, len(next_batch), time.monotonic() - t_batch_start,
+                )
+                for school, result in zip(next_batch, results):
+                    researched_ids.add(int(school["_research_id"]))
+                    if isinstance(result, DeepSchoolInsight):
+                        self._apply_insight(school, result)
+                        continue
+                    if isinstance(result, Exception):
+                        logger.warning(
+                            "Deep school insight generation failed for %s: %s",
+                            school.get("school_name"),
+                            result,
+                        )
+                    school["research_status"] = "failed"
+
+                batch_size = self.batch_size
+
+        else:
+            fetch_sem = asyncio.Semaphore(self.fetch_concurrency)
+            llm_sem = asyncio.Semaphore(self.llm_concurrency)
+            eligible = [s for s in schools_copy if s.get("_research_eligible")]
+            for school in eligible:
                 school["research_status"] = "attempted"
 
-            batch_index += 1
-            t_batch_start = time.monotonic()
+            # ---- school_evidence_cache lookup (one round-trip for the whole
+            # batch). Misses / stale / failed rows are silently absent from
+            # the dict, in which case the per-school task falls through to
+            # its existing live-fetch path. Lazy import keeps test envs that
+            # don't have backend.database installed loadable. ----
+            cache_lookup: Dict[str, Dict[str, Any]] = {}
+            try:
+                from backend.database.school_evidence_cache import load_cache_batch
+                school_names = [
+                    s.get("school_name") for s in eligible if s.get("school_name")
+                ]
+                cache_lookup = load_cache_batch(school_names)
+                logger.info(
+                    "[CACHE] school_evidence_cache lookup eligible=%d hits=%d",
+                    len(eligible), len(cache_lookup),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[CACHE] school_evidence_cache lookup failed (degrading "
+                    "to live-fetch for all): %s", exc,
+                )
+
+            batch_index = 1
+            t_fanout_start = time.monotonic()
             logger.info(
-                "[TIMING] batch start idx=%d size=%d schools=%s",
-                batch_index,
-                len(next_batch),
-                [s.get("school_name") for s in next_batch],
+                "[TIMING] fan-out start eligible=%d fetch_concurrency=%d llm_concurrency=%d",
+                len(eligible), self.fetch_concurrency, self.llm_concurrency,
             )
             tasks = [
                 self._enrich_single_school(
@@ -209,15 +301,18 @@ class DeepSchoolInsightService:
                     baseball_assessment=baseball_assessment,
                     academic_score=academic_score,
                     ranking_priority=ranking_priority,
+                    fetch_sem=fetch_sem,
+                    llm_sem=llm_sem,
+                    cached_row=cache_lookup.get(school.get("school_name", "")),
                 )
-                for school in next_batch
+                for school in eligible
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             logger.info(
-                "[TIMING] batch done idx=%d size=%d elapsed=%.2fs",
-                batch_index, len(next_batch), time.monotonic() - t_batch_start,
+                "[TIMING] fan-out done eligible=%d elapsed=%.2fs",
+                len(eligible), time.monotonic() - t_fanout_start,
             )
-            for school, result in zip(next_batch, results):
+            for school, result in zip(eligible, results):
                 researched_ids.add(int(school["_research_id"]))
                 if isinstance(result, DeepSchoolInsight):
                     self._apply_insight(school, result)
@@ -229,8 +324,6 @@ class DeepSchoolInsightService:
                         result,
                     )
                 school["research_status"] = "failed"
-
-            batch_size = self.batch_size
 
         player_academic_score: Optional[float] = None
         if isinstance(academic_score, dict):
@@ -378,7 +471,15 @@ class DeepSchoolInsightService:
         baseball_assessment: Dict[str, Any],
         academic_score: Dict[str, Any],
         ranking_priority: Optional[str] = None,
+        fetch_sem: Optional[asyncio.Semaphore] = None,
+        llm_sem: Optional[asyncio.Semaphore] = None,
+        cached_row: Optional[Dict[str, Any]] = None,
     ) -> Optional[DeepSchoolInsight]:
+        # fetch_sem / llm_sem are only passed by the fan-out path in
+        # enrich_and_rerank; the rank-aware batched path leaves them None
+        # because batch_size already throttles concurrency there.
+        # cached_row, if present, is a school_evidence_cache row — its
+        # matched_players replace the live fetch + parse for this school.
         if self.client is None:
             return None
         if not self.has_responses_parse:
@@ -406,7 +507,29 @@ class DeepSchoolInsightService:
         school_name = school.get("display_school_name") or school.get("school_name") or "Unknown"
         t_school_start = time.monotonic()
         trusted_domains = _trusted_domains_for_school(school)
-        evidence = await self._gather_evidence(school, player_stats, trusted_domains)
+
+        if cached_row is not None:
+            # Cache hit: skip the live fetch entirely. No fetch_sem held —
+            # this path holds trivial RAM (small JSON deserialization) and
+            # doesn't need to be throttled.
+            from backend.database.school_evidence_cache import deserialize_matched_players
+            matched = deserialize_matched_players(cached_row.get("matched_players"))
+            evidence = evidence_from_matched(
+                matched_players=matched,
+                player_stats=player_stats,
+                roster_url=cached_row.get("roster_url") or school.get("roster_url") or "",
+                stats_available=bool(cached_row.get("stats_available")),
+                school_name=school_name,
+            )
+            logger.info(
+                "[CACHE] hit school=%r matched_players=%d stats_available=%s",
+                school_name, len(matched), bool(cached_row.get("stats_available")),
+            )
+        else:
+            logger.info("[CACHE] miss school=%r — falling through to live fetch", school_name)
+            fetch_ctx = fetch_sem if fetch_sem is not None else contextlib.nullcontext()
+            async with fetch_ctx:
+                evidence = await self._gather_evidence(school, player_stats, trusted_domains)
         t_evidence_done = time.monotonic()
         logger.info(
             "[TIMING] enrich_single evidence school=%r elapsed=%.2fs",
@@ -421,10 +544,12 @@ class DeepSchoolInsightService:
         roster_unavailable = not _has_meaningful_evidence(evidence)
 
         t_review_start = time.monotonic()
-        review = await self._review_school(
-            school, player_stats, baseball_assessment, academic_score,
-            evidence, talking_points,
-        )
+        llm_ctx = llm_sem if llm_sem is not None else contextlib.nullcontext()
+        async with llm_ctx:
+            review = await self._review_school(
+                school, player_stats, baseball_assessment, academic_score,
+                evidence, talking_points,
+            )
         t_review_done = time.monotonic()
         logger.info(
             "[TIMING] enrich_single review school=%r elapsed=%.2fs status=%s roster_unavailable=%s total=%.2fs",

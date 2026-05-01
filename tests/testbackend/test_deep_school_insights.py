@@ -181,6 +181,7 @@ class _StubInsightService(DeepSchoolInsightService):
         baseball_assessment,
         academic_score,
         ranking_priority=None,
+        **_kwargs,
     ):
         school_name = school["school_name"]
         self.visited.append(school_name)
@@ -324,6 +325,7 @@ class _ConfiguredInsightService(DeepSchoolInsightService):
         baseball_assessment,
         academic_score,
         ranking_priority=None,
+        **_kwargs,
     ):
         config = self.configs[school["school_name"]]
         evidence = _make_research_evidence(

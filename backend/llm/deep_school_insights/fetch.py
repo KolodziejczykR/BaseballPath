@@ -23,7 +23,7 @@ from .parsers import (
     parse_roster_players,
     parse_stats_records,
 )
-from .types import GatheredEvidence, ParsedPlayer, ParsedStatLine
+from .types import GatheredEvidence, MatchedPlayer, ParsedPlayer, ParsedStatLine
 
 
 logger = logging.getLogger(__name__)
@@ -172,12 +172,52 @@ async def fetch_and_parse_stats(school: Dict[str, Any]) -> List[ParsedStatLine]:
     return []
 
 
+def evidence_from_matched(
+    *,
+    matched_players: List[MatchedPlayer],
+    player_stats: Dict[str, Any],
+    roster_url: str,
+    stats_available: bool,
+    school_name: str,
+) -> GatheredEvidence:
+    """Build GatheredEvidence from already-parsed roster + stats.
+
+    This is the cacheable seam: ``matched_players`` is position-agnostic,
+    so it can be computed once per school per week by the cron and reused
+    by every user evaluation. The per-user filtering (by primary_position)
+    happens inside ``compute_evidence`` and stays out of the cache.
+    """
+    if not matched_players:
+        return _empty_evidence(f"Could not parse roster for {school_name}.")
+
+    evidence = compute_evidence(
+        matched_players=matched_players,
+        player_stats=player_stats,
+        roster_url=roster_url or "",
+        stats_available=stats_available,
+    )
+
+    logger.info(
+        "Computed evidence for %s: %d players, %d same-family, %d departures, stats=%s",
+        school_name,
+        len(matched_players),
+        evidence.roster_context.same_family_count or 0,
+        evidence.roster_context.likely_departures_same_family or 0,
+        "yes" if stats_available else "no",
+    )
+    return evidence
+
+
 async def gather_evidence(
     school: Dict[str, Any],
     player_stats: Dict[str, Any],
     trusted_domains: Sequence[str],
 ) -> GatheredEvidence:
-    """Gather evidence deterministically: fetch, parse, match, compute."""
+    """Gather evidence deterministically: fetch, parse, match, compute.
+
+    Live-fetch entrypoint. Cache-hit callers should bypass this and call
+    ``evidence_from_matched`` directly with the cached MatchedPlayer list.
+    """
     school_name = school.get("display_school_name") or school.get("school_name") or "Unknown School"
 
     t_gather_start = time.monotonic()
@@ -196,19 +236,10 @@ async def gather_evidence(
 
     matched = match_players_to_stats(players, stats)
 
-    evidence = compute_evidence(
+    return evidence_from_matched(
         matched_players=matched,
         player_stats=player_stats,
         roster_url=roster_url or "",
         stats_available=bool(stats),
+        school_name=school_name,
     )
-
-    logger.info(
-        "Computed evidence for %s: %d players, %d same-family, %d departures, stats=%s",
-        school_name,
-        len(players),
-        evidence.roster_context.same_family_count or 0,
-        evidence.roster_context.likely_departures_same_family or 0,
-        "yes" if stats else "no",
-    )
-    return evidence
