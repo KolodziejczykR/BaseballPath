@@ -12,8 +12,19 @@ import logging
 import os
 import sys
 
-# 1. Path setup — must be before backend.* imports.
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 1. Path setup — must be before any project imports. Render runs the web
+# service with cwd=backend/ (so `api.main:app` resolves), but our code
+# also uses `from backend.X import Y` (so the worker process and tests
+# can share imports). Add BOTH paths so either form works regardless of
+# how this module is loaded:
+#   - backend/   makes `api.X` importable
+#   - repo root  makes `backend.X` importable
+_THIS_FILE = os.path.abspath(__file__)
+_BACKEND_DIR = os.path.dirname(os.path.dirname(_THIS_FILE))     # .../backend
+_REPO_ROOT = os.path.dirname(_BACKEND_DIR)                      # .../<repo>
+for _path in (_BACKEND_DIR, _REPO_ROOT):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 # 2. Sentry init — before any other backend import that could raise.
 from backend.observability import init_sentry  # noqa: E402
