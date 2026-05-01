@@ -9,6 +9,7 @@ SimpleNamespace that mimics the two surfaces the router actually uses:
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
@@ -319,7 +320,8 @@ def test_webhook_marks_eval_purchase_completed(monkeypatch):
     supabase = _FakeSupabase(
         rows={"eval_purchases": [{"id": "purchase-1", "status": "pending"}]}
     )
-    fake_stripe = _fake_stripe_for_webhook(_checkout_completed_event())
+    event_payload = _checkout_completed_event()
+    fake_stripe = _fake_stripe_for_webhook(event_payload)
 
     monkeypatch.setattr(billing_module, "_require_stripe", lambda: fake_stripe)
     monkeypatch.setattr(
@@ -330,9 +332,12 @@ def test_webhook_marks_eval_purchase_completed(monkeypatch):
     app = _make_app()
     client = TestClient(app)
 
+    # The router re-parses the raw payload after signature verification
+    # (StripeObject.get() doesn't behave like dict.get() in current SDKs),
+    # so the body sent here must be the actual event JSON, not a stub.
     response = client.post(
         "/billing/webhook",
-        content=b'{"stub": true}',
+        content=json.dumps(event_payload).encode(),
         headers={"stripe-signature": "t=0,v1=stub"},
     )
 
@@ -383,7 +388,7 @@ def test_webhook_ignores_non_eval_payment_types(monkeypatch):
 
     response = client.post(
         "/billing/webhook",
-        content=b'{"stub": true}',
+        content=json.dumps(event).encode(),
         headers={"stripe-signature": "t=0,v1=stub"},
     )
 
@@ -399,7 +404,8 @@ def test_webhook_dedupes_replayed_event_id(monkeypatch):
     supabase = _FakeSupabase(
         rows={"eval_purchases": [{"id": "purchase-1", "status": "pending"}]}
     )
-    fake_stripe = _fake_stripe_for_webhook(_checkout_completed_event())
+    event_payload = _checkout_completed_event()
+    fake_stripe = _fake_stripe_for_webhook(event_payload)
 
     monkeypatch.setattr(billing_module, "_require_stripe", lambda: fake_stripe)
     monkeypatch.setattr(
@@ -410,10 +416,12 @@ def test_webhook_dedupes_replayed_event_id(monkeypatch):
     app = _make_app()
     client = TestClient(app)
 
+    raw_body = json.dumps(event_payload).encode()
+
     # First delivery — should process normally.
     first = client.post(
         "/billing/webhook",
-        content=b'{"stub": true}',
+        content=raw_body,
         headers={"stripe-signature": "t=0,v1=stub"},
     )
     assert first.status_code == 200
@@ -422,7 +430,7 @@ def test_webhook_dedupes_replayed_event_id(monkeypatch):
     # Second delivery with the same event id — Stripe retry. Must skip.
     second = client.post(
         "/billing/webhook",
-        content=b'{"stub": true}',
+        content=raw_body,
         headers={"stripe-signature": "t=0,v1=stub"},
     )
     assert second.status_code == 200
@@ -444,9 +452,8 @@ def test_webhook_skips_already_completed_purchase(monkeypatch):
     supabase = _FakeSupabase(
         rows={"eval_purchases": [{"id": "purchase-1", "status": "completed"}]}
     )
-    fake_stripe = _fake_stripe_for_webhook(
-        _checkout_completed_event(event_id="evt_brand_new_id")
-    )
+    event_payload = _checkout_completed_event(event_id="evt_brand_new_id")
+    fake_stripe = _fake_stripe_for_webhook(event_payload)
 
     monkeypatch.setattr(billing_module, "_require_stripe", lambda: fake_stripe)
     monkeypatch.setattr(
@@ -459,7 +466,7 @@ def test_webhook_skips_already_completed_purchase(monkeypatch):
 
     response = client.post(
         "/billing/webhook",
-        content=b'{"stub": true}',
+        content=json.dumps(event_payload).encode(),
         headers={"stripe-signature": "t=0,v1=stub"},
     )
     assert response.status_code == 200

@@ -7,6 +7,7 @@ webhook only cares about `checkout.session.completed` for `eval_purchase`.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -182,9 +183,23 @@ async def billing_webhook(request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Missing Stripe signature")
 
     try:
-        event = stripe_client.Webhook.construct_event(payload, signature, webhook_secret)
+        # construct_event verifies the signature and parses the body. The
+        # returned object is a stripe.Event (a StripeObject), which in some
+        # SDK versions does NOT support .get() the way a plain dict does
+        # — accessing event.get triggers __getattr__("get") and crashes
+        # with AttributeError. After signature verification, we re-parse
+        # the same raw bytes as a plain Python dict so the rest of this
+        # handler can use familiar .get() access without surprises.
+        stripe_client.Webhook.construct_event(payload, signature, webhook_secret)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid webhook signature: {str(exc)}") from exc
+
+    try:
+        event: Dict[str, Any] = json.loads(payload.decode("utf-8"))
+    except Exception as exc:
+        # If the payload validated but isn't parseable JSON, something is
+        # very wrong — treat as a malformed request rather than a 500.
+        raise HTTPException(status_code=400, detail="Webhook payload is not valid JSON") from exc
 
     event_id = event.get("id")
     event_type = event.get("type")
