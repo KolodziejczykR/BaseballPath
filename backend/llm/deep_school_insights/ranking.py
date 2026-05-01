@@ -128,7 +128,7 @@ _MISSING_SELECTIVITY_FALLBACK = 2.5
 # prestige is only a useful signal to the extent the student can actually get
 # in: Academic Fit / Safety is fully attainable (factor 1.0), Reach is
 # aspirational but realistic (0.8), Strong Reach is unlikely admission so
-# its prestige shouldn't crown it as the student's best fit (0.35). This is
+# its prestige shouldn't crown it as the student's best fit (0.35). This is/cl
 # what keeps Baseball-Fit + Academic-Reach above Baseball-Fit + Academic-
 # Strong-Reach under academics priority.
 _QUALITY_BONUS_ATTAINABILITY = {

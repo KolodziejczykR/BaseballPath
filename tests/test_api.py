@@ -15,6 +15,23 @@ def test_health_check():
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
+
+def test_health_endpoint_runs_dependency_checks():
+    """The /health endpoint must run env + Supabase checks and return a
+    structured response. We don't assert 200 vs 503 because the test
+    environment may or may not have a real Supabase reachable; we just
+    verify the response has the right shape."""
+    response = client.get("/health")
+    assert response.status_code in (200, 503)
+    body = response.json()
+    assert "status" in body
+    assert "checks" in body
+    # All required env vars should appear in checks (ok or missing).
+    env_checks = [k for k in body["checks"] if k.startswith("env.")]
+    assert len(env_checks) >= 5, f"Expected env checks, got {body['checks']}"
+    # Supabase check must be present too.
+    assert "supabase" in body["checks"]
+
 # Infielder API Tests
 def test_infielder_predict_high_performer():
     """Test infielder prediction with high-performing player data"""

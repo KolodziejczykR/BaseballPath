@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
 import { ResultsMap } from "@/components/evaluation/results-map";
 import { SchoolFitVote, type SchoolFeedbackRecord } from "@/components/evaluation/school-fit-vote";
+import { ReviewHelpfulnessVote, type ReviewFeedbackRecord } from "@/components/evaluation/review-helpfulness-vote";
 import { EvalFeedbackPanel } from "@/components/evaluation/eval-feedback-panel";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
@@ -55,10 +56,7 @@ type School = {
   estimated_annual_cost?: number | null;
   metric_comparisons?: MetricComparison[];
   fit_summary?: string;
-  school_description?: string;
   why_this_school?: string;
-  school_snapshot?: string;
-  considerations?: string[];
   research_confidence?: string;
   opportunity_fit?: string;
   overall_school_view?: string;
@@ -330,6 +328,7 @@ export default function EvaluationDetailPage() {
   const [saveSchoolMessage, setSaveSchoolMessage] = useState("");
   const [deletingRun, setDeletingRun] = useState(false);
   const [schoolFeedbackByKey, setSchoolFeedbackByKey] = useState<Record<string, SchoolFeedbackRecord>>({});
+  const [reviewFeedbackByKey, setReviewFeedbackByKey] = useState<Record<string, ReviewFeedbackRecord>>({});
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
   const [feedbackEligible, setFeedbackEligible] = useState(false);
   const detailRef = useRef<HTMLDivElement>(null);
@@ -459,6 +458,43 @@ export default function EvaluationDetailPage() {
     }
 
     loadSchoolFeedback();
+    return () => { mounted = false; };
+  }, [accessToken, runId]);
+
+  // Load existing per-school review-helpfulness feedback for this run
+  useEffect(() => {
+    if (!accessToken || !runId) return;
+    let mounted = true;
+
+    async function loadReviewFeedback() {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/feedback/review?evaluation_run_id=${encodeURIComponent(runId)}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!mounted) return;
+        const next: Record<string, ReviewFeedbackRecord> = {};
+        for (const item of data.items || []) {
+          if (item.school_dedupe_key) {
+            next[item.school_dedupe_key] = {
+              school_dedupe_key: item.school_dedupe_key,
+              is_helpful: item.is_helpful,
+              reason: item.reason ?? null,
+            };
+          }
+        }
+        setReviewFeedbackByKey(next);
+      } catch { /* ignore */ }
+    }
+
+    loadReviewFeedback();
     return () => { mounted = false; };
   }, [accessToken, runId]);
 
@@ -1099,30 +1135,21 @@ export default function EvaluationDetailPage() {
                         </div>
                       )}
 
-                      {/* School Snapshot */}
-                      {(selectedSchool.school_snapshot || selectedSchool.school_description) && (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">About this program</p>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.school_snapshot || selectedSchool.school_description}
-                          </p>
-                        </div>
+                      {accessToken && selectedDedupeKey && (selectedSchool.why_this_school || selectedSchool.fit_summary) && (
+                        <ReviewHelpfulnessVote
+                          accessToken={accessToken}
+                          evaluationRunId={runId}
+                          schoolDedupeKey={selectedDedupeKey}
+                          schoolName={schoolDisplayName(selectedSchool)}
+                          current={reviewFeedbackByKey[selectedDedupeKey] || null}
+                          onSaved={(record) =>
+                            setReviewFeedbackByKey((prev) => ({
+                              ...prev,
+                              [record.school_dedupe_key]: record,
+                            }))
+                          }
+                        />
                       )}
-
-                      {/* Considerations */}
-                      {selectedSchool.considerations?.length ? (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Things to consider</p>
-                          <ul className="mt-2 space-y-1.5 text-sm text-[var(--foreground)]">
-                            {selectedSchool.considerations.map((item) => (
-                              <li key={item} className="flex items-start gap-2">
-                                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[var(--muted)]" />
-                                {item}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
 
                       {selectedSchool.research_sources?.length ? (
                         <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">

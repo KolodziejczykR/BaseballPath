@@ -200,17 +200,6 @@ async def example_detailed_matching():
                 for miss in summary['cons']:
                     print(f"     - {miss['reason']}")
 
-            # Show PLAYING TIME ANALYSIS
-            print(f"\n   ⚾ PLAYING TIME ANALYSIS:")
-            if summary.get('playing_time', {}).get('bucket'):
-                pt = summary['playing_time']
-                print(f"      Bucket: {pt['bucket']}")
-                print(f"      Percentile: {pt['percentile']}th")
-                print(f"      Z-Score: {pt['final_z_score']:.2f}")
-                print(f"      {pt['interpretation']}")
-            else:
-                print(f"      Data not available for this school")
-
     except Exception as e:
         print(f"Error: {e}")
 

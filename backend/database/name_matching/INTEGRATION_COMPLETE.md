@@ -55,7 +55,6 @@ profile = integration.get_school_strength_profile("Stanford University, Stanford
     "team_name": "Stanford",
     "has_data": True,
     "strength_classification": "elite",  # elite, strong, competitive, developing, rebuilding
-    "playing_time_factor": 0.7,  # 0.7 (very competitive) to 1.3 (lots of opportunity)
     "current_season": {
         "year": 2025,
         "record": "42-15",
@@ -81,7 +80,6 @@ profile = integration.get_school_strength_profile("Stanford University, Stanford
 
       # NEW: Baseball rankings data
       baseball_strength: Optional[Dict[str, Any]] = None
-      playing_time_factor: Optional[float] = None
       has_baseball_data: bool = False
   ```
 
@@ -95,7 +93,6 @@ profile = integration.get_school_strength_profile("Stanford University, Stanford
           "has_data": True,
           "team_name": "Stanford",
           "strength_classification": "elite",
-          "playing_time_factor": 0.7,
           "current_season": {...},
           "trend": "improving"
       }
@@ -136,24 +133,21 @@ async def _create_school_match():
 
 1. **API Responses Include Baseball Data**
    - Every school match now includes `baseball_strength` field
-   - Shows team strength classification, playing time factor, trends
+   - Shows team strength classification and trends
    - Automatically populated for all verified schools
 
 2. **School Comparison Enhanced**
    - Users can see which programs are elite vs rebuilding
-   - Playing time opportunities are quantified (0.7 to 1.3 scale)
    - Historical trends show program trajectory
 
 3. **Data-Driven Decisions**
-   - "This is an elite program (top 10%) but very competitive for playing time"
-   - "This is a developing program (50th percentile) with more opportunities"
+   - "This is an elite program (top 10%)"
    - "This program is improving - overall rating down 3.2 points over 3 years (lower = better)"
 
 ---
 
 ## 🚀 Current Focus (2026-02-06)
 
-- Keep playing time evaluation based on the playing time calculator output (no playing_time_priority filter).
 - Define the final recommendation response schema for frontend consumption.
 - Add LLM-based per-school reasoning on top of deterministic results.
 
@@ -243,8 +237,7 @@ curl -X POST http://localhost:8000/preferences/filter \
       "baseball_strength": {
         "has_data": true,
         "team_name": "Stanford",
-        "strength_classification": "elite",
-        "playing_time_factor": 0.7
+        "strength_classification": "elite"
       }
     }
   ]
@@ -286,7 +279,6 @@ profile = integration.get_school_strength_profile("Stanford University, Stanford
 print("Has data:", profile['has_data'])
 print("Team name:", profile.get('team_name'))
 print("Strength:", profile.get('strength_classification'))
-print("Playing time factor:", profile.get('playing_time_factor'))
 ```
 
 ---

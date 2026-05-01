@@ -60,3 +60,9 @@ redis>=5.0.0
 
 # Billing
 stripe>=11.0.0
+
+# Observability — Sentry error monitoring (item #8 from beta-launch audit)
+sentry-sdk[fastapi]>=2.0.0
+
+# Rate limiting on public endpoints (item #12 from beta-launch audit)
+slowapi>=0.1.9

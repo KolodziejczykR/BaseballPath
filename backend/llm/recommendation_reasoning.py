@@ -251,7 +251,6 @@ class RecommendationReasoningGenerator:
             "Create grounded, school-specific fit reasoning using ONLY the provided data. "
             "Do not add new facts about schools or players. "
             "If a field is missing, omit it. "
-            "Each school must mention playing_time if available. "
             "Return strict JSON with the following schema:\n"
             "{\n"
             '  "schools": [\n'

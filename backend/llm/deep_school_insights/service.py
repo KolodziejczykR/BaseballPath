@@ -19,6 +19,8 @@ import httpx
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 
+from backend.utils.position_tracks import is_pitcher_primary_position
+
 from .evidence import (
     _empty_evidence,
     _has_meaningful_evidence,
@@ -30,7 +32,12 @@ from .fetch import (
     gather_evidence,
     make_httpx_client,
 )
-from .llm_review import review_input, review_instructions, review_school
+from .llm_review import (
+    review_input,
+    review_instructions,
+    review_school,
+)
+from .talking_points import compute_talking_points
 from .parsers import (
     _trusted_domains_for_school,
     clean_soup,
@@ -72,7 +79,13 @@ class DeepSchoolInsightService:
         api_key = os.getenv("OPENAI_API_KEY")
         self.enabled = bool(api_key or client)
         self.client = client or (AsyncOpenAI(api_key=api_key, max_retries=0) if api_key else None)
-        self.review_model = os.getenv("OPENAI_REVIEW_MODEL", "gpt-5.4-nano")
+        # Bumped from gpt-5.4-nano → gpt-5.4-mini after run 21f502e4 showed
+        # nano hitting its instruction-following ceiling (banned phrases
+        # leaking in 14/25 writeups, opener template in 24/25, model gaming
+        # the bans by adding "/at-bats" to slip past "meaningful innings").
+        # Mini follows negative instructions and across-constraint counting
+        # meaningfully better. Override with OPENAI_REVIEW_MODEL if needed.
+        self.review_model = os.getenv("OPENAI_REVIEW_MODEL", "gpt-5.4-mini")
         self.has_responses_parse = bool(
             self.client is not None
             and getattr(self.client, "responses", None) is not None
@@ -336,17 +349,12 @@ class DeepSchoolInsightService:
         school["overall_school_view"] = insight.review.final_school_view
         school["review_adjustment_from_base"] = insight.review.adjustment_from_base
 
-        # Human-facing narrative fields
+        # Human-facing narrative — single paragraph as of v1.
         school["why_this_school"] = insight.review.why_this_school
-        school["school_snapshot"] = insight.review.school_snapshot
-        school["considerations"] = insight.review.considerations
 
-        # Backward-compat: populate fit_summary / school_description so any
-        # code or UI that still references the old field names keeps working.
+        # Backward-compat alias still referenced by older UI code.
         if insight.review.why_this_school:
             school["fit_summary"] = insight.review.why_this_school
-        if insight.review.school_snapshot:
-            school["school_description"] = insight.review.school_snapshot
 
         school["research_data_gaps"] = sorted(
             set(insight.review.data_gaps + insight.evidence.data_gaps)
@@ -379,8 +387,6 @@ class DeepSchoolInsightService:
                     adjustment_from_base="none",
                     confidence="low",
                     why_this_school="",
-                    school_snapshot="",
-                    considerations=[],
                     data_gaps=[
                         "Deep roster research is unavailable because the running OpenAI SDK does not support responses.parse."
                     ],
@@ -399,58 +405,61 @@ class DeepSchoolInsightService:
             "[TIMING] enrich_single evidence school=%r elapsed=%.2fs",
             school_name, t_evidence_done - t_school_start,
         )
-        if not _has_meaningful_evidence(evidence):
-            logger.info(
-                "[TIMING] enrich_single school=%r status=insufficient_evidence total=%.2fs",
-                school_name, time.monotonic() - t_school_start,
-            )
-            return DeepSchoolInsight(
-                school_name=school.get("school_name", ""),
-                evidence=evidence,
-                review=DeepSchoolReview(
-                    base_athletic_fit=school.get("fit_label") or "",
-                    opportunity_fit="",
-                    final_school_view=school.get("fit_label") or "",
-                    adjustment_from_base="none",
-                    confidence="low",
-                    why_this_school="",
-                    school_snapshot="",
-                    considerations=[],
-                    data_gaps=evidence.data_gaps,
-                ),
-                ranking_adjustment=0.0,
-                ranking_score=compute_ranking_score(float(school.get("delta") or 0.0), 0.0, ranking_priority),
-                research_status="insufficient_evidence",
-            )
+
+        # Compute the deterministic talking points once. The same list feeds
+        # both the with-roster and no-roster paths — for no-roster, the
+        # roster_opportunity tier simply contributes nothing.
+        is_pitcher = is_pitcher_primary_position(player_stats.get("primary_position", ""))
+        talking_points = compute_talking_points(school, evidence, player_stats, is_pitcher)
+        roster_unavailable = not _has_meaningful_evidence(evidence)
 
         t_review_start = time.monotonic()
-        review = await self._review_school(school, player_stats, baseball_assessment, academic_score, evidence)
+        review = await self._review_school(
+            school, player_stats, baseball_assessment, academic_score,
+            evidence, talking_points,
+        )
         t_review_done = time.monotonic()
         logger.info(
-            "[TIMING] enrich_single review school=%r elapsed=%.2fs status=%s total=%.2fs",
+            "[TIMING] enrich_single review school=%r elapsed=%.2fs status=%s roster_unavailable=%s total=%.2fs",
             school_name,
             t_review_done - t_review_start,
             "ok" if review is not None else "failed",
+            roster_unavailable,
             t_review_done - t_school_start,
         )
+
+        base_label = school.get("fit_label") or ""
+
         if review is None:
-            # Reviewer failed but evidence is valid — use a conservative fallback
-            # that still captures opportunity/competition/roster-opening signals
-            # at low confidence (0.35x multiplier).
+            # Reviewer failed (LLM down, transient). Return a conservative
+            # placeholder review so downstream rendering gets a structured
+            # value instead of a blank card.
             review = DeepSchoolReview(
-                base_athletic_fit=school.get("fit_label") or "",
+                base_athletic_fit=base_label,
                 opportunity_fit="",
-                final_school_view=school.get("fit_label") or "",
+                final_school_view=base_label,
                 adjustment_from_base="none",
                 confidence="low",
                 why_this_school="",
-                school_snapshot="",
-                considerations=[],
                 data_gaps=evidence.data_gaps + ["Detailed review could not be completed."],
             )
+            if roster_unavailable:
+                return DeepSchoolInsight(
+                    school_name=school.get("school_name", ""),
+                    evidence=evidence,
+                    review=review,
+                    ranking_adjustment=0.0,
+                    ranking_score=compute_ranking_score(
+                        float(school.get("delta") or 0.0), 0.0, ranking_priority
+                    ),
+                    research_status="insufficient_evidence",
+                )
             ranking_adjustment = compute_ranking_adjustment(evidence, review)
             if _has_meaningful_evidence(evidence):
-                ranking_adjustment = round(min(ranking_adjustment + RESEARCH_QUALITY_BONUS * 0.5, MAX_RERANK_ADJUSTMENT), 2)
+                ranking_adjustment = round(
+                    min(ranking_adjustment + RESEARCH_QUALITY_BONUS * 0.5, MAX_RERANK_ADJUSTMENT),
+                    2,
+                )
             base_score = float(school.get("delta") or 0.0)
             return DeepSchoolInsight(
                 school_name=school.get("school_name", ""),
@@ -459,6 +468,26 @@ class DeepSchoolInsightService:
                 ranking_adjustment=ranking_adjustment,
                 ranking_score=compute_ranking_score(base_score, ranking_adjustment, ranking_priority),
                 research_status="partial",
+            )
+
+        if roster_unavailable:
+            # Lock the rerank-only fields so a missing-roster school can't
+            # leapfrog a researched one through the unified path.
+            review.base_athletic_fit = base_label
+            review.opportunity_fit = base_label
+            review.final_school_view = base_label
+            review.adjustment_from_base = "none"
+            review.confidence = "low"
+            review.data_gaps = sorted(set(review.data_gaps + evidence.data_gaps))
+            return DeepSchoolInsight(
+                school_name=school.get("school_name", ""),
+                evidence=evidence,
+                review=review,
+                ranking_adjustment=0.0,
+                ranking_score=compute_ranking_score(
+                    float(school.get("delta") or 0.0), 0.0, ranking_priority
+                ),
+                research_status="metadata_only",
             )
 
         ranking_adjustment = compute_ranking_adjustment(evidence, review)
@@ -533,26 +562,33 @@ class DeepSchoolInsightService:
         baseball_assessment: Dict[str, Any],
         academic_score: Dict[str, Any],
         evidence: GatheredEvidence,
+        talking_points: List[Any],
         _max_retries: int = 2,
     ) -> Optional[DeepSchoolReview]:
         school_name = school.get("display_school_name") or school.get("school_name") or "?"
-        for attempt in range(_max_retries + 1):
+        roster_unavailable = not _has_meaningful_evidence(evidence)
+        # No-roster path is a graceful-degradation case — bound retries
+        # tighter so a missing-roster school can't pin the user-facing
+        # finalize on extra LLM round-trips.
+        max_retries = 1 if roster_unavailable else _max_retries
+        for attempt in range(max_retries + 1):
             result = await review_school(
                 school,
                 player_stats,
                 baseball_assessment,
                 academic_score,
                 evidence,
+                talking_points,
                 responses_parse=self._responses_parse,
                 review_model=self.review_model,
             )
             if result is not None:
                 return result
-            if attempt < _max_retries:
+            if attempt < max_retries:
                 wait = 2.0 * (attempt + 1)
                 logger.warning(
                     "LLM review failed for %r (attempt %d/%d), retrying in %.0fs",
-                    school_name, attempt + 1, _max_retries + 1, wait,
+                    school_name, attempt + 1, max_retries + 1, wait,
                 )
                 await asyncio.sleep(wait)
         return None
@@ -567,8 +603,12 @@ class DeepSchoolInsightService:
         baseball_assessment: Dict[str, Any],
         academic_score: Dict[str, Any],
         evidence: GatheredEvidence,
+        talking_points: List[Any],
     ) -> str:
-        return review_input(school, player_stats, baseball_assessment, academic_score, evidence)
+        return review_input(
+            school, player_stats, baseball_assessment, academic_score,
+            evidence, talking_points,
+        )
 
 
 def _research_error_message(prefix: str, exc: Exception) -> str:

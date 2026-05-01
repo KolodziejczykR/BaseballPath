@@ -156,7 +156,6 @@ integration = BaseballRankingsIntegration()
 # Get school strength profile
 profile = integration.get_school_strength_profile("Stanford")
 print(f"Strength classification: {profile['strength_classification']}")
-print(f"Playing time factor: {profile['playing_time_factor']}")
 
 # Compare multiple schools
 comparison = integration.compare_schools_strength(["Stanford", "UCLA", "Texas"])

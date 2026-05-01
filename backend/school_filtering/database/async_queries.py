@@ -239,7 +239,8 @@ class AsyncSchoolDataQueries:
                         .select(
                             "team_name, year, division, division_group, "
                             "overall_rating, offensive_rating, defensive_rating, "
-                            "power_rating, strength_of_schedule"
+                            "power_rating, strength_of_schedule, "
+                            "record, wins, losses"
                         )
                         .in_("team_name", team_chunk)
                         .order("year", desc=True)
@@ -252,7 +253,8 @@ class AsyncSchoolDataQueries:
                         .select(
                             "team_name, year, division, division_group, "
                             "overall_rating, offensive_rating, defensive_rating, "
-                            "power_rating, strength_of_schedule"
+                            "power_rating, strength_of_schedule, "
+                            "record, wins, losses"
                         )
                         .in_("team_name", team_chunk)
                         .execute()

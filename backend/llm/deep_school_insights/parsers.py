@@ -6,6 +6,7 @@ already-parsed lists and return dataclasses from ``types``.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
@@ -50,16 +51,35 @@ def _looks_like_college(name: str) -> bool:
     return bool(_COLLEGE_KEYWORDS.search(name))
 
 
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
 def _normalize_name_parts(name: str) -> Tuple[str, str]:
-    """Return (first, last) from either 'First Last' or 'Last, First' format."""
+    """Return (first, last) from either 'First Last' or 'Last, First' format.
+
+    Trailing generational suffixes (Jr, Sr, II, III, IV) are rolled into the
+    last-name half. Roster pages typically render names as ``"Aaron Graves II"``
+    while stats pages use ``"Graves II, Aaron"`` — without this normalization
+    the rsplit would set last=``"ii"`` on the roster side and last=``"graves ii"``
+    on the stats side, and the two would never pair.
+    """
     name = re.sub(r"\d+", "", name).strip()
     if "," in name:
         parts = name.split(",", 1)
         return parts[1].strip().lower(), parts[0].strip().lower()
-    parts = name.rsplit(None, 1)
-    if len(parts) == 2:
-        return parts[0].strip().lower(), parts[1].strip().lower()
-    return "", name.strip().lower()
+    tokens = name.split()
+    suffix_parts: List[str] = []
+    while tokens and tokens[-1].lower().rstrip(".") in _NAME_SUFFIXES:
+        suffix_parts.insert(0, tokens.pop().rstrip(".").lower())
+    if len(tokens) >= 2:
+        first = " ".join(tokens[:-1]).strip().lower()
+        last = " ".join([tokens[-1].lower(), *suffix_parts]).strip()
+        return first, last
+    if len(tokens) == 1:
+        last = " ".join([tokens[0].lower(), *suffix_parts]).strip()
+        return "", last
+    # Fallback when the name was pure suffix or empty after stripping digits.
+    return "", " ".join(suffix_parts) or name.strip().lower()
 
 
 def _normalize_domain(url: str) -> str:
@@ -113,19 +133,25 @@ def clean_soup(html: str) -> BeautifulSoup:
 
 
 def _position_family_from_raw(pos_raw: Optional[str]) -> Optional[str]:
-    """Map a raw position string to its family: P, C, OF, or INF."""
+    """Map a raw position string to its family: P, C, OF, or INF.
+
+    Tokenizes on non-alphanumerics so long-form names like
+    ``"Right-Handed Pitcher"`` and ``"Left Handed Pitcher"`` are recognized
+    as P (otherwise they used to fall through to INF).
+    """
     if not pos_raw:
         return None
     cleaned = pos_raw.strip().lower().replace(".", "")
     if "/" in cleaned:
         cleaned = cleaned.split("/")[0].strip()
-    if cleaned in {"p", "rhp", "lhp", "rp", "sp", "pitcher", "closer", "cl"}:
+    tokens = set(re.findall(r"[a-z0-9]+", cleaned))
+    if "pitcher" in tokens or tokens & {"rhp", "lhp", "rp", "sp", "p", "closer", "cl"}:
         return "P"
-    if cleaned in {"c", "catcher"}:
+    if "catcher" in tokens or cleaned == "c":
         return "C"
-    if cleaned in {"of", "lf", "cf", "rf", "outfield", "outfielder",
-                    "left field", "left fielder", "center field",
-                    "center fielder", "right field", "right fielder"}:
+    if tokens & {"of", "lf", "cf", "rf", "outfield", "outfielder"}:
+        return "OF"
+    if "field" in tokens and tokens & {"left", "center", "right"}:
         return "OF"
     return "INF"
 
@@ -226,6 +252,195 @@ def parse_roster_players(soup: BeautifulSoup) -> List[ParsedPlayer]:
 # ---------------------------------------------------------------------------
 
 
+_NUXT_DATA_RE = re.compile(
+    r'<script[^>]*id="__NUXT_DATA__"[^>]*>(.*?)</script>',
+    re.DOTALL,
+)
+
+
+def _load_nuxt_data(html: str) -> Optional[List[Any]]:
+    """Extract and parse the Nuxt 3 hydration island, returning None if absent."""
+    m = _NUXT_DATA_RE.search(html)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(data, list):
+        return None
+    return data
+
+
+def parse_nuxt_roster_players(html: str) -> List[ParsedPlayer]:
+    """Extract a roster from a Sidearm Nextgen Nuxt 3 hydration island.
+
+    Nextgen roster pages (Clemson, SDSU, ODU, etc.) render the roster
+    client-side, so the legacy Sidearm card/table parsers find nothing.
+    The hydration payload carries player records as dicts with snake_case
+    keys: ``first_name``, ``last_name``, ``full_name``, ``jersey_number``,
+    plus ``player_position_id`` / ``class_level_id`` that resolve to
+    numeric IDs (the human-readable position/class labels live on a
+    separate API endpoint, not in the page payload).
+
+    We can therefore reliably extract names + jerseys but **not** positions
+    or class years from the data island alone. Downstream,
+    ``match_players_to_stats`` backfills ``position_family="P"`` from the
+    matched pitching stats, so pitchers still get classified end-to-end.
+
+    Returns ``[]`` when no Nuxt data island is present.
+    """
+    data = _load_nuxt_data(html)
+    if data is None:
+        return []
+
+    def resolve(value: Any) -> Any:
+        if isinstance(value, int) and 0 <= value < len(data):
+            return data[value]
+        return value
+
+    # Player records have last_name + (first_name OR full_name) AND at least
+    # one player-only attribute. Coaches/staff lack these — gate on player
+    # attributes to keep them out, since the same dict shape is reused for
+    # both populations on most Nextgen sites (e.g. ODU embeds 11 staff
+    # records alongside 42 player records).
+    _PLAYER_ATTR_KEYS = {
+        "jersey_number", "jersey_number_label",
+        "height_feet", "height", "weight",
+        "class_level_id", "class_year_id",
+        "player_position_id", "position_id",
+    }
+    _STAFF_MARKER_KEYS = {"staff_member_id", "staff_member", "staff", "coach_title_id"}
+
+    seen: set = set()
+    players: List[ParsedPlayer] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        keys = set(item.keys())
+        if "last_name" not in keys or not keys & {"first_name", "full_name"}:
+            continue
+        if keys & _STAFF_MARKER_KEYS:
+            continue
+        if not keys & _PLAYER_ATTR_KEYS:
+            continue
+        full_name = resolve(item.get("full_name"))
+        first = resolve(item.get("first_name"))
+        last = resolve(item.get("last_name"))
+        if isinstance(full_name, str) and full_name.strip():
+            name = full_name.strip()
+        elif isinstance(first, str) and isinstance(last, str):
+            name = f"{first.strip()} {last.strip()}".strip()
+        else:
+            continue
+        if not name:
+            continue
+
+        jersey_raw = resolve(item.get("jersey_number"))
+        if jersey_raw is None:
+            jersey_raw = resolve(item.get("jersey_number_label"))
+        jersey = (
+            str(jersey_raw).strip()
+            if jersey_raw not in (None, "")
+            else None
+        )
+        key = (name.lower(), jersey or "")
+        if key in seen:
+            continue
+        seen.add(key)
+
+        hometown = resolve(item.get("hometown"))
+        high_school = resolve(item.get("high_school"))
+        previous_school = resolve(item.get("previous_school"))
+
+        players.append(ParsedPlayer(
+            name=name,
+            jersey_number=jersey,
+            position_raw=None,
+            position_normalized=None,
+            position_family=None,
+            class_year_raw=None,
+            normalized_class_year=None,
+            is_redshirt=False,
+            high_school=high_school if isinstance(high_school, str) else None,
+            previous_school=(
+                previous_school
+                if isinstance(previous_school, str) and _looks_like_college(previous_school)
+                else None
+            ),
+            hometown=hometown if isinstance(hometown, str) else None,
+        ))
+    return players
+
+
+def parse_nuxt_stats_records(html: str) -> List[ParsedStatLine]:
+    """Extract player stat rows from a Sidearm Nextgen Nuxt 3 hydration island.
+
+    Nextgen sites render stats client-side, so the static HTML has no tables
+    for ``parse_stats_records`` to find. The hydration payload at
+    ``<script id="__NUXT_DATA__">`` carries the same data as a position-coded
+    JSON array: every dict value is either a primitive or an integer index
+    into the top-level array (devalue format).
+
+    Pitching rows have an ``inningsPitched`` key; batting rows have
+    ``atBats``. Both carry ``playerName`` and ``playerUniform`` (jersey).
+    Multiple stat scopes (cumulative, conference, splits) emit duplicates,
+    so we dedupe on (name, jersey, stat_type) and keep the first occurrence
+    — the cumulative scope appears first in the payload.
+
+    Returns ``[]`` when no Nuxt data island is present, so callers can
+    cleanly fall back to the HTML-table parser.
+    """
+    data = _load_nuxt_data(html)
+    if data is None:
+        return []
+
+    def resolve(value: Any) -> Any:
+        if isinstance(value, int) and 0 <= value < len(data):
+            return data[value]
+        return value
+
+    records: List[ParsedStatLine] = []
+    seen: set = set()
+    for item in data:
+        if not isinstance(item, dict) or "playerName" not in item:
+            continue
+        is_pitching = "inningsPitched" in item
+        is_batting = ("atBats" in item) and not is_pitching
+        if not (is_pitching or is_batting):
+            continue
+        if resolve(item.get("isAFooterStat")) is True:
+            continue
+        name = resolve(item.get("playerName"))
+        if not isinstance(name, str):
+            continue
+        name = name.strip()
+        if not name or name.lower() == "totals":
+            continue
+        unif = resolve(item.get("playerUniform"))
+        jersey = str(unif) if unif not in (None, "") else None
+        gp = _parse_int(resolve(item.get("gamesPlayed")) or "")
+        gs = _parse_int(resolve(item.get("gamesStarted")) or "")
+        # Pitchers often have GS=0 but heavy appearances; carry that signal
+        # via games_played so downstream high-usage logic can use the GP gate.
+        if is_pitching and gp == 0:
+            gp = _parse_int(resolve(item.get("appearances")) or "")
+
+        stat_type = "pitching" if is_pitching else "batting"
+        key = (name, jersey, stat_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        records.append(ParsedStatLine(
+            jersey_number=jersey,
+            player_name=name,
+            stat_type=stat_type,
+            games_played=gp,
+            games_started=gs,
+        ))
+    return records
+
+
 def parse_stats_records(soup: BeautifulSoup) -> List[ParsedStatLine]:
     """Parse batting and pitching stats tables into structured records."""
     records: List[ParsedStatLine] = []
@@ -323,7 +538,18 @@ def match_players_to_stats(
     players: List[ParsedPlayer],
     stats: List[ParsedStatLine],
 ) -> List[MatchedPlayer]:
-    """Cross-reference roster players with stat lines by jersey + last name."""
+    """Cross-reference roster players with stat lines by jersey + last name.
+
+    When the roster page itself doesn't expose a player's position (some older
+    Sidearm Classic .aspx sites surface only names + jerseys), the stats page
+    becomes the only signal for whether a player is a pitcher. After matching,
+    we backfill ``position_family`` / ``position_normalized`` to ``"P"`` for
+    any player who has only pitching stats and no roster-derived position —
+    otherwise these pitchers would be invisible to the same-family filter in
+    ``compute_evidence``.
+    """
+    import dataclasses
+
     batting = [s for s in stats if s.stat_type == "batting"]
     pitching = [s for s in stats if s.stat_type == "pitching"]
 
@@ -342,5 +568,15 @@ def match_players_to_stats(
     for player in players:
         bat = _find_match(player, batting)
         pitch = _find_match(player, pitching)
+        if (
+            pitch is not None
+            and bat is None
+            and player.position_family is None
+        ):
+            player = dataclasses.replace(
+                player,
+                position_family="P",
+                position_normalized=player.position_normalized or "P",
+            )
         matched.append(MatchedPlayer(player=player, batting_stats=bat, pitching_stats=pitch))
     return matched

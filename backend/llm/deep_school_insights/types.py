@@ -66,10 +66,12 @@ class DeepSchoolReview(BaseModel):
     confidence: Literal["high", "medium", "low"] = "low"
     data_gaps: List[str] = Field(default_factory=list)
 
-    # --- Human-facing narrative fields ---
+    # --- Human-facing narrative field ---
+    # v1: collapsed to a single ~150-word paragraph. school_snapshot and
+    # considerations were dropped — the snapshot was redundant with the
+    # narrative, and considerations were too generic without grounded
+    # notable_facts. Revisit considerations alongside notable_facts later.
     why_this_school: str = ""
-    school_snapshot: str = ""
-    considerations: List[str] = Field(default_factory=list)
 
 
 # Pre-warm Pydantic schemas eagerly so the first LLM call doesn't eat a cold
@@ -130,3 +132,5 @@ class MatchedPlayer:
 
 
 HIGH_USAGE_GS_THRESHOLD = 10
+PITCHER_HIGH_USAGE_GS_THRESHOLD = 5
+PITCHER_HIGH_USAGE_GP_THRESHOLD = 15

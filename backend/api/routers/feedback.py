@@ -28,6 +28,16 @@ class SchoolFeedbackRequest(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
+class ReviewFeedbackRequest(BaseModel):
+    """Per-school helpfulness vote on the LLM-generated review writeup."""
+
+    evaluation_run_id: str = Field(min_length=1, max_length=80)
+    school_dedupe_key: str = Field(min_length=1, max_length=400)
+    school_name: str = Field(min_length=1, max_length=300)
+    is_helpful: bool
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
 class RunFeedbackRequest(BaseModel):
     evaluation_run_id: str = Field(min_length=1, max_length=80)
     level_rating: Optional[str] = Field(default=None)
@@ -116,6 +126,61 @@ async def list_school_feedback(
     supabase = require_supabase_admin_client()
     response = (
         supabase.table("school_feedback")
+        .select("*")
+        .eq("user_id", current_user.user_id)
+        .eq("evaluation_run_id", evaluation_run_id)
+        .execute()
+    )
+    items: List[Dict[str, Any]] = response.data or []
+    return {"items": items, "count": len(items)}
+
+
+# ---------------------------------------------------------------------------
+# Per-school review-helpfulness thumbs (for the LLM writeup)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/review")
+async def upsert_review_feedback(
+    payload: ReviewFeedbackRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Record whether the LLM writeup for a specific school was helpful."""
+    _verify_run_ownership(payload.evaluation_run_id, current_user.user_id)
+
+    supabase = require_supabase_admin_client()
+    record = {
+        "user_id": current_user.user_id,
+        "evaluation_run_id": payload.evaluation_run_id,
+        "school_dedupe_key": payload.school_dedupe_key,
+        "school_name": payload.school_name.strip(),
+        "is_helpful": payload.is_helpful,
+        "reason": _normalize_optional_text(payload.reason),
+    }
+
+    response = (
+        supabase.table("review_feedback")
+        .upsert(record, on_conflict="user_id,evaluation_run_id,school_dedupe_key")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save review feedback",
+        )
+    return response.data[0]
+
+
+@router.get("/review")
+async def list_review_feedback(
+    evaluation_run_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _verify_run_ownership(evaluation_run_id, current_user.user_id)
+
+    supabase = require_supabase_admin_client()
+    response = (
+        supabase.table("review_feedback")
         .select("*")
         .eq("user_id", current_user.user_id)
         .eq("evaluation_run_id", evaluation_run_id)

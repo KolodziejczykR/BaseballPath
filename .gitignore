@@ -108,4 +108,11 @@ CLAUDE_TEMPLATE.md
 
 .next-local
 
+# Claude Code / IDE / agent metadata — local-only, do not commit
 .claude/superpowers/
+.claude/skills/
+skills-lock.json
+.windsurf/
+
+# LLM scratch / large debugging dumps
+backend/llm/deep_school_insights/stats_osu_example.html

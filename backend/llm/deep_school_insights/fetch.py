@@ -18,6 +18,8 @@ from .evidence import _empty_evidence, compute_evidence
 from .parsers import (
     clean_soup,
     match_players_to_stats,
+    parse_nuxt_roster_players,
+    parse_nuxt_stats_records,
     parse_roster_players,
     parse_stats_records,
 )
@@ -73,10 +75,19 @@ async def fetch_and_parse_roster(
 
     soup = clean_soup(resp.text)
     players = parse_roster_players(soup)
+    source = "html"
+    # Nextgen roster pages render client-side, so the legacy parser finds
+    # nothing. Fall back to the Nuxt hydration island for name + jersey;
+    # downstream stats matching backfills pitcher position_family.
+    if not players:
+        nuxt_players = parse_nuxt_roster_players(resp.text)
+        if nuxt_players:
+            players = nuxt_players
+            source = "nuxt"
     t_parsed = time.monotonic()
     logger.info(
-        "[TIMING] roster_fetch school=%r status=ok players=%d http=%.2fs parse=%.2fs total=%.2fs",
-        school_name, len(players),
+        "[TIMING] roster_fetch school=%r status=ok players=%d source=%s http=%.2fs parse=%.2fs total=%.2fs",
+        school_name, len(players), source,
         t_fetched - t_start, t_parsed - t_fetched, t_parsed - t_start,
     )
     return players, roster_url
@@ -122,12 +133,24 @@ async def fetch_and_parse_stats(school: Dict[str, Any]) -> List[ParsedStatLine]:
                 )
                 return []
 
+            # Sidearm Nextgen sites render stats client-side; their HTML
+            # contains no <table> data but ships a Nuxt 3 hydration island.
+            # Try that first — falls back to HTML-table parsing for legacy
+            # Sidearm sites.
+            records = parse_nuxt_stats_records(resp.text)
+            if records:
+                logger.info(
+                    "[TIMING] stats_fetch school=%r status=ok records=%d source=nuxt elapsed=%.2fs",
+                    school_name, len(records), time.monotonic() - t_start,
+                )
+                return records
+
             soup = clean_soup(resp.text)
             records = parse_stats_records(soup)
 
             if records:
                 logger.info(
-                    "[TIMING] stats_fetch school=%r status=ok records=%d elapsed=%.2fs",
+                    "[TIMING] stats_fetch school=%r status=ok records=%d source=html elapsed=%.2fs",
                     school_name, len(records), time.monotonic() - t_start,
                 )
                 return records

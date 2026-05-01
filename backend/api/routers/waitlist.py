@@ -3,12 +3,17 @@ Waitlist API Router for BaseballPath
 Supports the current waitlist flow: simple join + health check.
 """
 
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+import sentry_sdk
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 
 from ..clients.supabase import require_supabase_admin_client
+from ..rate_limit import limiter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -26,7 +31,14 @@ class WaitlistResponse(BaseModel):
 
 
 @router.post("/join", response_model=WaitlistResponse)
-async def join_waitlist(entry: SimpleWaitlistEntry) -> WaitlistResponse:
+# Rate limit: a real user signs up once. The limit is generous enough that
+# a confused user submitting twice from a slow form won't hit it, tight
+# enough that scripted spam can't drain inserts. Keyed by client IP.
+@limiter.limit("10/minute")
+async def join_waitlist(
+    request: Request,  # noqa: ARG001 — required by SlowAPI for IP keying
+    entry: SimpleWaitlistEntry,
+) -> WaitlistResponse:
     """
     Waitlist join endpoint.
 
@@ -123,8 +135,21 @@ async def join_waitlist(entry: SimpleWaitlistEntry) -> WaitlistResponse:
 
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    except Exception as exc:  # noqa: BLE001
+        # Log with traceback for ops visibility, ship to Sentry, and return
+        # a generic 500 to the user. The previous "Database error: <raw>"
+        # leaked stack-trace-flavored text and was indistinguishable from
+        # legitimate constraint violations.
+        logger.exception(
+            "Waitlist join failed for email=%s",
+            entry.email if entry else "(unknown)",
+        )
+        if sentry_sdk.is_initialized():
+            sentry_sdk.capture_exception(exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to join waitlist. Please try again in a moment.",
+        ) from exc
 
 
 @router.get("/health")

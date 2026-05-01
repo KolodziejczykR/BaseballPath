@@ -165,6 +165,23 @@ class PurchaseNotFound(LookupError):
     """The eval_purchases row referenced by the finalize request is missing."""
 
 
+class PurchaseNotPaid(PermissionError):
+    """The eval_purchases row exists but its status is not 'completed'.
+
+    Raised when a user tries to finalize an evaluation against a purchase
+    that has not been paid (e.g., status='pending'). Mapped to HTTP 402.
+    """
+
+
+class PurchaseAlreadyUsed(PermissionError):
+    """The eval_purchases row was already redeemed for an evaluation.
+
+    Raised when a user tries to finalize a second time against the same
+    purchase_id. Mapped to HTTP 409. Prevents replaying one paid purchase
+    to mint multiple runs.
+    """
+
+
 class PredictionRunPersistError(RuntimeError):
     """Writing the prediction_runs row failed."""
 
@@ -412,6 +429,21 @@ async def finalize_paid_evaluation(
     purchase = purchase_result.data[0]
     if purchase.get("user_id") and purchase["user_id"] != user_id:
         raise PurchaseNotFound("Purchase belongs to a different user")
+    # Block unpaid finalize attempts. The Stripe webhook flips status to
+    # "completed" only after a successful payment; without this guard a
+    # logged-in user could call /evaluations/finalize with a purchase_id
+    # in any state and get a free paid evaluation.
+    if purchase.get("status") != "completed":
+        raise PurchaseNotPaid(
+            f"Purchase has not been paid (status={purchase.get('status')!r})"
+        )
+    # Block replaying the same purchase to mint a second run. We mark
+    # eval_run_id below once the run is persisted; if it's already set,
+    # this purchase has been redeemed.
+    if purchase.get("eval_run_id"):
+        raise PurchaseAlreadyUsed(
+            "Purchase has already been redeemed for an evaluation"
+        )
 
     pending_result = (
         supabase.table("pending_evaluations")

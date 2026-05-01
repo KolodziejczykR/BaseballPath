@@ -15,6 +15,8 @@ from backend.roster_scraper.roster_parser import normalize_position
 from .types import (
     GatheredEvidence,
     HIGH_USAGE_GS_THRESHOLD,
+    PITCHER_HIGH_USAGE_GP_THRESHOLD,
+    PITCHER_HIGH_USAGE_GS_THRESHOLD,
     MatchedPlayer,
     OpportunityContext,
     RecruitingContext,
@@ -146,6 +148,21 @@ def _estimate_competition(total: int, returning_starters: Optional[int], undercl
     return "low"
 
 
+def _is_returning_high_usage(matched: MatchedPlayer, target_family: str) -> bool:
+    if target_family == "P":
+        ps = matched.pitching_stats
+        if ps is None:
+            return False
+        return (
+            ps.games_started >= PITCHER_HIGH_USAGE_GS_THRESHOLD
+            or ps.games_played >= PITCHER_HIGH_USAGE_GP_THRESHOLD
+        )
+    bs = matched.batting_stats
+    if bs is None:
+        return False
+    return bs.games_started >= HIGH_USAGE_GS_THRESHOLD
+
+
 def compute_evidence(
     matched_players: List[MatchedPlayer],
     player_stats: Dict[str, Any],
@@ -213,8 +230,7 @@ def compute_evidence(
     returning_high_usage_exact = 0
     if stats_available:
         for m in remaining_family:
-            stat = m.batting_stats or m.pitching_stats
-            if stat and stat.games_started >= HIGH_USAGE_GS_THRESHOLD:
+            if _is_returning_high_usage(m, target_family):
                 returning_high_usage_family += 1
                 if target_position and m.player.position_normalized == target_position:
                     returning_high_usage_exact += 1

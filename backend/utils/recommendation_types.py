@@ -68,23 +68,7 @@ class MatchAnalysis:
 
 
 @dataclass
-class PlayingTimeInfo:
-    available: bool
-    z_score: Optional[float] = None
-    percentile: Optional[float] = None
-    bucket: Optional[str] = None
-    bucket_description: Optional[str] = None
-    interpretation: Optional[str] = None
-    breakdown: Optional[Dict[str, float]] = None
-    player_strength: Optional[str] = None
-    team_needs: Optional[str] = None
-    program_trend: Optional[str] = None
-    message: Optional[str] = None
-
-
-@dataclass
 class SortScores:
-    playing_time_score: Optional[float] = None
     academic_grade: Optional[str] = None
     nice_to_have_count: int = 0
 
@@ -142,7 +126,6 @@ def school_recommendation_from_dict(data: Dict[str, Any]) -> "SchoolRecommendati
                 for item in (data.get("match_analysis") or {}).get("cons", [])
             ],
         ),
-        playing_time=PlayingTimeInfo(**(data.get("playing_time") or {"available": False})),
         scores=SortScores(**(data.get("scores") or {})),
         llm_reasoning=(
             LLMReasoning(**data["llm_reasoning"])
@@ -166,7 +149,6 @@ class SchoolRecommendation:
     financial: FinancialInfo = field(default_factory=FinancialInfo)
     overall_grade: Optional[str] = None
     match_analysis: MatchAnalysis = field(default_factory=MatchAnalysis)
-    playing_time: PlayingTimeInfo = field(default_factory=lambda: PlayingTimeInfo(available=False))
     scores: SortScores = field(default_factory=SortScores)
     llm_reasoning: Optional[LLMReasoning] = None
 
