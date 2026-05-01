@@ -113,6 +113,3 @@ CLAUDE_TEMPLATE.md
 .claude/skills/
 skills-lock.json
 .windsurf/
-
-# LLM scratch / large debugging dumps
-backend/llm/deep_school_insights/stats_osu_example.html
