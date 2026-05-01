@@ -67,6 +67,41 @@ DEFAULT_SLEEP_S = 7.0
 MAX_FAILURE_RATIO = 0.25
 
 
+def _school_names_for_division(division: int) -> set[str]:
+    """Resolve --division N → set of school_names via the ranking + mapping tables.
+
+    school_data_general.school_name
+        → school_baseball_ranking_name_mapping.team_name
+        → baseball_rankings_data.division (int 1/2/3)
+    """
+    client = require_supabase_admin_client()
+    rankings_resp = (
+        client.table("baseball_rankings_data")
+        .select("team_name")
+        .eq("division", division)
+        .execute()
+    )
+    matching_team_names = {
+        r["team_name"]
+        for r in (rankings_resp.data or [])
+        if r.get("team_name")
+    }
+    if not matching_team_names:
+        return set()
+
+    mapping_resp = (
+        client.table("school_baseball_ranking_name_mapping")
+        .select("school_name, team_name")
+        .in_("team_name", list(matching_team_names))
+        .execute()
+    )
+    return {
+        r["school_name"]
+        for r in (mapping_resp.data or [])
+        if r.get("school_name")
+    }
+
+
 def _load_school_universe(
     division: Optional[int], single_school: Optional[str], cap: Optional[int]
 ) -> List[Dict[str, Any]]:
@@ -75,21 +110,34 @@ def _load_school_universe(
     Mirrors the source-of-truth used by the live worker via
     ``llm_insight_service.attach_roster_urls`` so the cron sees the same
     roster_url per school the worker would.
+
+    The ``division`` filter is resolved via baseball_rankings_data + the
+    name-mapping table (school_data_general itself has no division column).
     """
     client = require_supabase_admin_client()
-    query = client.table("school_data_general").select(
-        "school_name, baseball_roster_url, division"
-    )
+
+    division_filter_names: Optional[set[str]] = None
     if division is not None:
-        query = query.eq("division", division)
+        division_filter_names = _school_names_for_division(division)
+        if not division_filter_names:
+            logger.warning(
+                "Division %d resolved to zero schools — nothing to scrape.",
+                division,
+            )
+            return []
+
+    query = client.table("school_data_general").select(
+        "school_name, baseball_roster_url"
+    )
     if single_school:
         query = query.eq("school_name", single_school)
+    elif division_filter_names is not None:
+        query = query.in_("school_name", list(division_filter_names))
     resp = query.execute()
     rows = [
         {
             "school_name": r["school_name"],
             "roster_url": r.get("baseball_roster_url"),
-            "division": r.get("division"),
         }
         for r in (resp.data or [])
         if r.get("baseball_roster_url")
