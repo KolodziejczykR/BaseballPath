@@ -85,7 +85,15 @@ celery_app = Celery(
 celery_app.conf.broker_transport_options = {
     "socket_keepalive": True,
     "socket_keepalive_options": {},
-    "visibility_timeout": 3600,
+    # 15 minutes. Floor is "longer than any single task can take" — if a
+    # task exceeds the timeout, Redis re-releases the message while the
+    # worker is still processing, causing duplicate execution. With
+    # batch_size=3 (the new default to fit Render Starter's 512 MB
+    # budget), 50-school tasks run ~4-6 minutes; 15 min gives headroom
+    # for slow LLM responses or scrape retries. If you bump to a worker
+    # plan with more RAM and raise batch_size, you can lower this back
+    # toward 5-10 minutes for faster crash recovery.
+    "visibility_timeout": 900,
 }
 celery_app.conf.broker_connection_retry_on_startup = True
 # Survive worker restarts. Render redeploys the worker process on every

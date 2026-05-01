@@ -71,8 +71,15 @@ class DeepSchoolInsightService:
     def __init__(
         self,
         client: Optional[AsyncOpenAI] = None,
-        initial_batch_size: int = 10,
-        batch_size: int = 10,
+        # Default 3 (was 10). On Render Starter plan (512 MB RAM), processing
+        # 10 schools concurrently with full HTML buffers + parallel LLM
+        # request/response payloads peaks above 512 MB and gets OOM-killed.
+        # Batch size 3 keeps peak memory ~70% lower at the cost of ~3x
+        # task duration (~4-6 min instead of ~30-60s for a 50-school pool).
+        # Override via OPENAI_RESEARCH_*_BATCH_SIZE if you bump the worker
+        # plan to one with more RAM.
+        initial_batch_size: int = 3,
+        batch_size: int = 3,
         max_schools: Optional[int] = None,
         llm_timeout_s: float = 90.0,
     ):
