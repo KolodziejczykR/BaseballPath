@@ -356,7 +356,9 @@ export default function Home() {
               <div className="glass rounded-[2.5rem] p-8 shadow-strong ring-2 ring-[var(--golden-sand)] relative bg-[var(--parchment)] flex flex-col h-full">
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--golden-sand)] text-[var(--espresso)] font-bold uppercase tracking-widest text-[10px] px-3 py-1 rounded-full whitespace-nowrap">First Evaluation</div>
                 <h3 className="text-xl font-bold text-[var(--espresso)] mb-2">Your First Report</h3>
-                <p className="text-4xl font-bold text-[var(--walnut)] mb-6 font-mono">$69</p>
+                {/* FREE BETA: original price was $69 — restore when paid checkout is re-enabled */}
+                {/* <p className="text-4xl font-bold text-[var(--walnut)] mb-6 font-mono">$69</p> */}
+                <p className="text-4xl font-bold text-[var(--walnut)] mb-6 font-mono">Free</p>
                 <div className="flex-grow">
                   <ul className="space-y-4 mb-8 text-sm text-[var(--espresso)] font-medium">
                     <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> ML-powered division projection</li>
@@ -373,7 +375,9 @@ export default function Home() {
             <FadeOnScroll delayMs={150}>
               <div className="glass rounded-[2rem] p-8 shadow-soft flex flex-col h-full">
                 <h3 className="text-xl font-bold text-[var(--espresso)] mb-2">Additional Evaluations</h3>
-                <p className="text-4xl font-bold text-[var(--walnut)] mb-6 font-mono">$29<span className="text-base text-[var(--muted)] font-sans font-normal"> each</span></p>
+                {/* FREE BETA: original price was $29 each — restore when paid checkout is re-enabled */}
+                {/* <p className="text-4xl font-bold text-[var(--walnut)] mb-6 font-mono">$29<span className="text-base text-[var(--muted)] font-sans font-normal"> each</span></p> */}
+                <p className="text-4xl font-bold text-[var(--walnut)] mb-6 font-mono">Free</p>
                 <div className="flex-grow">
                   <ul className="space-y-4 mb-8 text-sm text-[var(--muted)]">
                     <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-[var(--sage-green)] shrink-0" /> Same full evaluation report</li>

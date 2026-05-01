@@ -431,13 +431,16 @@ function PredictContent() {
   }
 
   // Price display helper
-  const displayPrice = priceCents
-    ? `$${(priceCents / 100).toFixed(0)}`
-    : isFirstEval === null
-      ? "$69"
-      : isFirstEval
-        ? "$69"
-        : "$29";
+  // FREE BETA: hard-coded to "Free" while paid checkout is disabled.
+  // Restore the dynamic logic below when re-enabling paid checkout.
+  // const displayPrice = priceCents
+  //   ? `$${(priceCents / 100).toFixed(0)}`
+  //   : isFirstEval === null
+  //     ? "$69"
+  //     : isFirstEval
+  //       ? "$69"
+  //       : "$29";
+  const displayPrice = "Free";
 
   return (
     <div className="min-h-screen">

@@ -59,11 +59,22 @@ async def create_eval_checkout(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Create a Stripe Checkout Session for a one-time evaluation payment. Auth required."""
-    stripe_client = _require_stripe()
+    # ------------------------------------------------------------------
+    # FREE BETA: Stripe checkout is bypassed during the beta rollout so
+    # we can collect feedback without paywalling. The original Stripe
+    # flow below is preserved (commented) — uncomment the Stripe block
+    # and remove the FREE BETA short-circuit to restore paid checkout.
+    # ------------------------------------------------------------------
+    # stripe_client = _require_stripe()
 
     pricing = get_eval_price(current_user.user_id)
-    price_cents = pricing["price_cents"]
+    # price_cents = pricing["price_cents"]
     is_first = pricing["is_first_eval"]
+
+    # FREE BETA: charge $0 and mark the purchase completed immediately so
+    # the existing /evaluations/finalize gate (which requires status =
+    # "completed") still works without the Stripe webhook firing.
+    price_cents = 0
 
     supabase = require_supabase_admin_client()
     purchase_result = (
@@ -73,7 +84,7 @@ async def create_eval_checkout(
                 "user_id": current_user.user_id,
                 "amount_cents": price_cents,
                 "currency": "usd",
-                "status": "pending",
+                "status": "completed",  # FREE BETA: was "pending" — Stripe webhook normally flips this
                 "is_first_eval": is_first,
             }
         )
@@ -88,44 +99,59 @@ async def create_eval_checkout(
         payload.success_url
         or f"{origin}/predict/results?purchase_id={purchase_id}&session_token={payload.session_token}"
     )
-    cancel_url = payload.cancel_url or f"{origin}/predict?checkout=cancelled"
+    # cancel_url = payload.cancel_url or f"{origin}/predict?checkout=cancelled"
 
-    label = "BaseballPath Evaluation (First)" if is_first else "BaseballPath Evaluation"
+    # label = "BaseballPath Evaluation (First)" if is_first else "BaseballPath Evaluation"
 
-    session = stripe_client.checkout.Session.create(
-        mode="payment",
-        line_items=[
-            {
-                "price_data": {
-                    "currency": "usd",
-                    "unit_amount": price_cents,
-                    "product_data": {"name": label},
-                },
-                "quantity": 1,
-            }
-        ],
-        success_url=success_url,
-        cancel_url=cancel_url,
-        customer_email=current_user.email,
-        client_reference_id=current_user.user_id,
-        metadata={
-            "purchase_id": purchase_id,
-            "session_token": payload.session_token,
-            "payment_type": "eval_purchase",
-            "user_id": current_user.user_id,
-        },
-    )
+    # ------------------------------------------------------------------
+    # FREE BETA: Stripe Checkout Session creation is disabled. Restore
+    # the block below (and the cancel_url / label / stripe_client lines
+    # above) when re-enabling paid checkout.
+    # ------------------------------------------------------------------
+    # session = stripe_client.checkout.Session.create(
+    #     mode="payment",
+    #     line_items=[
+    #         {
+    #             "price_data": {
+    #                 "currency": "usd",
+    #                 "unit_amount": price_cents,
+    #                 "product_data": {"name": label},
+    #             },
+    #             "quantity": 1,
+    #         }
+    #     ],
+    #     success_url=success_url,
+    #     cancel_url=cancel_url,
+    #     customer_email=current_user.email,
+    #     client_reference_id=current_user.user_id,
+    #     metadata={
+    #         "purchase_id": purchase_id,
+    #         "session_token": payload.session_token,
+    #         "payment_type": "eval_purchase",
+    #         "user_id": current_user.user_id,
+    #     },
+    # )
+    #
+    # supabase.table("eval_purchases").update(
+    #     {
+    #         "stripe_checkout_session_id": session.id,
+    #         "updated_at": datetime.now(timezone.utc).isoformat(),
+    #     }
+    # ).eq("id", purchase_id).execute()
+    #
+    # return {
+    #     "checkout_url": session.url,
+    #     "session_id": session.id,
+    #     "purchase_id": purchase_id,
+    # }
 
-    supabase.table("eval_purchases").update(
-        {
-            "stripe_checkout_session_id": session.id,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-    ).eq("id", purchase_id).execute()
-
+    # FREE BETA: skip Stripe entirely — point the frontend straight at
+    # the success URL so its existing `window.location.href = checkout_url`
+    # redirect lands on /predict/results, where finalize() will succeed
+    # because the purchase is already marked completed above.
     return {
-        "checkout_url": session.url,
-        "session_id": session.id,
+        "checkout_url": success_url,
+        "session_id": None,
         "purchase_id": purchase_id,
     }
 
