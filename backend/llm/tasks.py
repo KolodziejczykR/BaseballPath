@@ -88,6 +88,16 @@ celery_app.conf.broker_transport_options = {
     "visibility_timeout": 3600,
 }
 celery_app.conf.broker_connection_retry_on_startup = True
+# Survive worker restarts. Render redeploys the worker process on every
+# code push — a task that was mid-flight when the worker pod was killed
+# would be silently dropped under the default acks_late=False, leaving
+# the prediction_run stuck in 'processing' forever. With acks_late=True,
+# the broker holds onto the task until the worker explicitly acks (after
+# success), so a killed worker re-queues automatically and the new pod
+# picks it up. Safe because generate_deep_school_research is idempotent
+# (checks llm_reasoning_status at the top before doing any work).
+celery_app.conf.task_acks_late = True
+celery_app.conf.task_reject_on_worker_lost = True
 
 
 # Statuses that indicate the task already finished successfully (or was
