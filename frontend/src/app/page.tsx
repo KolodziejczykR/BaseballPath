@@ -551,13 +551,33 @@ export default function Home() {
             </h4>
             <ul className="space-y-3 text-sm text-white/70">
               <li>
-                <a href="#" className="hover:text-white transition-colors">
+                <a
+                  href="https://x.com/kolo_2023"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-white transition-colors"
+                >
                   Twitter / X
                 </a>
               </li>
               <li>
-                <a href="#" className="hover:text-white transition-colors">
+                <a
+                  href="https://www.instagram.com/baseballpath/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-white transition-colors"
+                >
                   Instagram
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://www.linkedin.com/company/baseballpath/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-white transition-colors"
+                >
+                  LinkedIn
                 </a>
               </li>
             </ul>
