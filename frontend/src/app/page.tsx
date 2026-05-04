@@ -364,11 +364,11 @@ export default function Home() {
               Pricing
             </p>
             <h2 className="display-font text-4xl md:text-5xl text-center text-[var(--cool-ink)] font-semibold mt-4 mb-4 leading-tight tracking-tight">
-              Free during beta. Honest pricing after.
+              Free during launch. Honest pricing after.
             </h2>
             <p className="text-center text-[var(--cool-ink-muted)] mb-6 max-w-xl mx-auto text-base md:text-lg">
-              Pay nothing while we&apos;re in beta. 
-              After launch, BaseballPath evaluations stay a one-time purchase. 
+              Pay nothing while we&apos;re launching! 
+              After the first 50 users, BaseballPath evaluations stay a one-time purchase. 
             </p>
             <p className="italic text-center text-[var(--cool-ink-muted)] mb-14 max-w-xl mx-auto text-base md:text-lg">
               No subscription, no incentive to keep you guessing.
@@ -482,7 +482,7 @@ export default function Home() {
                 Get my evaluation <ArrowRight className="w-5 h-5" />
               </Link>
               <p className="text-base md:text-lg text-[var(--cool-ink)] font-semibold mt-7">
-                Free for the first 50 players in beta
+                Free for the first 50 players
                 <span className="text-[var(--cool-ink-muted)] font-normal"> (then $69)</span>
               </p>
             </FadeOnScroll>
