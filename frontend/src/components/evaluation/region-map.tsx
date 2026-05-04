@@ -155,13 +155,21 @@ export function RegionMap({
           const individuallyIncluded = selectedStates.includes(abbr);
           const excluded = excludedStates.includes(abbr);
 
+          // When a selection exists, bump unselected states to a more visible
+          // grey so they read as "in the map but not chosen" instead of fading
+          // into the cool canvas.
+          const inactiveFill = noFilter ? "var(--clay-mist)" : "var(--cool-stroke-strong)";
+          const inactiveOpacity = noFilter
+            ? hovered ? 0.4 : 0.25
+            : hovered ? 0.7 : 0.55;
+
           return (
             <path
               key={abbr}
               d={d}
-              fill={active ? regionColor : "var(--clay-mist)"}
+              fill={active ? regionColor : inactiveFill}
               fillOpacity={
-                active ? (hovered ? 0.9 : 0.65) : hovered ? 0.4 : 0.25
+                active ? (hovered ? 0.9 : 0.65) : inactiveOpacity
               }
               stroke={
                 excluded
@@ -170,9 +178,9 @@ export function RegionMap({
                     ? "var(--foreground)"
                     : active
                       ? regionColor
-                      : "var(--stroke)"
+                      : "var(--cool-stroke-strong)"
               }
-              strokeWidth={excluded || individuallyIncluded ? 1.4 : active ? 1 : 0.5}
+              strokeWidth={excluded || individuallyIncluded ? 1.4 : active ? 1 : 0.6}
               strokeDasharray={excluded ? "3 2" : undefined}
               strokeLinejoin="round"
               onClick={() => toggleState(abbr)}

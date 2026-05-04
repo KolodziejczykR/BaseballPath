@@ -1,38 +1,50 @@
 @import "tailwindcss";
 
 :root {
-  --background: #F5EFE0;
-  --foreground: #2C1810;
-  --primary: #A0522D;
-  --primary-dark: #7A3E22;
-  --accent: #D4A843;
-  --navy: #3B2718;
-  --sand: #E8DCC8;
-  --muted: #7A6B5D;
-  --card: #FAF6EE;
-  --stroke: #D4C4A8;
-  --surface: rgba(250, 246, 238, 0.78);
+  /* Phase 1 cool migration: warm Desert Diamond tokens repointed to cool values
+     so every page gets the cool register without per-component edits. Sienna,
+     golden sand, sage green, and copper retained as accents. */
 
-  /* Desert Diamond Explicit Name Tokens used in components */
+  --background: #F7F8FA;          /* was warm cream → cool canvas */
+  --foreground: #0E1117;          /* was espresso → cool ink */
+  --primary: #A0522D;             /* burnt sienna — accent (CTAs) */
+  --primary-dark: #8A4624;        /* darker sienna for hover */
+  --accent: #D4A843;              /* golden sand — secondary accent */
+  --navy: #0E1117;                /* was dark walnut → cool charcoal */
+  --sand: #F1F3F6;                /* was warm clay → cool surface 2 */
+  --muted: #5A6270;               /* was warm brown → cool ink muted */
+  --card: #FFFFFF;                /* was parchment → white */
+  --stroke: #E4E7EB;              /* was warm border → cool stroke */
+  --surface: rgba(255, 255, 255, 0.92);  /* was warm parchment alpha */
+
+  /* Desert Diamond named tokens — repointed to keep callers working */
   --burnt-sienna: #A0522D;
   --golden-sand: #D4A843;
-  --walnut: #3B2718;
-  --warm-cream: #F5EFE0;
-  --espresso: #2C1810;
+  --walnut: #0E1117;              /* was dark walnut → cool charcoal */
+  --warm-cream: #F7F8FA;          /* was warm cream → cool canvas */
+  --espresso: #0E1117;            /* was espresso → cool ink */
   --sage-green: #6B8F5E;
   --copper: #B87333;
-  --parchment: #FAF6EE;
-  --clay-mist: #E8DCC8;
+  --parchment: #FFFFFF;           /* was parchment → white */
+  --clay-mist: #F1F3F6;           /* was warm clay → cool surface 2 */
+
+  /* Subtle cool gradient — gentle vertical fade with a barely-there warm halo
+     at the top to keep the page from feeling sterile. */
   --page-bg:
-    radial-gradient(980px 620px at 8% -8%, rgba(160, 82, 45, 0.18) 0%, transparent 70%),
-    radial-gradient(860px 540px at 96% 0%, rgba(212, 168, 67, 0.14) 0%, transparent 70%),
-    radial-gradient(600px 600px at 50% 80%, rgba(107, 143, 94, 0.08) 0%, transparent 70%),
-    linear-gradient(180deg, #FAF6EE 0%, #F5EFE0 100%);
+    radial-gradient(900px 540px at 50% -10%, rgba(160, 82, 45, 0.04) 0%, transparent 60%),
+    linear-gradient(180deg, #FFFFFF 0%, #F7F8FA 60%, #F1F3F6 100%);
   --page-bg-mobile:
-    radial-gradient(780px 460px at 5% -5%, rgba(160, 82, 45, 0.18) 0%, transparent 70%),
-    radial-gradient(640px 420px at 95% -8%, rgba(212, 168, 67, 0.14) 0%, transparent 70%),
-    radial-gradient(400px 400px at 50% 80%, rgba(107, 143, 94, 0.08) 0%, transparent 70%),
-    linear-gradient(180deg, #FAF6EE 0%, #F5EFE0 100%);
+    radial-gradient(640px 420px at 50% -8%, rgba(160, 82, 45, 0.04) 0%, transparent 60%),
+    linear-gradient(180deg, #FFFFFF 0%, #F7F8FA 60%, #F1F3F6 100%);
+
+  /* Cool-explicit tokens (used by the landing page directly) */
+  --cool-canvas: #F7F8FA;
+  --cool-surface: #FFFFFF;
+  --cool-surface-2: #F1F3F6;
+  --cool-ink: #0E1117;
+  --cool-ink-muted: #5A6270;
+  --cool-stroke: #E4E7EB;
+  --cool-stroke-strong: #C7CCD3;
 }
 
 @theme inline {
@@ -63,24 +75,12 @@ body {
   position: relative;
 }
 
-body::before {
-  content: "";
-  position: fixed;
-  inset: -50%;
-  width: 200%;
-  height: 200%;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' fill='%23A0522D' opacity='0.1'/%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-  opacity: 0.04;
-  z-index: 50;
-}
-
 a {
   color: inherit;
 }
 
 ::selection {
-  background: rgba(160, 82, 45, 0.25);
+  background: rgba(160, 82, 45, 0.22);
   color: var(--foreground);
 }
 
@@ -90,25 +90,47 @@ a {
 
 .glass {
   background: linear-gradient(135deg,
-      rgba(250, 246, 238, 0.72) 0%,
-      rgba(245, 239, 224, 0.48) 100%);
-  border: 1px solid rgba(212, 168, 67, 0.18);
+      rgba(255, 255, 255, 0.82) 0%,
+      rgba(241, 243, 246, 0.62) 100%);
+  border: 1px solid var(--cool-stroke);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
 
+.glass-cool {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--cool-stroke);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.shadow-cool {
+  box-shadow: 0 1px 2px rgba(14, 17, 23, 0.04), 0 12px 32px rgba(14, 17, 23, 0.06);
+}
+
+.shadow-cool-strong {
+  box-shadow: 0 2px 4px rgba(14, 17, 23, 0.05), 0 24px 64px rgba(14, 17, 23, 0.12);
+}
+
+/* Landing-body hook retained as a no-op now that cool is the default — kept so
+   the page.tsx useEffect doesn't have to be undone. */
+body.landing-body {
+  background: var(--cool-canvas);
+  color: var(--cool-ink);
+}
+
 .shadow-soft {
-  box-shadow: 0 24px 48px rgba(12, 17, 24, 0.11);
+  box-shadow: 0 18px 38px rgba(14, 17, 23, 0.08);
 }
 
 .shadow-strong {
-  box-shadow: 0 34px 90px rgba(12, 17, 24, 0.2);
+  box-shadow: 0 28px 70px rgba(14, 17, 23, 0.14);
 }
 
 .form-control {
   width: 100%;
   border-radius: 0.9rem;
-  border: 1px solid color-mix(in srgb, var(--stroke) 83%, white 17%);
+  border: 1px solid var(--cool-stroke);
   background: var(--surface);
   padding: 0.75rem 0.95rem;
   font-size: 0.95rem;
@@ -118,13 +140,13 @@ a {
 }
 
 .form-control::placeholder {
-  color: color-mix(in srgb, var(--muted) 80%, white 20%);
+  color: color-mix(in srgb, var(--muted) 70%, white 30%);
 }
 
 .form-control:focus {
   border-color: color-mix(in srgb, var(--primary) 74%, white 26%);
   box-shadow: 0 0 0 3px rgba(160, 82, 45, 0.16);
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.98);
 }
 
 select:not([multiple]) {

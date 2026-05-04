@@ -59,7 +59,7 @@ export default function WaitlistPage() {
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <header className="sticky top-0 z-30 backdrop-blur-md border-b border-[var(--stroke)]/30">
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-[var(--cool-stroke)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
             <Image
@@ -67,43 +67,44 @@ export default function WaitlistPage() {
               alt="BaseballPath"
               width={40}
               height={40}
-              className="h-10 w-10"
+              className="h-10 w-10 rounded-full"
             />
-            <div className="leading-tight">
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">
-                BaseballPath
-              </p>
-            </div>
+            <p className="text-sm uppercase tracking-[0.28em] font-semibold text-[var(--cool-ink)]">
+              BaseballPath
+            </p>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 pt-6 pb-12 md:pb-20">
+      <main className="mx-auto max-w-5xl px-6 pt-12 md:pt-20 pb-12 md:pb-20">
         {/* Hero — Value Prop */}
-        <div className="text-center max-w-4xl mx-auto mb-12 md:mb-16">
-          <h1 className="display-font text-4xl md:text-5xl lg:text-6xl leading-tight font-bold text-[var(--espresso)]">
+        <div className="text-center max-w-3xl mx-auto mb-16 md:mb-20">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--burnt-sienna)] font-semibold">
+            Now in Beta
+          </p>
+          <h1 className="display-font text-5xl md:text-6xl lg:text-7xl leading-[1.05] font-semibold text-[var(--cool-ink)] mt-6 tracking-tight">
             Stop guessing.<br />
-            <span className="text-[var(--burnt-sienna)] italic font-semibold">Know your best-fit schools.</span>
+            Know your best-fit schools.
           </h1>
-          <p className="mt-5 text-md text-[var(--muted)] max-w-xl mx-auto leading-relaxed">
+          <p className="mt-7 text-lg text-[var(--cool-ink-muted)] max-w-xl mx-auto leading-relaxed">
             Coaches recruit with data. Families usually recruit with guesswork.
-            BaseballPath brings that data advantage to players and parents.
-            We help you build a realistic target list and know what to work on next.
+            BaseballPath brings that data advantage to players and parents — so
+            you can build a realistic target list and know what to work on next.
           </p>
         </div>
 
         {/* CTAs — Survey + Waitlist */}
         <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-8 mb-20 items-start">
           {/* Survey CTA */}
-          <div className="glass rounded-[2rem] p-8 shadow-soft flex flex-col">
+          <div className="rounded-2xl border border-[var(--cool-stroke)] bg-white p-8 shadow-cool flex flex-col">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--primary)] font-bold mb-3">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--burnt-sienna)] font-semibold mb-3">
                 Help Us Build For You
               </p>
-              <h2 className="display-font text-2xl md:text-3xl font-bold text-[var(--espresso)]">
+              <h2 className="display-font text-2xl md:text-3xl font-semibold text-[var(--cool-ink)] tracking-tight leading-tight">
                 Shape what BaseballPath becomes
               </h2>
-              <p className="mt-3 text-[var(--muted)] text-sm leading-relaxed">
+              <p className="mt-4 text-[var(--cool-ink-muted)] text-sm leading-relaxed">
                 Take our 3-minute survey so we can build the features and pricing that actually
                 make sense for you.
               </p>
@@ -112,7 +113,7 @@ export default function WaitlistPage() {
               href="https://forms.gle/dHKBJCTcMPzAAk3J8"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-[var(--primary)] px-8 py-3.5 text-base font-semibold text-white shadow-strong transition-all duration-200 hover:scale-[1.03] hover:brightness-110 active:scale-[0.98]"
+              className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-[var(--burnt-sienna)] px-8 py-3.5 text-base font-semibold text-white shadow-cool transition-all duration-200 hover:-translate-y-0.5 hover:shadow-cool-strong"
             >
               Take the Survey
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -122,20 +123,23 @@ export default function WaitlistPage() {
           </div>
 
           {/* Waitlist CTA */}
-          <div className="glass rounded-[2rem] p-8 shadow-soft flex flex-col">
+          <div className="rounded-2xl border border-[var(--cool-stroke)] bg-white p-8 shadow-cool flex flex-col">
             <div className="text-center mb-6">
-              <h2 className="display-font text-2xl md:text-3xl font-bold text-[var(--espresso)]">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--burnt-sienna)] font-semibold mb-3">
+                Be First In Line
+              </p>
+              <h2 className="display-font text-2xl md:text-3xl font-semibold text-[var(--cool-ink)] tracking-tight leading-tight">
                 Join the waitlist
               </h2>
-              <p className="mt-2 text-[var(--muted)]">
-                Be first in line when we launch in May!
+              <p className="mt-3 text-[var(--cool-ink-muted)] text-sm">
+                Be first in line when we launch in May.
               </p>
-              <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[var(--accent)]/15 border border-[var(--accent)]/25 px-4 py-2">
-                <svg className="w-4 h-4 text-[var(--accent)]" fill="currentColor" viewBox="0 0 24 24">
+              <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-[var(--cool-surface-2)] border border-[var(--cool-stroke)] px-4 py-2">
+                <svg className="w-4 h-4 text-[var(--burnt-sienna)]" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                 </svg>
-                <span className="text-sm font-semibold text-[var(--espresso)]">
-                  3 waitlist members win a free account at launch
+                <span className="text-sm font-medium text-[var(--cool-ink)]">
+                  3 members win a free account at launch
                 </span>
               </div>
             </div>
@@ -197,7 +201,7 @@ export default function WaitlistPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full rounded-full bg-[var(--navy)] px-6 py-3.5 text-base font-semibold text-[var(--warm-cream)] shadow-strong transition-all duration-200 hover:scale-[1.03] hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full rounded-full bg-[var(--burnt-sienna)] px-6 py-3.5 text-base font-semibold text-white shadow-cool transition-all duration-200 hover:-translate-y-0.5 hover:shadow-cool-strong active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading && (
                     <svg className="animate-spin h-5 w-5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -219,9 +223,9 @@ export default function WaitlistPage() {
         {/* Information Cards */}
         <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-6 mb-16">
           {/* Card 1 */}
-          <div className="glass rounded-[2rem] p-8 shadow-soft border border-[var(--golden-sand)]/20 hover:-translate-y-1 transition-transform duration-300 flex flex-col">
+          <div className="rounded-2xl bg-white p-8 shadow-cool border border-[var(--cool-stroke)] hover:-translate-y-1 transition-transform duration-300 flex flex-col">
             <h3 className="text-xl font-bold text-[var(--espresso)] mb-2 whitespace-pre-wrap">Metrics &rarr; Best-Fit Schools</h3>
-            <p className="text-sm font-semibold text-[var(--primary)] mb-6">
+            <p className="text-sm font-medium text-[var(--cool-ink-muted)] mb-6">
               Turn your measurables + preferences into a realistic target list in minutes.
             </p>
             <ul className="space-y-3 flex-grow mb-6">
@@ -244,9 +248,9 @@ export default function WaitlistPage() {
           </div>
 
           {/* Card 2 */}
-          <div className="glass rounded-[2rem] p-8 shadow-soft border border-[var(--golden-sand)]/20 hover:-translate-y-1 transition-transform duration-300 flex flex-col">
+          <div className="rounded-2xl bg-white p-8 shadow-cool border border-[var(--cool-stroke)] hover:-translate-y-1 transition-transform duration-300 flex flex-col">
             <h3 className="text-xl font-bold text-[var(--espresso)] mb-2 whitespace-pre-wrap">Recruiting Guidance Without the Agency Price</h3>
-            <p className="text-sm font-semibold text-[var(--primary)] mb-6">
+            <p className="text-sm font-medium text-[var(--cool-ink-muted)] mb-6">
               Most families piece recruiting together from random advice. BaseballPath is built to make the process simple and affordable.
             </p>
             <ul className="space-y-3 flex-grow mb-6">
@@ -269,27 +273,27 @@ export default function WaitlistPage() {
           </div>
 
           {/* Card 3 */}
-          <div className="glass rounded-[2rem] p-8 shadow-soft border border-[var(--golden-sand)]/20 hover:-translate-y-1 transition-transform duration-300 flex flex-col">
-            <h3 className="text-xl font-bold text-[var(--espresso)] mb-2 whitespace-pre-wrap">Your Next-Step Roadmap</h3>
-            <p className="text-sm font-semibold text-[var(--primary)] mb-6">
-              Get a personalized roadmap that highlights the improvements most likely to raise your fit level.
+          <div className="rounded-2xl bg-white p-8 shadow-cool border border-[var(--cool-stroke)] hover:-translate-y-1 transition-transform duration-300 flex flex-col">
+            <h3 className="text-xl font-bold text-[var(--espresso)] mb-2 whitespace-pre-wrap">Per-School Detail You Can Act On</h3>
+            <p className="text-sm font-medium text-[var(--cool-ink-muted)] mb-6">
+              Each school in your list comes with the context you need to make a real decision &mdash; not just a name.
             </p>
             <ul className="space-y-3 flex-grow mb-6">
               <li className="flex gap-3 items-start text-sm text-[var(--muted)]">
                 <div className="w-1.5 h-1.5 rounded-full bg-[var(--golden-sand)] shrink-0 mt-1.5"></div>
-                Identifies the highest-leverage areas to improve for your position and target level.
+                Conference, division, and roster context so you know the level you&apos;re looking at.
               </li>
               <li className="flex gap-3 items-start text-sm text-[var(--muted)]">
                 <div className="w-1.5 h-1.5 rounded-full bg-[var(--golden-sand)] shrink-0 mt-1.5"></div>
-                Tracks progress over time so you know what&apos;s working and what to focus on next.
+                A &quot;why this school&quot; narrative that ties your stats to the program&apos;s actual fit.
               </li>
               <li className="flex gap-3 items-start text-sm text-[var(--muted)]">
                 <div className="w-1.5 h-1.5 rounded-full bg-[var(--golden-sand)] shrink-0 mt-1.5"></div>
-                Helps you stay consistent week-to-week instead of guessing.
+                Academic match, annual cost, and how you compare to the division average.
               </li>
             </ul>
             <p className="text-xs font-medium text-[var(--espresso)]/70 italic mt-auto border-t border-[var(--stroke)] pt-4">
-              Built from data trends, designed for action.
+              Real evidence per school, not generic ranks.
             </p>
           </div>
         </div>
