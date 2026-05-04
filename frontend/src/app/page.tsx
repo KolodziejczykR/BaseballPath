@@ -170,7 +170,7 @@ export default function Home() {
               See where you actually fit.
             </h1>
             <p className="hero-stagger text-lg md:text-xl text-[var(--cool-ink-muted)] max-w-xl mx-auto mt-7 leading-relaxed">
-              We compare your numbers against 50,000+ college players when they were in your shoes — and show you the schools where your profile actually lands.
+              We compare your numbers against 50,000+ college players when they were in your shoes — and show you the schools where your profile lands.
             </p>
             <div className="hero-stagger mt-10 flex flex-wrap gap-3 justify-center items-center">
               <Link
