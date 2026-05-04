@@ -52,14 +52,17 @@ REGION_STATES = {
     "West": {"AK", "CA", "CO", "HI", "ID", "MT", "NV", "OR", "UT", "WA", "WY"},
 }
 
-# Budget dropdown -> (min, max) tuples
+# Budget dropdown -> (min, max) tuples. Only the max value is used by
+# financial_filter.py — the min is kept for backward compat with old eval
+# runs that stored these keys. Frontend now presents these as "Up to $X" max
+# thresholds, not ranges.
 BUDGET_RANGES = {
-    "under_20k": (0, 20000),
-    "20k_35k": (20000, 35000),
-    "35k_50k": (35000, 50000),
-    "50k_65k": (50000, 65000),
-    "65k_plus": (65000, None),
-    "no_preference": (0, None),
+    "under_20k": (0, 20000),    # Up to $20K
+    "20k_35k": (0, 35000),      # Up to $35K (legacy: was 20-35 range)
+    "35k_50k": (0, 50000),      # Up to $50K (legacy: was 35-50 range)
+    "50k_65k": (0, 65000),      # Up to $65K (legacy: was 50-65 range)
+    "65k_plus": (65000, None),  # Legacy: schools $65K+ only — no longer offered in UI
+    "no_preference": (0, None), # No max
 }
 
 # State approximate centroids for map display

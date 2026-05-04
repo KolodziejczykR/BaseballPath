@@ -161,8 +161,8 @@ export default function AccountPage() {
   if (authLoading || loading) {
     return (
       <div className="min-h-screen px-6 py-16">
-        <div className="mx-auto max-w-3xl rounded-3xl border border-[var(--stroke)] bg-white/80 p-10 text-center">
-          <p className="text-sm text-[var(--muted)]">Loading account...</p>
+        <div className="mx-auto max-w-3xl rounded-2xl border border-[var(--cool-stroke)] bg-white p-10 text-center shadow-cool">
+          <p className="text-sm text-[var(--cool-ink-muted)]">Loading account...</p>
         </div>
       </div>
     );
@@ -172,19 +172,21 @@ export default function AccountPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
+      <main className="px-6 pt-10 pb-10 md:pt-14 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Account</p>
-              <h1 className="display-font mt-3 text-4xl md:text-5xl">Your account settings.</h1>
-              <p className="mt-3 max-w-none pl-1 text-[var(--muted)]">
+              <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--burnt-sienna)] font-semibold">Account</p>
+              <h1 className="display-font mt-3 text-4xl md:text-5xl text-[var(--cool-ink)] font-semibold tracking-tight leading-tight">
+                Your account settings.
+              </h1>
+              <p className="mt-4 text-base text-[var(--cool-ink-muted)] leading-relaxed">
                 Manage your profile and view your evaluation history.
               </p>
             </div>
             <Link
               href="/predict"
-              className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2.5 text-sm font-semibold text-[var(--navy)]"
+              className="rounded-full border border-[var(--cool-stroke-strong)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--cool-ink)] hover:bg-[var(--cool-surface-2)] transition-colors"
             >
               Back to evaluate
             </Link>
@@ -193,7 +195,7 @@ export default function AccountPage() {
           {(error || notice) && (
             <div
               className={`mt-6 rounded-2xl border p-4 text-sm ${
-                error ? "border-red-300 bg-red-50 text-red-700" : "border-emerald-300 bg-emerald-50 text-emerald-800"
+                error ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-800"
               }`}
             >
               {error || notice}
@@ -201,10 +203,10 @@ export default function AccountPage() {
           )}
 
           <section className="mt-8 grid gap-6 lg:grid-cols-[1.08fr_0.92fr]">
-            <form onSubmit={saveProfile} className="glass rounded-2xl p-6 shadow-soft">
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Profile details</p>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="grid gap-2 text-sm font-medium md:col-span-2">
+            <form onSubmit={saveProfile} className="rounded-2xl border border-[var(--cool-stroke)] bg-white p-6 shadow-cool">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--cool-ink-muted)] font-semibold">Profile details</p>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm font-medium text-[var(--cool-ink)] md:col-span-2">
                   Full name
                   <input
                     className="form-control"
@@ -213,7 +215,7 @@ export default function AccountPage() {
                     placeholder="Alex Johnson"
                   />
                 </label>
-                <label className="grid gap-2 text-sm font-medium">
+                <label className="grid gap-2 text-sm font-medium text-[var(--cool-ink)]">
                   State
                   <input
                     className="form-control"
@@ -223,7 +225,7 @@ export default function AccountPage() {
                     placeholder="CA"
                   />
                 </label>
-                <label className="grid gap-2 text-sm font-medium">
+                <label className="grid gap-2 text-sm font-medium text-[var(--cool-ink)]">
                   Graduating class
                   <input
                     className="form-control"
@@ -235,7 +237,7 @@ export default function AccountPage() {
                     placeholder="2028"
                   />
                 </label>
-                <label className="grid gap-2 text-sm font-medium md:col-span-2">
+                <label className="grid gap-2 text-sm font-medium text-[var(--cool-ink)] md:col-span-2">
                   Primary position
                   <select
                     className="form-control"
@@ -253,31 +255,34 @@ export default function AccountPage() {
                   </select>
                 </label>
               </div>
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-[var(--muted)]">Signed in as {user?.email}</p>
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-[var(--cool-ink-muted)]">Signed in as {user?.email}</p>
                 <button
                   type="submit"
                   disabled={savingProfile}
-                  className="rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-full bg-[var(--burnt-sienna)] px-5 py-2.5 text-sm font-semibold text-white shadow-cool hover:-translate-y-0.5 hover:shadow-cool-strong transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
                 >
                   {savingProfile ? "Saving..." : "Save profile"}
                 </button>
               </div>
             </form>
 
-            <div className="glass rounded-2xl p-6 shadow-soft">
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Evaluation history</p>
-              <p className="mt-3 text-3xl font-semibold text-[var(--navy)]">{totalEvals}</p>
-              <p className="mt-1 text-sm text-[var(--muted)]">
+            <div className="rounded-2xl border border-[var(--cool-stroke)] bg-white p-6 shadow-cool">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--cool-ink-muted)] font-semibold">Evaluation history</p>
+              <p className="display-font mt-4 text-5xl font-semibold text-[var(--cool-ink)] tracking-tight">{totalEvals}</p>
+              <p className="mt-1 text-sm text-[var(--cool-ink-muted)]">
                 {totalEvals === 1 ? "evaluation" : "evaluations"} completed
               </p>
-              <p className="mt-4 text-sm text-[var(--muted)]">
+              <p className="mt-4 text-sm text-[var(--cool-ink-muted)] leading-relaxed">
                 {totalEvals === 0
                   ? "Run your first evaluation to get matched with the best college programs for your profile."
                   : "Run another evaluation anytime — each one is priced per report."}
               </p>
-              <Link href="/predict" className="mt-5 inline-flex text-sm font-semibold text-[var(--primary)]">
-                {totalEvals === 0 ? "Start your first evaluation" : "Run another evaluation"}
+              <Link
+                href="/predict"
+                className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-[var(--burnt-sienna)] hover:underline"
+              >
+                {totalEvals === 0 ? "Start your first evaluation" : "Run another evaluation"} &rarr;
               </Link>
             </div>
           </section>

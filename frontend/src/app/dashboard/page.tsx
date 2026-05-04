@@ -184,8 +184,8 @@ export default function DashboardPage() {
   if (authLoading || loading) {
     return (
       <div className="min-h-screen px-6 py-16">
-        <div className="mx-auto max-w-3xl rounded-3xl border border-[var(--stroke)] bg-white/80 p-10 text-center">
-          <p className="text-sm text-[var(--muted)]">Loading your dashboard...</p>
+        <div className="mx-auto max-w-3xl rounded-2xl border border-[var(--cool-stroke)] bg-white p-10 text-center shadow-cool">
+          <p className="text-sm text-[var(--cool-ink-muted)]">Loading your dashboard...</p>
         </div>
       </div>
     );
@@ -195,19 +195,22 @@ export default function DashboardPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
+      <main className="px-6 pt-10 pb-10 md:pt-14 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div>
-              <h1 className="display-font mt-3 text-4xl md:text-5xl">Welcome back, {profileName}!</h1>
-              <p className="mt-3 max-w-none pl-1 text-[var(--muted)]">
-                This is your recruiting headquarters for managing past runs, viewing your current goals, and keeping your saved schools organized.
+              <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--burnt-sienna)] font-semibold">Dashboard</p>
+              <h1 className="display-font mt-3 text-4xl md:text-5xl text-[var(--cool-ink)] font-semibold tracking-tight leading-tight">
+                Welcome back, {profileName}.
+              </h1>
+              <p className="mt-4 text-base text-[var(--cool-ink-muted)] leading-relaxed">
+                This is your recruiting headquarters for managing past runs and keeping your saved schools organized.
               </p>
             </div>
             <div className="flex w-full justify-end md:w-auto">
               <Link
                 href="/predict"
-                className="whitespace-nowrap rounded-full bg-[var(--primary)] px-6 py-3 text-sm font-semibold !text-white shadow-strong"
+                className="whitespace-nowrap rounded-full bg-[var(--burnt-sienna)] px-6 py-3 text-sm font-semibold !text-white shadow-cool hover:-translate-y-0.5 hover:shadow-cool-strong transition-all duration-200"
               >
                 Start New Evaluation
               </Link>

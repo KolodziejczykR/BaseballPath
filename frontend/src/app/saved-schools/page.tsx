@@ -4,47 +4,26 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import {
+  MetricComparisonsSection,
+  ResearchSourcesCard,
+  type School,
+  SchoolCompareCard,
+  SchoolFitBadges,
+  SchoolHeader,
+  SchoolListCard,
+  SchoolStatsGrid,
+  WhyThisSchoolCard,
+} from "@/components/evaluation/school-display";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-type PreferencePoint = {
-  preference?: string;
-  description?: string;
-};
-
-type PreferenceMiss = {
-  preference?: string;
-  reason?: string;
-};
-
-type SavedSchoolDetail = {
-  school_name?: string;
-  display_school_name?: string;
-  school_logo_image?: string | null;
-  division_group?: string;
-  division_label?: string;
-  location?: {
-    state?: string;
-  };
-  academics?: {
-    grade?: string;
-  };
-  athletics?: {
-    grade?: string;
-  };
-  match_analysis?: {
-    total_nice_to_have_matches?: number;
-    pros?: PreferencePoint[];
-    cons?: PreferenceMiss[];
-  };
-};
 
 type SavedSchoolRecord = {
   id: string;
   school_name: string;
   school_logo_image?: string | null;
   dedupe_key?: string;
-  school_data?: SavedSchoolDetail;
+  school_data?: School;
   note?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -55,31 +34,18 @@ type SavedSchoolsResponse = {
   count?: number;
 };
 
-function getNcaLogoUrl(record: SavedSchoolRecord): string | null {
-  const logoKey = (record.school_logo_image || record.school_data?.school_logo_image || "").trim();
-  if (!logoKey) return null;
-  return `https://ncaa-api.henrygd.me/logo/${encodeURIComponent(logoKey)}.svg`;
+function getRecordSchool(record: SavedSchoolRecord): School {
+  // Saved rows from before the eval-style detail panel landed may only have
+  // the top-level fields the API returns; merge them so the display still has
+  // a name + logo to render.
+  return {
+    school_name: record.school_name,
+    school_logo_image: record.school_logo_image ?? null,
+    ...(record.school_data || {}),
+  };
 }
 
-function mapLegacyDivisionGroup(group: string | undefined): string | null {
-  if (!group) return null;
-  const lowered = group.trim().toLowerCase();
-  if (!lowered) return null;
-  if (lowered.includes("power") && lowered.includes("4")) return "Power 4";
-  if (lowered.includes("non-p4") || lowered.includes("non p4")) return "Division 1";
-  if (lowered.includes("non-d1") || lowered.includes("non d1")) return null;
-  if (lowered.includes("d3") || lowered.includes("division 3") || lowered.includes("division iii")) return "Division 3";
-  if (lowered.includes("d2") || lowered.includes("division 2") || lowered.includes("division ii")) return "Division 2";
-  if (lowered.includes("d1") || lowered.includes("division 1") || lowered.includes("division i")) return "Division 1";
-  return null;
-}
-
-function getDivisionBadgeLabel(detail: SavedSchoolDetail | undefined): string | null {
-  if (!detail) return null;
-  return detail.division_label || mapLegacyDivisionGroup(detail.division_group);
-}
-
-function getDisplaySchoolName(record: SavedSchoolRecord): string {
+function getRecordDisplayName(record: SavedSchoolRecord): string {
   return record.school_data?.display_school_name || record.school_name;
 }
 
@@ -93,6 +59,8 @@ export default function SavedSchoolsPage() {
   const [savingNote, setSavingNote] = useState(false);
   const [deletingSchool, setDeletingSchool] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -150,10 +118,42 @@ export default function SavedSchoolsPage() {
     return savedSchools.find((school) => school.id === selectedSavedSchoolId) || null;
   }, [savedSchools, selectedSavedSchoolId]);
 
+  const selectedSchool = useMemo(
+    () => (selectedSavedSchool ? getRecordSchool(selectedSavedSchool) : null),
+    [selectedSavedSchool],
+  );
+
+  const comparePair = useMemo<[School, School] | null>(() => {
+    if (compareIds.length !== 2) return null;
+    const records = compareIds
+      .map((id) => savedSchools.find((school) => school.id === id))
+      .filter((record): record is SavedSchoolRecord => Boolean(record));
+    if (records.length !== 2) return null;
+    return [getRecordSchool(records[0]), getRecordSchool(records[1])];
+  }, [compareIds, savedSchools]);
+
   useEffect(() => {
     setNoteDraft(selectedSavedSchool?.note || "");
     setSaveMessage("");
   }, [selectedSavedSchool?.id, selectedSavedSchool?.note]);
+
+  // Drop ids that no longer exist (e.g. after unsave) from the compare slots.
+  useEffect(() => {
+    setCompareIds((current) => current.filter((id) => savedSchools.some((school) => school.id === id)));
+  }, [savedSchools]);
+
+  function toggleCompareSelection(id: string) {
+    setCompareIds((current) => {
+      if (current.includes(id)) return current.filter((existing) => existing !== id);
+      if (current.length >= 2) return current;
+      return [...current, id];
+    });
+  }
+
+  function exitCompareMode() {
+    setCompareMode(false);
+    setCompareIds([]);
+  }
 
   async function saveNote() {
     if (!accessToken || !selectedSavedSchool || savingNote) return;
@@ -181,7 +181,9 @@ export default function SavedSchoolsPage() {
       }
 
       const updated = payload as SavedSchoolRecord;
-      setSavedSchools((current) => current.map((school) => (school.id === updated.id ? { ...school, ...updated } : school)));
+      setSavedSchools((current) =>
+        current.map((school) => (school.id === updated.id ? { ...school, ...updated } : school)),
+      );
       setSaveMessage("Note saved.");
     } catch (saveError) {
       setSaveMessage(saveError instanceof Error ? saveError.message : "Failed to save note.");
@@ -193,7 +195,7 @@ export default function SavedSchoolsPage() {
   async function unsaveSelectedSchool() {
     if (!accessToken || !selectedSavedSchool || deletingSchool) return;
     const confirmed = window.confirm(
-      `Remove ${getDisplaySchoolName(selectedSavedSchool)} from your saved schools list?`,
+      `Remove ${getRecordDisplayName(selectedSavedSchool)} from your saved schools list?`,
     );
     if (!confirmed) return;
 
@@ -234,22 +236,56 @@ export default function SavedSchoolsPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
+      <main className="px-6 pt-10 pb-10 md:pt-14 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="display-font mt-2 text-4xl md:text-5xl">Your saved school list</h1>
-              <p className="mt-2 pl-1 text-sm text-[var(--muted)]">{savedSchools.length} saved schools</p>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--burnt-sienna)] font-semibold">
+                Your Shortlist
+              </p>
+              <h1 className="display-font text-4xl md:text-5xl text-[var(--cool-ink)] font-semibold tracking-tight leading-tight mt-3">
+                Saved schools.
+              </h1>
+              <p className="mt-3 text-sm text-[var(--cool-ink-muted)]">
+                {savedSchools.length} saved {savedSchools.length === 1 ? "school" : "schools"}
+              </p>
             </div>
-            <Link
-              href="/predict"
-              className="rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold !text-white shadow-strong"
-            >
-              Run New Evaluation
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              {savedSchools.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => (compareMode ? exitCompareMode() : setCompareMode(true))}
+                  aria-pressed={compareMode}
+                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
+                    compareMode
+                      ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
+                      : "border-[var(--cool-stroke)] bg-white text-[var(--cool-ink)] hover:bg-[var(--cool-surface-2)]"
+                  }`}
+                >
+                  {compareMode ? "Exit compare" : "Compare schools"}
+                </button>
+              )}
+              <Link
+                href="/predict"
+                className="rounded-full bg-[var(--burnt-sienna)] px-5 py-2.5 text-sm font-semibold !text-white shadow-cool hover:-translate-y-0.5 transition-transform"
+              >
+                Run New Evaluation
+              </Link>
+            </div>
           </div>
 
-          {error ? <div className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
+          {compareMode && (
+            <div className="mt-5 rounded-2xl border border-[var(--primary)]/30 bg-[var(--primary)]/5 p-4 text-sm text-[var(--cool-ink)]">
+              <p className="font-semibold">Pick two schools to compare.</p>
+              <p className="mt-1 text-xs text-[var(--cool-ink-muted)]">
+                Selected {compareIds.length} of 2. Tap a card to add or remove it.
+              </p>
+            </div>
+          )}
+
+          {error ? (
+            <div className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+          ) : null}
 
           {savedSchools.length === 0 ? (
             <div className="mt-8 rounded-2xl border border-[var(--stroke)] bg-white/80 p-6">
@@ -259,99 +295,65 @@ export default function SavedSchoolsPage() {
               </p>
               <Link
                 href="/evaluations"
-                className="mt-4 inline-flex rounded-full bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-white"
+                className="mt-4 inline-flex rounded-full bg-[var(--burnt-sienna)] px-4 py-1.5 text-xs font-semibold !text-white shadow-cool hover:-translate-y-0.5 transition-transform"
               >
                 Go to Evaluations
               </Link>
             </div>
           ) : (
-            <section className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <section className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
               <div className="space-y-3">
                 {savedSchools.map((record) => {
-                  const isActive = record.id === selectedSavedSchoolId;
-                  const logoUrl = getNcaLogoUrl(record);
-                  const detail = record.school_data;
+                  const isCompareSelected = compareIds.includes(record.id);
+                  const isCompareSelectable = compareIds.length < 2 || isCompareSelected;
                   return (
-                    <button
+                    <SchoolListCard
                       key={record.id}
-                      type="button"
-                      onClick={() => setSelectedSavedSchoolId(record.id)}
-                      className={`w-full rounded-2xl border bg-white/80 p-4 text-left shadow-soft transition duration-200 ${isActive
-                          ? "border-[var(--primary)] ring-1 ring-[var(--primary)]"
-                          : "border-[var(--stroke)] hover:-translate-y-0.5 hover:border-[var(--primary)]/40"
-                        }`}
-                    >
-                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3">
-                        <div className="min-w-0">
-                          <p className="text-base font-semibold text-[var(--foreground)]">{getDisplaySchoolName(record)}</p>
-                          <div className="mt-1 grid gap-1 text-sm text-[var(--muted)]">
-                            <p>
-                              Matching preferences:{" "}
-                              <span className="font-semibold text-[var(--navy)]">{detail?.match_analysis?.total_nice_to_have_matches ?? 0}</span>
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-end gap-2">
-                          {logoUrl ? (
-                            <>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={logoUrl}
-                                alt={`${getDisplaySchoolName(record)} logo`}
-                                loading="lazy"
-                                onError={(event) => {
-                                  event.currentTarget.style.display = "none";
-                                }}
-                                className="h-14 w-14 rounded-md border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
-                              />
-                            </>
-                          ) : null}
-                          {getDivisionBadgeLabel(detail) && (
-                            <span className="whitespace-nowrap rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">
-                              {getDivisionBadgeLabel(detail)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </button>
+                      school={getRecordSchool(record)}
+                      isActive={record.id === selectedSavedSchoolId}
+                      onSelect={() =>
+                        compareMode
+                          ? toggleCompareSelection(record.id)
+                          : setSelectedSavedSchoolId(record.id)
+                      }
+                      showRankMedal={false}
+                      selectionMode={compareMode}
+                      isSelected={isCompareSelected}
+                      isSelectable={isCompareSelectable}
+                    />
                   );
                 })}
               </div>
 
-              <aside className="glass rounded-2xl p-5 shadow-soft lg:sticky lg:top-24 lg:max-h-[76vh] lg:overflow-hidden">
-                {selectedSavedSchool ? (
-                  <div className="flex h-full flex-col">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-lg font-semibold">{getDisplaySchoolName(selectedSavedSchool)}</p>
-                      {getDivisionBadgeLabel(selectedSavedSchool.school_data) && (
-                        <span className="rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">
-                          {getDivisionBadgeLabel(selectedSavedSchool.school_data)}
-                        </span>
-                      )}
+              <aside className="glass rounded-2xl p-5 shadow-soft lg:sticky lg:top-24 lg:max-h-[82vh] lg:overflow-y-auto">
+                {compareMode ? (
+                  comparePair ? (
+                    <SchoolCompareCard schools={comparePair} />
+                  ) : (
+                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-6 text-center">
+                      <p className="text-sm font-semibold text-[var(--foreground)]">
+                        Pick two saved schools to see a side-by-side comparison.
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        Selected {compareIds.length} of 2.
+                      </p>
                     </div>
+                  )
+                ) : selectedSavedSchool && selectedSchool ? (
+                  <div key={selectedSavedSchool.id} className="detail-slide-in space-y-4">
+                    <SchoolHeader school={selectedSchool} showRankMedal={false} />
+                    <SchoolFitBadges school={selectedSchool} />
+                    <SchoolStatsGrid school={selectedSchool} />
 
-                    <p className="mt-2 text-sm text-[var(--muted)]">
-                      {selectedSavedSchool.school_data?.location?.state
-                        ? `State: ${selectedSavedSchool.school_data.location.state} · `
-                        : ""}
-                      {selectedSavedSchool.school_data?.academics?.grade
-                        ? `Academics: ${selectedSavedSchool.school_data.academics.grade} · `
-                        : ""}
-                      {selectedSavedSchool.school_data?.athletics?.grade
-                        ? `Athletics: ${selectedSavedSchool.school_data.athletics.grade}`
-                        : "Athletics grade unavailable"}
-                    </p>
-
-                    <div className="mt-4 rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
+                    <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-4">
                       <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">School note</p>
                       <textarea
                         value={noteDraft}
                         onChange={(event) => setNoteDraft(event.target.value)}
                         placeholder="Write what you want to do at this school."
-                        className="form-control mt-3 min-h-[120px] resize-y text-sm"
+                        className="form-control mt-3 min-h-[96px] resize-y text-sm"
                       />
-                      <div className="mt-3 flex items-center justify-between gap-2">
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
@@ -379,33 +381,9 @@ export default function SavedSchoolsPage() {
                       {saveMessage ? <p className="mt-2 text-xs text-[var(--muted)]">{saveMessage}</p> : null}
                     </div>
 
-                    <div className="mt-4 space-y-3 overflow-y-auto pr-1 lg:max-h-[52vh]">
-                      <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
-                        <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Why this matches</p>
-                        {selectedSavedSchool.school_data?.match_analysis?.pros?.length ? (
-                          <ul className="mt-2 space-y-1 text-sm text-[var(--foreground)]">
-                            {selectedSavedSchool.school_data.match_analysis.pros.map((pro, index) => (
-                              <li key={`${pro.preference}-${index}`}>- {pro.description || pro.preference}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="mt-2 text-sm text-[var(--muted)]">No preference matches recorded.</p>
-                        )}
-                      </div>
-
-                      <div className="rounded-xl border border-[var(--stroke)] bg-white/75 p-3">
-                        <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Tradeoffs</p>
-                        {selectedSavedSchool.school_data?.match_analysis?.cons?.length ? (
-                          <ul className="mt-2 space-y-1 text-sm text-[var(--foreground)]">
-                            {selectedSavedSchool.school_data.match_analysis.cons.map((con, index) => (
-                              <li key={`${con.preference}-${index}`}>- {con.reason || con.preference}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="mt-2 text-sm text-[var(--muted)]">No major preference tradeoffs detected.</p>
-                        )}
-                      </div>
-                    </div>
+                    <WhyThisSchoolCard school={selectedSchool} />
+                    <ResearchSourcesCard sources={selectedSchool.research_sources} />
+                    <MetricComparisonsSection school={selectedSchool} />
                   </div>
                 ) : (
                   <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
@@ -417,6 +395,22 @@ export default function SavedSchoolsPage() {
           )}
         </div>
       </main>
+
+      <style jsx>{`
+        .detail-slide-in {
+          animation: detailSlideIn 220ms ease;
+        }
+        @keyframes detailSlideIn {
+          from {
+            opacity: 0;
+            transform: translateX(12px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+      `}</style>
     </div>
   );
 }

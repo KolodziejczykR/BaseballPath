@@ -88,13 +88,14 @@ function stateToRegion(st: string): string {
 // Budget options
 // ---------------------------------------------------------------------------
 
+// Backend treats every value as a max: schools with cost > value are filtered.
+// In-state vs out-of-state tuition is selected based on user.state == school.state.
 const BUDGET_OPTIONS = [
-  { label: "Under $20K", value: "under_20k" },
-  { label: "$20K – $35K", value: "20k_35k" },
-  { label: "$35K – $50K", value: "35k_50k" },
-  { label: "$50K – $65K", value: "50k_65k" },
-  { label: "$65K+", value: "65k_plus" },
-  { label: "No preference", value: "no_preference" },
+  { label: "Up to $20K", value: "under_20k" },
+  { label: "Up to $35K", value: "20k_35k" },
+  { label: "Up to $50K", value: "35k_50k" },
+  { label: "Up to $65K", value: "50k_65k" },
+  { label: "No maximum", value: "no_preference" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -448,13 +449,16 @@ function PredictContent() {
         <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />
       )}
 
-      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
+      <main className="px-6 pt-10 pb-10 md:pt-16 md:pb-12">
         <div className="mx-auto max-w-2xl">
           {/* Header */}
-          <h1 className="display-font mt-3 text-3xl md:text-4xl text-center">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--burnt-sienna)] font-semibold text-center">
             Player Evaluation
+          </p>
+          <h1 className="display-font mt-4 text-4xl md:text-5xl text-center text-[var(--cool-ink)] font-semibold tracking-tight leading-tight">
+            Build your projection.
           </h1>
-          <p className="mt-2 text-center text-sm text-[var(--muted)]">
+          <p className="mt-4 text-center text-base text-[var(--cool-ink-muted)] max-w-md mx-auto leading-relaxed">
             Get matched with the best college baseball programs for you.
           </p>
 
@@ -874,12 +878,12 @@ function PredictContent() {
                     Your full evaluation includes
                   </p>
                   {[
-                    "10-15 best-fit school matches ranked for you",
+                    "Up to 25 best-fit school matches ranked for you",
                     "A personalized breakdown of why each school fits your baseball and academic profile",
                     "How your baseball metrics compare to players who committed at each level",
                   ].map((item) => (
                     <div key={item} className="flex items-start gap-2">
-                      <svg className="mt-0.5 h-4 w-4 shrink-0 text-[var(--sage)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <svg className="mt-0.5 h-4 w-4 shrink-0 text-[var(--sage-green)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
                       <span className="text-sm">{item}</span>

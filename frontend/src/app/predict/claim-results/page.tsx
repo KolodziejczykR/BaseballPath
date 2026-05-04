@@ -68,12 +68,12 @@ function ClaimResultsContent() {
 
   if (error) {
     return (
-      <div className="min-h-screen px-6 py-16">
-        <div className="mx-auto max-w-md rounded-3xl border border-red-300 bg-red-50 p-8 text-center space-y-4">
+      <div className="min-h-screen px-6 py-24">
+        <div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 p-8 text-center space-y-4 shadow-cool">
           <p className="text-sm text-red-700">{error}</p>
           <a
             href="/predict"
-            className="inline-block rounded-full bg-[var(--primary)] px-6 py-2.5 text-sm font-semibold !text-white"
+            className="inline-block rounded-full bg-[var(--burnt-sienna)] px-6 py-2.5 text-sm font-semibold !text-white shadow-cool hover:-translate-y-0.5 hover:shadow-cool-strong transition-all duration-200"
           >
             Start New Evaluation
           </a>
@@ -83,10 +83,10 @@ function ClaimResultsContent() {
   }
 
   return (
-    <div className="min-h-screen px-6 py-16">
-      <div className="mx-auto max-w-md rounded-3xl border border-[var(--stroke)] bg-white/80 p-8 text-center space-y-4">
-        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-        <p className="text-sm text-[var(--muted)]">Saving your results to your account...</p>
+    <div className="min-h-screen px-6 py-24">
+      <div className="mx-auto max-w-md rounded-2xl border border-[var(--cool-stroke)] bg-white p-10 text-center space-y-5 shadow-cool">
+        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--burnt-sienna)] border-t-transparent" />
+        <p className="text-sm font-medium text-[var(--cool-ink)]">Saving your results to your account...</p>
       </div>
     </div>
   );
@@ -96,10 +96,10 @@ export default function ClaimResultsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen px-6 py-16">
-          <div className="mx-auto max-w-md rounded-3xl border border-[var(--stroke)] bg-white/80 p-8 text-center space-y-4">
-            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-            <p className="text-sm text-[var(--muted)]">Loading...</p>
+        <div className="min-h-screen px-6 py-24">
+          <div className="mx-auto max-w-md rounded-2xl border border-[var(--cool-stroke)] bg-white p-10 text-center space-y-5 shadow-cool">
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--burnt-sienna)] border-t-transparent" />
+            <p className="text-sm text-[var(--cool-ink-muted)]">Loading...</p>
           </div>
         </div>
       }

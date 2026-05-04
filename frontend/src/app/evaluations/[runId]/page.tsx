@@ -3,11 +3,24 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Info } from "lucide-react";
 import { AuthenticatedTopBar } from "@/components/ui/authenticated-topbar";
 import { ResultsMap } from "@/components/evaluation/results-map";
 import { SchoolFitVote, type SchoolFeedbackRecord } from "@/components/evaluation/school-fit-vote";
 import { ReviewHelpfulnessVote, type ReviewFeedbackRecord } from "@/components/evaluation/review-helpfulness-vote";
 import { EvalFeedbackPanel } from "@/components/evaluation/eval-feedback-panel";
+import {
+  MetricComparisonsSection,
+  ResearchSourcesCard,
+  type School,
+  SchoolFitBadges,
+  SchoolHeader,
+  SchoolListCard,
+  SchoolStatsGrid,
+  WhyThisSchoolCard,
+  getSchoolDedupeKey,
+  schoolDisplayName,
+} from "@/components/evaluation/school-display";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -15,59 +28,6 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type SchoolLocation = {
-  state?: string;
-  region?: string;
-  latitude?: number;
-  longitude?: number;
-};
-
-type MetricComparison = {
-  metric: string;
-  player_value: number;
-  division_avg: number;
-  unit: string;
-};
-
-type ResearchSource = {
-  label?: string;
-  url?: string;
-  source_type?: string;
-};
-
-type School = {
-  rank: number;
-  school_name: string;
-  display_school_name?: string;
-  school_logo_image?: string | null;
-  conference?: string;
-  division_group?: string;
-  division_label?: string;
-  baseball_division?: number;
-  location?: SchoolLocation;
-  baseball_fit?: string;
-  fit_label?: string;
-  delta?: number;
-  sci?: number;
-  trend?: string;
-  academic_fit?: string;
-  academic_selectivity_score?: string;
-  estimated_annual_cost?: number | null;
-  metric_comparisons?: MetricComparison[];
-  fit_summary?: string;
-  why_this_school?: string;
-  research_confidence?: string;
-  opportunity_fit?: string;
-  overall_school_view?: string;
-  roster_label?: string;
-  review_adjustment_from_base?: string;
-  ranking_adjustment?: number;
-  ranking_score?: number;
-  research_status?: string;
-  research_data_gaps?: string[];
-  research_sources?: ResearchSource[];
-};
 
 type BaseballAssessment = {
   predicted_tier?: string;
@@ -114,92 +74,81 @@ type SavedSchoolRecord = {
 // Constants
 // ---------------------------------------------------------------------------
 
-const FIT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  fit: { bg: "rgba(107,143,94,0.15)", text: "var(--sage-green)", border: "var(--sage-green)" },
-  reach: { bg: "rgba(184,115,51,0.15)", text: "var(--copper)", border: "var(--copper)" },
-  safety: { bg: "rgba(212,168,67,0.15)", text: "var(--golden-sand)", border: "var(--golden-sand)" },
-};
-
-const MEDAL_COLORS = ["#D4A843", "#C0C0C0", "#CD7F32"];
-
 const DISCLAIMER_TEXT =
-  "This evaluation is based on measurable athletic metrics and academic data only. " +
-  "Factors that college coaches weigh heavily \u2014 including coachability, work ethic, " +
-  "character, delivery style, baseball IQ, development trajectory, and roster context " +
-  "\u2014 are not captured in this snapshot. Players with unique profiles (sidearm deliveries, " +
-  "exceptional competitiveness, late physical development) may be undervalued or " +
-  "overvalued by any metrics-based tool. This is a starting point for your college " +
-  "baseball search, not the final word.";
+  "This evaluation is based on metrics and academics. Things coaches care about most like " +
+  "coachability, work ethic, character, and development upside aren't in the model. " +
+  "Use this as a starting point, not the final word.";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getNcaLogoUrl(logoKey: string | null | undefined): string | null {
-  const key = (logoKey || "").trim();
-  if (!key) return null;
-  return `https://ncaa-api.henrygd.me/logo/${encodeURIComponent(key)}.svg`;
-}
-
-function getSchoolDedupeKey(school: School): string {
-  const logoKey = (school.school_logo_image || "").trim().toLowerCase();
-  if (logoKey) return `logo:${logoKey}`;
-  return `name:${school.school_name.trim().toLowerCase()}`;
-}
-
-function formatCost(cost: number | null | undefined): string {
-  if (cost == null) return "N/A";
-  return `$${cost.toLocaleString()}/yr`;
-}
-
-function formatPercentile(pct: number | undefined): string {
-  if (pct == null) return "N/A";
-  return `${pct.toFixed(0)}th percentile`;
-}
-
-function formatProbability(prob: number | undefined): string {
-  if (prob == null) return "N/A";
-  return `${(prob * 100).toFixed(0)}%`;
-}
-
 function tierDisplayLabel(tier: string | undefined): string {
   if (!tier) return "Unknown";
   if (tier.includes("Power 4")) return "Power 4";
   if (tier.includes("Non-P4")) return "Division 1";
-  if (tier.includes("Non-D1")) return "Non-D1";
+  if (tier.includes("Non-D1")) return "D2 & D3";
   return tier;
 }
 
-function fitLabel(fit: string | undefined): string {
-  if (!fit) return "";
-  return fit
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+// Convert a within-tier percentile to coach-style language. A 71st-percentile
+// player is in the top 29% of their tier — round to the nearest 5% so the
+// number reads cleanly without leaking model precision.
+function percentileInWords(pct: number | undefined, tierLabel: string): string | null {
+  if (pct == null || !Number.isFinite(pct)) return null;
+  const top = Math.max(5, Math.round((100 - pct) / 5) * 5);
+  return `Top ${top}% of ${tierLabel} prospects`;
 }
 
-function fitColorKey(fit: string | undefined): string {
-  const lower = (fit || "").toLowerCase();
-  if (lower.includes("safety")) return "safety";
-  if (lower.includes("reach")) return "reach";
-  return "fit";
+// Translate the 1-10 composite into a one-line coach-style interpretation
+// instead of leaving the user to guess what 6.0/10 means.
+function interpretAcademic(composite: number | undefined): string | null {
+  if (composite == null || !Number.isFinite(composite)) return null;
+  if (composite >= 9) return "Strong fit for highly selective academic programs.";
+  if (composite >= 7) return "Strong fit for selective academic programs.";
+  if (composite >= 5) return "Solid fit across a wide range of programs.";
+  if (composite >= 3) return "Foundational profile — many programs available.";
+  return "Best matched to programs prioritizing growth and broader admissions.";
 }
 
-function schoolDivisionLabel(school: School): string {
-  if (school.division_label) return school.division_label;
-  if (school.division_group?.includes("Power 4")) return "Power 4";
-  if (school.division_group?.includes("Non-P4")) return "Division 1";
-  if (school.baseball_division === 2) return "Division 2";
-  if (school.baseball_division === 3) return "Division 3";
-  return "";
+// Render the tier label with the ampersand in the sans family — Fraunces
+// (the display font) ships a swashy ampersand glyph at large sizes that
+// reads as a typo. Sans gives a clean & for the same visual weight.
+function renderTierLabel(tier: string | undefined): React.ReactNode {
+  const label = tierDisplayLabel(tier);
+  if (label === "D2 & D3") {
+    return <>D2 <span className="font-sans">&amp;</span> D3</>;
+  }
+  return label;
 }
 
-function baseballFitText(school: School): string {
-  if (school.fit_label) return school.fit_label;
-  return fitLabel(school.baseball_fit);
+// Pull the player's actual GPA, test, and AP count so we can show real numbers
+// instead of the internal 0-10 ratings.
+function getActualGpa(run: EvaluationRun): string | null {
+  const acad = (run.preferences_input as Record<string, unknown> | undefined)?.academic_input;
+  if (!acad || typeof acad !== "object") return null;
+  const gpa = (acad as Record<string, unknown>).gpa;
+  if (typeof gpa !== "number" || !Number.isFinite(gpa)) return null;
+  return gpa.toFixed(2);
 }
 
-function schoolDisplayName(school: School): string {
-  return school.display_school_name || school.school_name;
+function getActualTestScore(run: EvaluationRun): { label: string; value: string } | null {
+  const acad = (run.preferences_input as Record<string, unknown> | undefined)?.academic_input;
+  if (!acad || typeof acad !== "object") return null;
+  const obj = acad as Record<string, unknown>;
+  const sat = typeof obj.sat_score === "number" && Number.isFinite(obj.sat_score) ? obj.sat_score : null;
+  const act = typeof obj.act_score === "number" && Number.isFinite(obj.act_score) ? obj.act_score : null;
+  if (sat) return { label: "SAT", value: String(sat) };
+  if (act) return { label: "ACT", value: String(act) };
+  return null;
+}
+
+function getActualApCourses(run: EvaluationRun): string | null {
+  const acad = (run.preferences_input as Record<string, unknown> | undefined)?.academic_input;
+  if (!acad || typeof acad !== "object") return null;
+  const ap = (acad as Record<string, unknown>).ap_courses;
+  if (typeof ap !== "number" || !Number.isFinite(ap)) return null;
+  return String(Math.round(ap));
 }
 
 function isV2Evaluation(run: EvaluationRun): boolean {
@@ -210,40 +159,20 @@ function isV2Evaluation(run: EvaluationRun): boolean {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function FitBadge({ type, label }: { type: string; label: string }) {
-  const colors = FIT_COLORS[fitColorKey(type)] || FIT_COLORS.fit;
-  return (
-    <span
-      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
-      style={{ background: colors.bg, color: colors.text, border: `1px solid ${colors.border}` }}
-    >
-      {label}
-    </span>
-  );
-}
-
 function DisclaimerBanner() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div
-      className="rounded-2xl border p-4"
-      style={{
-        background: "rgba(212,168,67,0.08)",
-        borderColor: "rgba(212,168,67,0.25)",
-      }}
-    >
+    <div className="rounded-2xl border border-[var(--cool-stroke)] bg-[var(--cool-surface-2)] p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 text-lg" style={{ color: "var(--golden-sand)" }}>
-            &#9888;
-          </span>
-          <div>
-            <p className="text-sm font-semibold" style={{ color: "var(--walnut)" }}>
-              Important disclaimer
+        <div className="flex items-start gap-3 min-w-0">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--cool-ink-muted)]" strokeWidth={2} />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--cool-ink)]">
+              A note before you read.
             </p>
             {!collapsed && (
-              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+              <p className="mt-1 text-sm text-[var(--cool-ink-muted)] leading-relaxed">
                 {DISCLAIMER_TEXT}
               </p>
             )}
@@ -252,60 +181,11 @@ function DisclaimerBanner() {
         <button
           type="button"
           onClick={() => setCollapsed(!collapsed)}
-          className="shrink-0 text-xs font-semibold"
-          style={{ color: "var(--primary)" }}
+          className="shrink-0 text-xs font-semibold text-[var(--cool-ink-muted)] hover:text-[var(--cool-ink)] transition-colors"
         >
           {collapsed ? "Show" : "Hide"}
         </button>
       </div>
-    </div>
-  );
-}
-
-function MetricComparisonTable({ comparisons }: { comparisons: MetricComparison[] }) {
-  if (!comparisons || comparisons.length === 0) return null;
-
-  return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-[var(--stroke)]">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="bg-[var(--sand)]/40">
-            <th className="px-3 py-2 text-left font-semibold text-[var(--muted)]">Metric</th>
-            <th className="px-3 py-2 text-right font-semibold text-[var(--muted)]">You</th>
-            <th className="px-3 py-2 text-right font-semibold text-[var(--muted)]">Div. Avg</th>
-            <th className="px-3 py-2 text-right font-semibold text-[var(--muted)]">Diff</th>
-          </tr>
-        </thead>
-        <tbody>
-          {comparisons.map((m) => {
-            const diff = m.player_value - m.division_avg;
-            const isPositive = diff > 0;
-            // For time-based metrics (sec), lower is better
-            const isTimeBased = m.unit === "sec";
-            const isGood = isTimeBased ? diff < 0 : diff > 0;
-            const decimals = m.metric === "60-Yard Dash" ? 2 : 1;
-
-            return (
-              <tr key={m.metric} className="border-t border-[var(--stroke)]/50">
-                <td className="px-3 py-1.5 font-medium text-[var(--foreground)]">{m.metric}</td>
-                <td className="px-3 py-1.5 text-right font-semibold text-[var(--navy)]">
-                  {m.player_value} {m.unit}
-                </td>
-                <td className="px-3 py-1.5 text-right text-[var(--muted)]">
-                  {m.division_avg} {m.unit}
-                </td>
-                <td
-                  className="px-3 py-1.5 text-right font-semibold"
-                  style={{ color: isGood ? "var(--sage-green)" : "var(--copper)" }}
-                >
-                  {isPositive ? "+" : ""}
-                  {diff.toFixed(decimals)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -579,7 +459,8 @@ export default function EvaluationDetailPage() {
   }, [selectedSchool, selectedDedupeKey, savedSchoolByKey]);
 
   // Select school handler
-  function selectSchool(rank: number) {
+  function selectSchool(rank: number | undefined) {
+    if (rank == null) return;
     const school = schools.find((candidate) => candidate.rank === rank);
     if (school) {
       setSelectedSchoolKey(getSchoolDedupeKey(school));
@@ -659,8 +540,9 @@ export default function EvaluationDetailPage() {
 
   // Page metadata
   const playerName = (evaluation?.identity_input?.name as string) || "Evaluation";
-  const positionLabel = (evaluation?.identity_input?.primary_position as string) ||
-    (evaluation?.stats_input?.primary_position as string) || "";
+  // Last names get clunky in display headlines — first name reads more
+  // naturally and is what a coach would say.
+  const firstName = playerName.split(/\s+/).filter(Boolean)[0] || playerName;
   const reportDate = evaluation?.created_at
     ? new Date(evaluation.created_at).toLocaleDateString()
     : "";
@@ -698,38 +580,28 @@ export default function EvaluationDetailPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-4 pt-5 pb-12 md:px-6 md:pt-6">
+      <main className="px-4 pt-10 pb-12 md:px-6 md:pt-14">
         <div className="mx-auto max-w-6xl">
-          {/* Header */}
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="display-font text-3xl md:text-4xl">
-                {playerName}&apos;s Evaluation
-              </h1>
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[var(--muted)]">
-                {positionLabel && (
-                  <span className="rounded-full bg-[var(--sand)] px-3 py-0.5 text-xs font-semibold text-[var(--navy)]">
-                    {positionLabel}
-                  </span>
-                )}
-                {reportDate && <span>{reportDate}</span>}
-                {v2 && baseball?.predicted_tier && (
-                  <span className="font-semibold text-[var(--navy)]">
-                    {tierDisplayLabel(baseball.predicted_tier)}
-                  </span>
-                )}
-              </div>
-            </div>
+          {/* Header — eyebrow above, then h1 + buttons in a center-aligned row
+              so the buttons sit visually with the name (the dominant element)
+              instead of with the small eyebrow. */}
+          <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--burnt-sienna)] font-semibold">
+            Evaluation Report
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+            <h1 className="display-font text-4xl md:text-5xl text-[var(--cool-ink)] font-semibold tracking-tight leading-tight">
+              {firstName}&apos;s Evaluation
+            </h1>
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/predict"
-                className="rounded-full bg-[var(--primary)] px-5 py-2 text-sm font-semibold !text-white shadow-soft"
+                className="rounded-full bg-[var(--burnt-sienna)] px-5 py-2 text-sm font-semibold !text-white shadow-cool hover:-translate-y-0.5 transition-transform"
               >
                 New evaluation
               </Link>
               <Link
                 href="/evaluations"
-                className="rounded-full border border-[var(--stroke)] bg-white/80 px-5 py-2 text-sm font-semibold text-[var(--navy)]"
+                className="rounded-full border border-[var(--cool-stroke)] bg-white px-5 py-2 text-sm font-semibold text-[var(--cool-ink)] hover:bg-[var(--cool-surface-2)] transition-colors"
               >
                 All evaluations
               </Link>
@@ -737,7 +609,7 @@ export default function EvaluationDetailPage() {
                 type="button"
                 onClick={deleteCurrentRun}
                 disabled={deletingRun}
-                className="rounded-full border border-red-300 bg-white px-5 py-2 text-sm font-semibold text-red-700 disabled:opacity-50"
+                className="rounded-full border border-red-200 bg-white px-5 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
               >
                 {deletingRun ? "Removing..." : "Remove"}
               </button>
@@ -757,12 +629,12 @@ export default function EvaluationDetailPage() {
 
           {llmStatus === "processing" && (
             <div className="mt-10 flex flex-col items-center justify-center py-16">
-              <div className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--stroke)] border-t-[var(--primary)]" />
-              <p className="mt-5 text-base font-semibold text-[var(--foreground)]">
-                Researching rosters and recruiting context
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--cool-stroke)] border-t-[var(--burnt-sienna)]" />
+              <p className="mt-5 text-base font-semibold text-[var(--cool-ink)]">
+                Finding the best schools for you
               </p>
-              <p className="mt-2 max-w-md text-center text-sm text-[var(--muted)]">
-                We&apos;re analyzing roster depth, incoming recruits, transfers, and positional need for each school. This typically takes 5&ndash;10 minutes.
+              <p className="mt-2 max-w-md text-center text-sm text-[var(--cool-ink-muted)] leading-relaxed">
+                We&apos;re analyzing current rosters, academic standards, and positional need to surface schools where you actually fit. This takes about 90 seconds.
               </p>
             </div>
           )}
@@ -781,75 +653,73 @@ export default function EvaluationDetailPage() {
           {/* Assessment Summary Cards — hidden while research is running */}
           {llmStatus !== "processing" && v2 && (baseball || academic) && (
             <section className="mt-6 grid gap-4 md:grid-cols-2">
-              {/* Baseball Assessment */}
-              {baseball && (
-                <div className="glass rounded-2xl p-5 shadow-soft">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Baseball assessment</p>
-                  <p className="mt-3 text-2xl font-bold text-[var(--foreground)]">
-                    {tierDisplayLabel(baseball.predicted_tier)}
-                  </p>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                      <p className="text-xs text-[var(--muted)]">Within-tier</p>
-                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                        {formatPercentile(baseball.within_tier_percentile)}
+              {/* Baseball Assessment — coach-style, no raw probabilities */}
+              {baseball && (() => {
+                const tierLabel = tierDisplayLabel(baseball.predicted_tier);
+                const percentileLine = percentileInWords(baseball.within_tier_percentile, tierLabel);
+                return (
+                  <div className="rounded-2xl border border-[var(--cool-stroke)] bg-white p-6 shadow-cool">
+                    <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--cool-ink-muted)] font-semibold">
+                      Baseball assessment
+                    </p>
+                    <p className="display-font mt-3 text-3xl font-semibold text-[var(--cool-ink)] tracking-tight">
+                      {renderTierLabel(baseball.predicted_tier)}
+                    </p>
+                    {percentileLine && (
+                      <p className="mt-3 text-sm font-medium text-[var(--cool-ink)]">
+                        {percentileLine}
                       </p>
-                    </div>
-                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                      <p className="text-xs text-[var(--muted)]">D1 probability</p>
-                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                        {formatProbability(baseball.d1_probability)}
-                      </p>
-                    </div>
-                    {baseball.p4_probability != null && (
-                      <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                        <p className="text-xs text-[var(--muted)]">P4 probability</p>
-                        <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                          {formatProbability(baseball.p4_probability)}
-                        </p>
-                      </div>
                     )}
-                    {baseball.confidence && (
-                      <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                        <p className="text-xs text-[var(--muted)]">Confidence</p>
-                        <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                          {baseball.confidence}
-                        </p>
-                      </div>
-                    )}
+                    <p className="mt-2 text-sm text-[var(--cool-ink-muted)] leading-relaxed">
+                      See the school list below for the best fits for you.
+                    </p>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
-              {/* Academic Assessment */}
-              {academic && (
-                <div className="glass rounded-2xl p-5 shadow-soft">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Academic assessment</p>
-                  <p className="mt-3 text-2xl font-bold text-[var(--foreground)]">
-                    {academic.composite != null ? `${academic.composite.toFixed(1)} / 10` : "N/A"}
-                  </p>
-                  <div className="mt-3 grid grid-cols-3 gap-3">
-                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                      <p className="text-xs text-[var(--muted)]">GPA</p>
-                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                        {academic.gpa_rating != null ? academic.gpa_rating.toFixed(1) : "N/A"}
+              {/* Academic Assessment — keep composite, add interpretation,
+                  show actual GPA/test instead of internal 0-10 ratings */}
+              {academic && (() => {
+                const interpretation = interpretAcademic(academic.composite);
+                const actualGpa = getActualGpa(evaluation);
+                const actualTest = getActualTestScore(evaluation);
+                const actualAp = getActualApCourses(evaluation);
+                const hasInputs = Boolean(actualGpa || actualTest || actualAp);
+                return (
+                  <div className="rounded-2xl border border-[var(--cool-stroke)] bg-white p-6 shadow-cool">
+                    <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--cool-ink-muted)] font-semibold">
+                      Academic assessment
+                    </p>
+                    <p className="display-font mt-3 text-3xl font-semibold text-[var(--cool-ink)] tracking-tight">
+                      {academic.composite != null ? `${academic.composite.toFixed(1)} / 10` : "N/A"}
+                    </p>
+                    {interpretation && (
+                      <p className="mt-3 text-sm font-medium text-[var(--cool-ink)]">
+                        {interpretation}
                       </p>
-                    </div>
-                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                      <p className="text-xs text-[var(--muted)]">Test score</p>
-                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                        {academic.test_rating != null ? academic.test_rating.toFixed(1) : "N/A"}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                      <p className="text-xs text-[var(--muted)]">AP courses</p>
-                      <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                        {academic.ap_rating != null ? academic.ap_rating.toFixed(1) : "N/A"}
-                      </p>
-                    </div>
+                    )}
+                    {hasInputs && (
+                      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-[var(--cool-ink-muted)]">
+                        {actualGpa && (
+                          <span>
+                            <span className="font-semibold text-[var(--cool-ink)]">GPA</span> {actualGpa}
+                          </span>
+                        )}
+                        {actualTest && (
+                          <span>
+                            <span className="font-semibold text-[var(--cool-ink)]">{actualTest.label}</span> {actualTest.value}
+                          </span>
+                        )}
+                        {actualAp && (
+                          <span>
+                            <span className="font-semibold text-[var(--cool-ink)]">AP courses</span> {actualAp}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </section>
           )}
 
@@ -857,11 +727,13 @@ export default function EvaluationDetailPage() {
           {llmStatus !== "processing" && v2 && schools.length > 0 && (
             <section className="mt-6">
               <ResultsMap
-                schools={schools.map((s) => ({
-                  rank: s.rank,
-                  school_name: schoolDisplayName(s),
-                  state: s.location?.state || "",
-                }))}
+                schools={schools
+                  .filter((s): s is School & { rank: number } => s.rank != null)
+                  .map((s) => ({
+                    rank: s.rank,
+                    school_name: schoolDisplayName(s),
+                    state: s.location?.state || "",
+                  }))}
                 selectedRank={selectedRank ?? (schools[0]?.rank || null)}
                 onSelect={selectSchool}
                 highlightedRegions={(evaluation?.preferences_input?.regions as string[] | undefined) || null}
@@ -911,102 +783,16 @@ export default function EvaluationDetailPage() {
                 {/* School list */}
                 <div className="space-y-3">
                   {schools.map((school) => {
-                    const isActive = (selectedDedupeKey ?? getSchoolDedupeKey(schools[0])) === getSchoolDedupeKey(school);
-                    const logoUrl = getNcaLogoUrl(school.school_logo_image);
-                    const medalIdx = school.rank - 1;
-                    const hasMedal = medalIdx < 3;
-                    const schoolTierLabel = schoolDivisionLabel(school);
-
+                    const isActive =
+                      (selectedDedupeKey ?? getSchoolDedupeKey(schools[0])) === getSchoolDedupeKey(school);
                     return (
-                      <button
+                      <SchoolListCard
                         key={getSchoolDedupeKey(school)}
-                        type="button"
-                        onClick={() => selectSchool(school.rank)}
-                        className={`w-full rounded-2xl border bg-white/80 p-4 text-left shadow-soft transition-all duration-200 ${
-                          isActive
-                            ? "border-[var(--primary)] ring-1 ring-[var(--primary)]"
-                            : "border-[var(--stroke)] hover:-translate-y-0.5 hover:border-[var(--primary)]/40"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              {hasMedal && (
-                                <span
-                                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                                  style={{ background: MEDAL_COLORS[medalIdx] }}
-                                >
-                                  {school.rank}
-                                </span>
-                              )}
-                              {!hasMedal && (
-                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--sand)] text-xs font-semibold text-[var(--navy)]">
-                                  {school.rank}
-                                </span>
-                              )}
-                              <p className="text-sm font-semibold text-[var(--foreground)] md:text-base">
-                                {schoolDisplayName(school)}
-                              </p>
-                            </div>
-
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              {schoolTierLabel && (
-                                <span className="rounded-full bg-[var(--sand)] px-2.5 py-0.5 text-xs font-semibold text-[var(--navy)]">
-                                  {schoolTierLabel}
-                                </span>
-                              )}
-                              {school.conference && (
-                                <span className="text-xs text-[var(--muted)]">{school.conference}</span>
-                              )}
-                              {school.location?.state && (
-                                <span className="text-xs text-[var(--muted)]">{school.location.state}</span>
-                              )}
-                            </div>
-
-                            {v2 && (
-                              <div className="mt-2 flex flex-wrap gap-1.5">
-                                {school.baseball_fit && (
-                                  <FitBadge
-                                    type={school.fit_label || school.baseball_fit}
-                                    label={`Baseball: ${baseballFitText(school)}`}
-                                  />
-                                )}
-                                {school.academic_fit && (
-                                  <FitBadge
-                                    type={school.academic_fit}
-                                    label={`Academic: ${fitLabel(school.academic_fit)}`}
-                                  />
-                                )}
-                                {school.roster_label && school.roster_label !== "unknown" && (
-                                  <span
-                                    className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
-                                    style={{
-                                      background: school.roster_label === "open" ? "#dcfce7" : school.roster_label === "crowded" ? "#fef3c7" : "#f3f4f6",
-                                      color: school.roster_label === "open" ? "#166534" : school.roster_label === "crowded" ? "#92400e" : "#374151",
-                                      border: `1px solid ${school.roster_label === "open" ? "#86efac" : school.roster_label === "crowded" ? "#fcd34d" : "#d1d5db"}`,
-                                    }}
-                                  >
-                                    {school.roster_label === "open" ? "Open" : school.roster_label === "crowded" ? "Crowded" : "Competitive"}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {logoUrl && (
-                            <>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={logoUrl}
-                                alt=""
-                                loading="lazy"
-                                onError={(e) => { e.currentTarget.style.display = "none"; }}
-                                className="h-12 w-12 shrink-0 rounded-lg border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
-                              />
-                            </>
-                          )}
-                        </div>
-                      </button>
+                        school={school}
+                        isActive={isActive}
+                        onSelect={() => selectSchool(school.rank)}
+                        showFitBadges={v2}
+                      />
                     );
                   })}
                 </div>
@@ -1017,97 +803,10 @@ export default function EvaluationDetailPage() {
                   className="glass rounded-2xl p-5 shadow-soft lg:sticky lg:top-24 lg:max-h-[82vh] lg:overflow-y-auto"
                 >
                   {selectedSchool ? (
-                    <div key={selectedDedupeKey} className="detail-slide-in">
-                      {/* Header */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            {selectedSchool.rank <= 3 && (
-                              <span
-                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                                style={{ background: MEDAL_COLORS[selectedSchool.rank - 1] }}
-                              >
-                                {selectedSchool.rank}
-                              </span>
-                            )}
-                            <h2 className="text-lg font-bold text-[var(--foreground)]">
-                              {schoolDisplayName(selectedSchool)}
-                            </h2>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--muted)]">
-                            {selectedSchool.conference && <span>{selectedSchool.conference}</span>}
-                            {selectedSchool.conference && selectedSchool.location?.state && <span>&middot;</span>}
-                            {selectedSchool.location?.state && <span>{selectedSchool.location.state}</span>}
-                            {selectedSchool.location?.region && (
-                              <>
-                                <span>&middot;</span>
-                                <span>{selectedSchool.location.region}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        {getNcaLogoUrl(selectedSchool.school_logo_image) && (
-                          <>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={getNcaLogoUrl(selectedSchool.school_logo_image)!}
-                              alt=""
-                              onError={(e) => { e.currentTarget.style.display = "none"; }}
-                              className="h-14 w-14 shrink-0 rounded-lg border border-[var(--stroke)] bg-white/90 p-1.5 object-contain"
-                            />
-                          </>
-                        )}
-                      </div>
-
-                      {/* Fit labels + tier + cost */}
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {schoolDivisionLabel(selectedSchool) && (
-                          <span className="rounded-full bg-[var(--sand)] px-3 py-1 text-xs font-semibold text-[var(--navy)]">
-                            {schoolDivisionLabel(selectedSchool)}
-                          </span>
-                        )}
-                        {selectedSchool.baseball_fit && (
-                          <FitBadge
-                            type={selectedSchool.fit_label || selectedSchool.baseball_fit}
-                            label={`Baseball: ${baseballFitText(selectedSchool)}`}
-                          />
-                        )}
-                        {selectedSchool.academic_fit && (
-                          <FitBadge
-                            type={selectedSchool.academic_fit}
-                            label={`Academic: ${fitLabel(selectedSchool.academic_fit)}`}
-                          />
-                        )}
-                        {selectedSchool.roster_label && selectedSchool.roster_label !== "unknown" && (
-                          <span
-                            className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
-                            style={{
-                              background: selectedSchool.roster_label === "open" ? "#dcfce7" : selectedSchool.roster_label === "crowded" ? "#fef3c7" : "#f3f4f6",
-                              color: selectedSchool.roster_label === "open" ? "#166534" : selectedSchool.roster_label === "crowded" ? "#92400e" : "#374151",
-                              border: `1px solid ${selectedSchool.roster_label === "open" ? "#86efac" : selectedSchool.roster_label === "crowded" ? "#fcd34d" : "#d1d5db"}`,
-                            }}
-                          >
-                            {selectedSchool.roster_label === "open" ? "Open" : selectedSchool.roster_label === "crowded" ? "Crowded" : "Competitive"}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-2 gap-3">
-                        {selectedSchool.academic_selectivity_score && (
-                          <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                            <p className="text-xs text-[var(--muted)]">Niche academic grade</p>
-                            <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                              {selectedSchool.academic_selectivity_score}
-                            </p>
-                          </div>
-                        )}
-                        <div className="rounded-xl border border-[var(--stroke)] bg-white/70 p-3">
-                          <p className="text-xs text-[var(--muted)]">Est. annual cost</p>
-                          <p className="mt-0.5 text-sm font-semibold text-[var(--navy)]">
-                            {formatCost(selectedSchool.estimated_annual_cost)}
-                          </p>
-                        </div>
-                      </div>
+                    <div key={selectedDedupeKey} className="detail-slide-in space-y-4">
+                      <SchoolHeader school={selectedSchool} />
+                      <SchoolFitBadges school={selectedSchool} />
+                      <SchoolStatsGrid school={selectedSchool} />
 
                       {accessToken && selectedDedupeKey && (
                         <SchoolFitVote
@@ -1125,15 +824,7 @@ export default function EvaluationDetailPage() {
                         />
                       )}
 
-                      {/* Why This School — main narrative */}
-                      {(selectedSchool.why_this_school || selectedSchool.fit_summary) && (
-                        <div className="mt-4 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Why this school</p>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                            {selectedSchool.why_this_school || selectedSchool.fit_summary}
-                          </p>
-                        </div>
-                      )}
+                      <WhyThisSchoolCard school={selectedSchool} />
 
                       {accessToken && selectedDedupeKey && (selectedSchool.why_this_school || selectedSchool.fit_summary) && (
                         <ReviewHelpfulnessVote
@@ -1151,35 +842,8 @@ export default function EvaluationDetailPage() {
                         />
                       )}
 
-                      {selectedSchool.research_sources?.length ? (
-                        <div className="mt-3 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Research sources</p>
-                          <ul className="mt-2 space-y-1 text-sm">
-                            {selectedSchool.research_sources.map((source) => (
-                              <li key={`${source.url}-${source.label}`}>
-                                <a
-                                  href={source.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[var(--primary)] hover:underline"
-                                >
-                                  {source.label || source.url}
-                                </a>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-
-                      {/* Metric comparisons */}
-                      {selectedSchool.metric_comparisons && selectedSchool.metric_comparisons.length > 0 && (
-                        <div className="mt-4">
-                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
-                            Your metrics vs. {schoolDivisionLabel(selectedSchool) || "division"} average
-                          </p>
-                          <MetricComparisonTable comparisons={selectedSchool.metric_comparisons} />
-                        </div>
-                      )}
+                      <ResearchSourcesCard sources={selectedSchool.research_sources} />
+                      <MetricComparisonsSection school={selectedSchool} />
 
                       {/* Save school */}
                       <div className="mt-4 rounded-xl border border-[var(--stroke)] bg-white/70 p-4">
@@ -1227,6 +891,12 @@ export default function EvaluationDetailPage() {
               </div>
             )}
           </section>}
+
+          {reportDate && (
+            <p className="mt-12 text-center text-xs text-[var(--cool-ink-muted)]">
+              Last updated {reportDate}
+            </p>
+          )}
         </div>
       </main>
 

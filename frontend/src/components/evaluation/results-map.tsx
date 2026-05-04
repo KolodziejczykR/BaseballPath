@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import {
   STATE_PATHS,
-  STATE_SVG_CENTER,
   REGION_STATES,
   REGION_COLORS,
   getStateRegion,
@@ -100,16 +99,16 @@ export function ResultsMap({ schools, selectedRank, onSelect, highlightedRegions
 
             if (hasSchool) {
               fill = regionColor;
-              fillOpacity = isSelected ? 0.5 : isHovered ? 0.4 : 0.25;
+              fillOpacity = isSelected ? 0.55 : isHovered ? 0.45 : 0.3;
               stroke = regionColor;
             } else if (inHighlighted) {
-              fill = "var(--clay-mist)";
-              fillOpacity = 0.6;
-              stroke = "var(--stroke)";
+              fill = "var(--cool-stroke-strong)";
+              fillOpacity = 0.55;
+              stroke = "var(--cool-stroke-strong)";
             } else {
-              fill = "var(--clay-mist)";
-              fillOpacity = 0.3;
-              stroke = "var(--stroke)";
+              fill = "var(--cool-stroke-strong)";
+              fillOpacity = 0.4;
+              stroke = "var(--cool-stroke-strong)";
             }
 
             return (
@@ -133,55 +132,6 @@ export function ResultsMap({ schools, selectedRank, onSelect, highlightedRegions
           })}
         </g>
 
-        {/* Per-state school count labels */}
-        {Object.entries(schoolsByState).map(([abbr, stateSchools]) => {
-          const center = STATE_SVG_CENTER[abbr];
-          if (!center) return null;
-
-          const count = stateSchools.length;
-          const isHovered = hoveredState === abbr;
-          const isSelected = selectedState === abbr;
-          const region = getStateRegion(abbr);
-          const regionColor = region ? REGION_COLORS[region] : "var(--primary)";
-          const r = isSelected || isHovered ? 14 : 12;
-
-          return (
-            <g key={`tooltip-${abbr}`} style={{ pointerEvents: "none" }}>
-              {/* Hover tooltip showing school names */}
-              {(isHovered || isSelected) && (
-                <g>
-                  <rect
-                    x={center[0] - 85}
-                    y={center[1] - 18 - count * 14 - 4}
-                    width={170}
-                    height={count * 14 + 8}
-                    rx={6}
-                    fill="var(--walnut)"
-                    fillOpacity={0.94}
-                  />
-                  {stateSchools.map((school, i) => {
-                    const label = `#${school.rank} ${school.school_name}`;
-                    return (
-                      <text
-                        key={school.rank}
-                        x={center[0]}
-                        y={center[1] - 18 - (count - 1 - i) * 14}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fill={school.rank === selectedRank ? "var(--golden-sand)" : "white"}
-                        fontSize="9"
-                        fontWeight={school.rank === selectedRank ? "700" : "500"}
-                        style={{ pointerEvents: "none" }}
-                      >
-                        {label.length > 28 ? label.slice(0, 26) + "\u2026" : label}
-                      </text>
-                    );
-                  })}
-                </g>
-              )}
-            </g>
-          );
-        })}
       </svg>
     </div>
   );

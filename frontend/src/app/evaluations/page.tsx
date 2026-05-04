@@ -29,13 +29,19 @@ type EvaluationListResponse = {
   total?: number;
 };
 
-const preferenceLabelMap: Record<string, string> = {
-  preferred_regions: "Region",
-  preferred_school_size: "Size",
-  min_academic_rating: "Academics",
-  min_athletics_rating: "Athletics",
-  party_scene_preference: "Social",
-  max_budget: "Budget",
+// Mirrors BUDGET_OPTIONS in /predict/page.tsx — every value is a max threshold.
+// Legacy "$65K+" key kept so old runs render correctly.
+const BUDGET_LABELS: Record<string, string> = {
+  under_20k: "Up to $20K",
+  "20k_35k": "Up to $35K",
+  "35k_50k": "Up to $50K",
+  "50k_65k": "Up to $65K",
+  "65k_plus": "$65K+",
+};
+
+const RANKING_LABELS: Record<string, string> = {
+  baseball_fit: "Best baseball fit",
+  academics: "Best academics",
 };
 
 function toDisplayValue(value: unknown): string {
@@ -48,12 +54,6 @@ function toDisplayValue(value: unknown): string {
   return String(value).trim();
 }
 
-function getPlayerName(run: EvaluationListItem): string {
-  const raw = run.identity_input?.name;
-  const value = toDisplayValue(raw);
-  return value || "Saved Evaluation";
-}
-
 function getPositionLabel(run: EvaluationListItem): string {
   const primaryPosition = toDisplayValue(run.identity_input?.primary_position);
   if (primaryPosition) return primaryPosition;
@@ -63,19 +63,45 @@ function getPositionLabel(run: EvaluationListItem): string {
   return `${track.charAt(0).toUpperCase()}${track.slice(1)}`;
 }
 
-function getPreferenceHighlights(run: EvaluationListItem, maxItems = 3): string[] {
-  const input = run.preferences_input;
-  if (!input) return [];
+// Mirrors tierDisplayLabel in /evaluations/[runId]/page.tsx so the list view
+// uses the same friendly division names as the detail view.
+function tierDisplayLabel(tier: string | undefined): string {
+  if (!tier) return "Classification unavailable";
+  if (tier.includes("Power 4")) return "Power 4";
+  if (tier.includes("Non-P4")) return "Division 1";
+  if (tier.includes("Non-D1")) return "D2 & D3";
+  return tier;
+}
 
-  const highlights: string[] = [];
-  for (const key of Object.keys(preferenceLabelMap)) {
-    const label = preferenceLabelMap[key];
-    const value = toDisplayValue(input[key]);
-    if (!value) continue;
-    highlights.push(`${label}: ${value}`);
-    if (highlights.length >= maxItems) break;
-  }
-  return highlights;
+function getTopMatch(run: EvaluationListItem): string | null {
+  const name = run.top_schools_snapshot?.[0]?.school_name;
+  return typeof name === "string" && name.trim() ? name.trim() : null;
+}
+
+function getRegionsLabel(run: EvaluationListItem): string | null {
+  const v = run.preferences_input?.regions;
+  if (!Array.isArray(v)) return null;
+  const items = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+  return items.length > 0 ? items.join(", ") : null;
+}
+
+function getStatesLabel(run: EvaluationListItem): string | null {
+  const v = run.preferences_input?.states;
+  if (!Array.isArray(v)) return null;
+  const items = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+  return items.length > 0 ? items.join(", ") : null;
+}
+
+function getRankingLabel(run: EvaluationListItem): string | null {
+  const v = run.preferences_input?.ranking_priority;
+  if (typeof v !== "string" || !v.trim()) return null;
+  return RANKING_LABELS[v] ?? v.replace(/_/g, " ");
+}
+
+function getBudgetLabel(run: EvaluationListItem): string | null {
+  const v = run.preferences_input?.max_budget;
+  if (typeof v !== "string" || !v.trim() || v === "no_preference") return null;
+  return BUDGET_LABELS[v] ?? v;
 }
 
 export default function EvaluationsPage() {
@@ -182,8 +208,8 @@ export default function EvaluationsPage() {
   if (authLoading || loading) {
     return (
       <div className="min-h-screen px-6 py-16">
-        <div className="mx-auto max-w-3xl rounded-3xl border border-[var(--stroke)] bg-white/80 p-10 text-center">
-          <p className="text-sm text-[var(--muted)]">Loading evaluations...</p>
+        <div className="mx-auto max-w-3xl rounded-2xl border border-[var(--cool-stroke)] bg-white p-10 text-center shadow-cool">
+          <p className="text-sm text-[var(--cool-ink-muted)]">Loading evaluations...</p>
         </div>
       </div>
     );
@@ -193,13 +219,16 @@ export default function EvaluationsPage() {
     <div className="min-h-screen">
       {accessToken && <AuthenticatedTopBar accessToken={accessToken} userEmail={user?.email} />}
 
-      <main className="px-6 pt-5 pb-10 md:pt-6 md:pb-12">
+      <main className="px-6 pt-10 pb-10 md:pt-14 md:pb-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <h1 className="display-font mt-3 text-4xl md:text-5xl">Your saved evaluation history.</h1>
-              <p className="mt-3 max-w-none pl-1 text-[var(--muted)]">
-                Open any evaluation to review classification, preferences, and school-fit details.
+              <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--burnt-sienna)] font-semibold">Past Evaluations</p>
+              <h1 className="display-font mt-3 text-4xl md:text-5xl text-[var(--cool-ink)] font-semibold tracking-tight leading-tight">
+                Your evaluation history.
+              </h1>
+              <p className="mt-4 text-base text-[var(--cool-ink-muted)] leading-relaxed">
+                Open any past evaluation to review your top matches.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -234,50 +263,72 @@ export default function EvaluationsPage() {
           ) : (
             <div className="mt-8 space-y-3">
               {items.map((run) => {
-                const topSchool = run.top_schools_snapshot?.[0]?.school_name;
-                const totalMatches = run.preferences_response?.summary?.total_matches;
-                const playerName = getPlayerName(run);
+                const topSchool = getTopMatch(run);
                 const positionLabel = getPositionLabel(run);
-                const preferenceHighlights = getPreferenceHighlights(run);
-                const classification = run.prediction_response?.final_prediction || "Classification unavailable";
+                const divisionLabel = tierDisplayLabel(run.prediction_response?.final_prediction);
+                const regionsLabel = getRegionsLabel(run);
+                const statesLabel = getStatesLabel(run);
+                const rankingLabel = getRankingLabel(run);
+                const budgetLabel = getBudgetLabel(run);
+                const hasPreferences = Boolean(regionsLabel || statesLabel || rankingLabel || budgetLabel);
                 return (
                   <div
                     key={run.id}
-                    className="rounded-2xl border border-[var(--stroke)] bg-white/80 p-4 shadow-soft"
+                    className="rounded-2xl border border-[var(--cool-stroke)] bg-white px-5 pt-5 pb-3 shadow-cool"
                   >
                     <Link
                       href={`/evaluations/${run.id}`}
                       className="block transition hover:-translate-y-0.5"
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-semibold">{playerName}</p>
-                        <span className="text-xs text-[var(--muted)]">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="text-base font-semibold text-[var(--cool-ink)]">
+                          {topSchool ? `Top match: ${topSchool}` : "Top match unavailable"}
+                        </p>
+                        <span className="text-xs text-[var(--cool-ink-muted)]">
                           {run.created_at ? new Date(run.created_at).toLocaleString() : "Timestamp unavailable"}
                         </span>
                       </div>
-                      <p className="mt-1 text-sm text-[var(--muted)]">
-                        {classification} · {positionLabel}
+                      <p className="mt-1.5 text-sm text-[var(--cool-ink-muted)]">
+                        {positionLabel} · {divisionLabel}
                       </p>
-                      <p className="mt-1 text-sm text-[var(--muted)]">
-                        {topSchool ? `Top match: ${topSchool}` : "No top-school snapshot available"}
-                      </p>
-                      <p className="mt-1 text-xs text-[var(--muted)]">
-                        {preferenceHighlights.length > 0
-                          ? `Preferences: ${preferenceHighlights.join(" · ")}`
-                          : "Preferences: none selected"}
-                      </p>
-                      <p className="mt-1 text-xs text-[var(--muted)]">
-                        {typeof totalMatches === "number" ? `${totalMatches} matches` : "Matches unavailable"}
-                      </p>
+                      {hasPreferences && (
+                        <div className="mt-3">
+                          <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--cool-ink-muted)] font-semibold mb-1.5">
+                            Preferences
+                          </p>
+                          <div className="space-y-1 text-xs text-[var(--cool-ink-muted)]">
+                            {regionsLabel && (
+                              <p>
+                                <span className="font-semibold text-[var(--cool-ink)]">Regions:</span> {regionsLabel}
+                              </p>
+                            )}
+                            {statesLabel && (
+                              <p>
+                                <span className="font-semibold text-[var(--cool-ink)]">States:</span> {statesLabel}
+                              </p>
+                            )}
+                            {rankingLabel && (
+                              <p>
+                                <span className="font-semibold text-[var(--cool-ink)]">Ranking:</span> {rankingLabel}
+                              </p>
+                            )}
+                            {budgetLabel && (
+                              <p>
+                                <span className="font-semibold text-[var(--cool-ink)]">Budget:</span> {budgetLabel}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </Link>
-                    <div className="mt-3 flex justify-end">
+                    <div className="mt-2 flex justify-end">
                       <button
                         type="button"
                         onClick={() => {
                           void deleteRun(run.id);
                         }}
                         disabled={deletingRunId === run.id || resettingAll}
-                        className="rounded-full border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {deletingRunId === run.id ? "Removing..." : "Remove Run"}
                       </button>
